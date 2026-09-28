@@ -318,9 +318,10 @@ Around the editor
   menu item. In its place Help has `Releases...`, which opens this repository's releases page. The one
   thing that still comes over the network is Help->`Online Documentation`: it shows SLADE's wiki, because
   that is the software the documentation describes, and it loads only when you open that page.
-* On Linux the program registers itself as `io.github.Xcommand.ArgentForge` rather than
-  `net.mancubus.SLADE`, and the second-instance handoff uses its own topic name, so an Argent Forge
-  window and a SLADE window stop mistaking each other for the same application.
+* On Linux the desktop entry, the appstream metadata and the icon install under
+  `io.github.Xcommand.ArgentForge` rather than `net.mancubus.SLADE`, and the second-instance handoff
+  uses its own topic name, so an Argent Forge window and a SLADE window stop mistaking each other for
+  the same application.
 * Dialogs and messages that said "SLADE" while meaning this program now say Argent Forge: the first-run
   setup title, the "configure it in the preferences" errors from the texture and PNG-tool operations,
   the archive-saved and directory-changed notices, the script manager, and the start page's window title.

@@ -133,9 +133,9 @@ else
 	(Get-Content $file) -replace $version_line, $new_version_line | Set-Content $file
 }
 
-# net.mancubus.SLADE.metainfo.xml ----------------------------------------------
+# io.github.Xcommand.ArgentForge.metainfo.xml ----------------------------------
 
-$file = "../net.mancubus.SLADE.metainfo.xml"
+$file = "../io.github.Xcommand.ArgentForge.metainfo.xml"
 $release = "$version_major.$version_minor.$version_revision"
 if (Get-Content $file | Select-String "version=`"$release`"")
 {

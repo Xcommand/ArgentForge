@@ -27,5 +27,8 @@
 			not updates to this build.
 		</p>
 	</description>
+	<releases>
+		<release date="2026-09-28" version="1.0.0"/>
+	</releases>
 	<content_rating type="oars-1.1"/>
 </component>
