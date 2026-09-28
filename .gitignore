@@ -64,3 +64,10 @@ CMakeUserPresets.json
 
 # A stray VSCode task file the editor dropped next to the vendored libraries.
 /thirdparty/.vscode/
+
+# Linker and debug leftovers. The builds that make them live in ignored folders today, but a stray .pdb or
+# .ilk anywhere else should not be able to reach a commit by accident.
+*.pdb
+*.ilk
+*.exp
+*.idb
