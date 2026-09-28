@@ -311,11 +311,13 @@ Around the editor
   changes shape. A new SLADE underneath us moves the `based on` number, not ours.
 * The preferences window is called `Argent Forge Settings`. The links on the start page go to this
   repository and its wiki, with SLADE's own page listed as what it is: the original.
-* Nothing in the program phones home any more. SLADE's version check asked its own server whether a
+* No automatic request leaves the machine any more. SLADE's version check asked its own server whether a
   newer build exists and offered its download page from the Help menu and the start page. A fork has
   nothing to report there and the user has nothing to gain from being sent to someone else's downloads,
   so the whole thing is gone: the request, the two preferences tickboxes, the start page banner, and the
-  menu item. In its place Help has `Releases...`, which opens this repository's releases page.
+  menu item. In its place Help has `Releases...`, which opens this repository's releases page. The one
+  thing that still comes over the network is Help->`Online Documentation`: it shows SLADE's wiki, because
+  that is the software the documentation describes, and it loads only when you open that page.
 * On Linux the program registers itself as `io.github.Xcommand.ArgentForge` rather than
   `net.mancubus.SLADE`, and the second-instance handoff uses its own topic name, so an Argent Forge
   window and a SLADE window stop mistaking each other for the same application.
