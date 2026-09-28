@@ -234,7 +234,7 @@ void SStartPage::load(bool new_tip)
 	{
 		log::error("No start page resource found");
 		html_startpage_->SetPage(
-			wxS("<html><head><title>SLADE</title></head><body><center><h1>"
+			wxS("<html><head><title>Argent Forge</title></head><body><center><h1>"
 				"Something is wrong with slade.pk3 :(</h1><center></body></html>"),
 			wxEmptyString);
 		return;
@@ -308,10 +308,6 @@ void SStartPage::load(bool new_tip)
 	html.Replace(wxS("#totd#"), wxString::FromUTF8(tip));
 	html.Replace(wxS("#news#"), wxString::FromUTF8(latest_news_));
 	html.Replace(wxS("#version#"), wxString::FromUTF8(app::version().toString()));
-	if (update_version_.empty())
-		html.Replace(wxS("/*#hideupdate#*/"), wxS("#update { display: none; }"));
-	else
-		html.Replace(wxS("#updateversion#"), wxString::FromUTF8(update_version_));
 
 	// Write html and images to temp folder
 	for (auto& a : entry_export_)
@@ -355,7 +351,7 @@ void SStartPage::load(bool new_tip)
 	if (!entry_html)
 	{
 		html_startpage_->SetPage(
-			"<html><head><title>SLADE</title></head><body><center><h1>Something is wrong with slade.pk3 "
+			"<html><head><title>Argent Forge</title></head><body><center><h1>Something is wrong with slade.pk3 "
 			":(</h1><center></body></html>");
 		return;
 	}
@@ -431,16 +427,6 @@ void SStartPage::refresh() const
 #endif
 }
 
-// -----------------------------------------------------------------------------
-// Updates the start page to show that an update to [version_name] is available
-// -----------------------------------------------------------------------------
-void SStartPage::updateAvailable(const string& version_name)
-{
-	update_version_ = version_name;
-	load(false);
-}
-
-
 #ifdef USE_WEBVIEW_STARTPAGE
 
 // -----------------------------------------------------------------------------
@@ -492,19 +478,6 @@ void SStartPage::onHTMLLinkClicked(wxEvent& e)
 		}
 		else if (href.EndsWith(wxS("reloadstartpage")))
 			load();
-		else if (href.EndsWith(wxS("hide-update")))
-		{
-			update_version_ = "";
-			load(false);
-		}
-		else if (href.EndsWith(wxS("update")))
-		{
-			if (wxLaunchDefaultBrowser(wxS("http://slade.mancubus.net/index.php?page=downloads")))
-			{
-				update_version_ = "";
-				load(false);
-			}
-		}
 
 		html_startpage_->Reload();
 	}

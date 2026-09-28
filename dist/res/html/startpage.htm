@@ -54,25 +54,6 @@
       z-index: 998;
     }
 
-    #update {
-      background-color: rgb(178, 48, 30);
-      color: white;
-      width: 100%;
-      font-size: 1.2em;
-      padding: 0.6em 0.8em 0.5em 0.8em;
-      position: fixed;
-      bottom: 0;
-      z-index: 999;
-    }
-
-    #update a {
-      color: hsl(43, 85%, 74%);
-    }
-
-    #update a:hover {
-      color: hsl(45, 85%, 90%);
-    }
-
     a.link,
     img.link {
       display: inline-block;
@@ -163,22 +144,11 @@
       color: hsl(43, 85%, 70%);
     }
 
-    /*#hideupdate#*/
-
   </style>
 </head>
 
 <body>
   <div id="topbar"></div>
-
-  <!-- Update -->
-  <div id="update">
-    <strong>Upstream released SLADE</strong> <a href="action://update">#updateversion#</a>,
-    <span style="font-size:0.85em;">that build carries none of this fork's changes</span>
-    <span style="float: right; padding-right: 1.6em;">
-      <a href="action://hide-update">&#10060;</a>
-    </span>
-  </div>
 
   <!-- Side Bar -->
   <div id="side">

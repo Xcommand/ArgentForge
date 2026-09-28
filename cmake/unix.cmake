@@ -205,14 +205,14 @@ else (APPLE)
 
 		install(FILES "${PROJECT_SOURCE_DIR}/dist/res/icons/general/logo.svg"
 			DESTINATION share/icons/hicolor/scalable/apps/
-			RENAME net.mancubus.SLADE.svg
+			RENAME io.github.Xcommand.ArgentForge.svg
 		)
 
-		install(FILES "${PROJECT_SOURCE_DIR}/net.mancubus.SLADE.desktop"
+		install(FILES "${PROJECT_SOURCE_DIR}/io.github.Xcommand.ArgentForge.desktop"
 			DESTINATION share/applications/
 		)
 
-		install(FILES "${PROJECT_SOURCE_DIR}/net.mancubus.SLADE.metainfo.xml"
+		install(FILES "${PROJECT_SOURCE_DIR}/io.github.Xcommand.ArgentForge.metainfo.xml"
 			DESTINATION share/metainfo/
 		)
 	endif (UNIX)

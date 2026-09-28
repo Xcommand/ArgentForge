@@ -328,9 +328,7 @@ void MainWindow::setupLayout()
 	SAction::fromId("main_userguide")->addToMenu(help_menu);
 	SAction::fromId("main_onlinedocs")->addToMenu(help_menu);
 	SAction::fromId("main_about")->addToMenu(help_menu);
-#ifdef __WXMSW__
-	SAction::fromId("main_updatecheck")->addToMenu(help_menu);
-#endif
+	SAction::fromId("main_releases")->addToMenu(help_menu);
 	menu->Append(help_menu, wxS("&Help"));
 
 	// Set the menu
@@ -723,10 +721,10 @@ bool MainWindow::handleAction(string_view id)
 		return true;
 	}
 
-	// Help->Check For Updates
-	if (id == "main_updatecheck")
+	// Help->Releases
+	if (id == "main_releases")
 	{
-		wxGetApp().checkForUpdates(true);
+		wxLaunchDefaultBrowser(wxString::FromUTF8(app::repoUrl() + "/releases"));
 		return true;
 	}
 

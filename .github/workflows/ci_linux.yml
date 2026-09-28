@@ -85,8 +85,8 @@ jobs:
       # For whatever reason linuxdeploy only accepts the legacy filename (appdata) for metainfo
       - name: Rename metainfo to appdata
         run: |
-          mv AppDir/usr/share/metainfo/net.mancubus.SLADE.metainfo.xml \
-             AppDir/usr/share/metainfo/net.mancubus.SLADE.appdata.xml
+          mv AppDir/usr/share/metainfo/io.github.Xcommand.ArgentForge.metainfo.xml \
+             AppDir/usr/share/metainfo/io.github.Xcommand.ArgentForge.appdata.xml
 
       - name: Install LinuxDeploy
         id: install-linuxdeploy

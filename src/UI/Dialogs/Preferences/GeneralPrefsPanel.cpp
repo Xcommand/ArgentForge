@@ -44,8 +44,6 @@ using namespace slade;
 EXTERN_CVAR(Bool, close_archive_with_tab)
 EXTERN_CVAR(Bool, archive_load_data)
 EXTERN_CVAR(Bool, auto_open_wads_root)
-EXTERN_CVAR(Bool, update_check)
-EXTERN_CVAR(Bool, update_check_beta)
 EXTERN_CVAR(Bool, confirm_exit)
 EXTERN_CVAR(Bool, backup_archives)
 EXTERN_CVAR(Bool, archive_dir_ignore_hidden)
@@ -73,11 +71,6 @@ GeneralPrefsPanel::GeneralPrefsPanel(wxWindow* parent) : PrefsPanelBase(parent)
 				cb_backup_archives_           = new wxCheckBox(this, -1, wxS("Back up archives")),
 				cb_archive_dir_ignore_hidden_ = new wxCheckBox(this, -1, wxS("Ignore hidden files in directories")),
 				new wxStaticLine(this, -1, wxDefaultPosition, wxDefaultSize, wxLI_HORIZONTAL),
-#ifdef __WXMSW__
-				cb_update_check_      = new wxCheckBox(this, -1, wxS("Check for updates on startup")),
-				cb_update_check_beta_ = new wxCheckBox(
-					this, -1, wxS("Include beta versions when checking for updates")),
-#endif
 				cb_confirm_exit_ = new wxCheckBox(this, -1, wxS("Show confirmation dialog on exit")),
 			}));
 
@@ -96,10 +89,6 @@ void GeneralPrefsPanel::init()
 	cb_archive_load_->SetValue(archive_load_data);
 	cb_archive_close_tab_->SetValue(close_archive_with_tab);
 	cb_wads_root_->SetValue(auto_open_wads_root);
-#ifdef __WXMSW__
-	cb_update_check_->SetValue(update_check);
-	cb_update_check_beta_->SetValue(update_check_beta);
-#endif
 	cb_confirm_exit_->SetValue(confirm_exit);
 	cb_backup_archives_->SetValue(backup_archives);
 	cb_archive_dir_ignore_hidden_->SetValue(archive_dir_ignore_hidden);
@@ -113,10 +102,6 @@ void GeneralPrefsPanel::applyPreferences()
 	archive_load_data      = cb_archive_load_->GetValue();
 	close_archive_with_tab = cb_archive_close_tab_->GetValue();
 	auto_open_wads_root    = cb_wads_root_->GetValue();
-#ifdef __WXMSW__
-	update_check      = cb_update_check_->GetValue();
-	update_check_beta = cb_update_check_beta_->GetValue();
-#endif
 	confirm_exit              = cb_confirm_exit_->GetValue();
 	backup_archives           = cb_backup_archives_->GetValue();
 	archive_dir_ignore_hidden = cb_archive_dir_ignore_hidden_->GetValue();

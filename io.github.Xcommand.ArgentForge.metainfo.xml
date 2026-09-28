@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-	<id>net.mancubus.SLADE</id>
+	<id>io.github.Xcommand.ArgentForge</id>
 	<name>Argent Forge</name>
 	<summary>Doom editor, a fork of SLADE3</summary>
 	<metadata_license>CC0-1.0</metadata_license>
@@ -10,7 +10,7 @@
 	<url type="bugtracker">https://github.com/Xcommand/ArgentForge/issues</url>
 	<url type="help">https://github.com/Xcommand/ArgentForge/blob/HEAD/docs/user/README.md</url>
 	<url type="vcs-browser">https://github.com/Xcommand/ArgentForge</url>
-	<launchable type="desktop-id">net.mancubus.SLADE.desktop</launchable>
+	<launchable type="desktop-id">io.github.Xcommand.ArgentForge.desktop</launchable>
 	<description>
 		<p>
 			Argent Forge is a fork of SLADE3, the editor for Doom-engine games and source

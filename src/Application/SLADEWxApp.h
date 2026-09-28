@@ -1,6 +1,5 @@
 #pragma once
 
-class wxWebRequestEvent;
 class wxSingleInstanceChecker;
 class MainAppFileListener;
 class SLADECrashDialog;
@@ -23,19 +22,16 @@ public:
 #endif // __APPLE__
 
 	bool singleInstanceCheck();
-	void checkForUpdates(bool message_box);
 
 	void onMenu(wxCommandEvent& e);
-	void onWebRequestUpdate(wxWebRequestEvent& e);
 	void onActivate(wxActivateEvent& e);
 	void onEndSession(wxCloseEvent& e);
 
 private:
-	wxSingleInstanceChecker* single_instance_checker_  = nullptr;
-	MainAppFileListener*     file_listener_            = nullptr;
-	SLADECrashDialog*        crash_dialog_             = nullptr;
-	bool                     session_ending_           = false;
-	int                      version_check_request_id_ = 0;
+	wxSingleInstanceChecker* single_instance_checker_ = nullptr;
+	MainAppFileListener*     file_listener_           = nullptr;
+	SLADECrashDialog*        crash_dialog_            = nullptr;
+	bool                     session_ending_          = false;
 };
 
 DECLARE_APP(SLADEWxApp)

@@ -81,18 +81,10 @@ int win_version_minor = 0;
 
 namespace
 {
-string       current_action;
-bool         update_check_message_box = false;
-const string update_check_url{
-	"https://raw.githubusercontent.com/sirjuddington/SLADE-aux/refs/heads/main/version_win.txt"
-};
+string current_action;
 } // namespace
 
 CVAR(String, dir_last, "", CVar::Flag::Save)
-// Off by default here: this build isn't updated from SLADE's releases, so the
-// check has nothing to say on its own
-CVAR(Bool, update_check, false, CVar::Flag::Save)
-CVAR(Bool, update_check_beta, false, CVar::Flag::Save)
 
 
 // -----------------------------------------------------------------------------
@@ -429,10 +421,10 @@ public:
 			wxGetEnv(wxS("TMPDIR"), &server);
 		if (server.IsEmpty())
 			server = wxS("/tmp");
-		server += wxS("/SLADE_MAFL");
+		server += wxS("/ArgentForge_MAFL");
 		return server;
 #else
-		return wxS("SLADE_MAFL");
+		return wxS("ArgentForge_MAFL");
 #endif
 	}
 };
@@ -583,13 +575,10 @@ bool SLADEWxApp::OnInit()
 	// Check for updates
 #ifdef __WXMSW__
 	wxHTTP::Initialize();
-	if (update_check)
-		checkForUpdates(false);
 #endif
 
 	// Bind events
 	Bind(wxEVT_MENU, &SLADEWxApp::onMenu, this);
-	Bind(wxEVT_WEBREQUEST_STATE, &SLADEWxApp::onWebRequestUpdate, this);
 	Bind(wxEVT_ACTIVATE_APP, &SLADEWxApp::onActivate, this);
 	Bind(wxEVT_QUERY_END_SESSION, &SLADEWxApp::onEndSession, this);
 
@@ -650,22 +639,6 @@ void SLADEWxApp::MacOpenFile(const wxString& fileName)
 #endif // __APPLE__
 
 // -----------------------------------------------------------------------------
-// Runs the version checker, if [message_box] is true, a message box will be
-// shown if already up-to-date
-// -----------------------------------------------------------------------------
-void SLADEWxApp::checkForUpdates(bool message_box)
-{
-#ifdef __WXMSW__
-	update_check_message_box = message_box;
-	log::info(1, "Checking for updates...");
-	auto request              = wxWebSession::GetDefault().CreateRequest(this, wxString::FromUTF8(update_check_url));
-	version_check_request_id_ = request.GetId();
-	request.Start();
-#endif
-}
-
-
-// -----------------------------------------------------------------------------
 //
 // SLADEWxApp Class Events
 //
@@ -706,164 +679,6 @@ void SLADEWxApp::onMenu(wxCommandEvent& e)
 	// If not handled, let something else handle it
 	if (!handled)
 		e.Skip();
-}
-
-// -----------------------------------------------------------------------------
-// Called when a web request status is updated
-// -----------------------------------------------------------------------------
-void SLADEWxApp::onWebRequestUpdate(wxWebRequestEvent& e)
-{
-	// Version Check request update
-	if (e.GetRequest().GetId() == version_check_request_id_)
-	{
-		// Check failed
-		if (e.GetState() == wxWebRequest::State_Failed || e.GetState() == wxWebRequest::State_Unauthorized)
-		{
-			log::error("Update check failed, unable to connect");
-			if (update_check_message_box)
-				wxMessageBox(
-					wxS("Update check failed: unable to connect to internet. "
-						"Check your connection and try again."),
-					wxS("Check for Updates"));
-
-			return;
-		}
-
-		// If not completed, ignore
-		if (e.GetState() != wxWebRequest::State_Completed)
-			return;
-
-		// Parse version info
-		app::Version stable, beta;
-		string       bin_stable, installer_stable, bin_beta; // Currently unused but may be useful in the future
-		Parser       parser;
-		auto         response_string = e.GetResponse().AsString();
-		if (parser.parseText(response_string.utf8_string()))
-		{
-			// Stable
-			auto node_stable = parser.parseTreeRoot()->childPTN("stable");
-			if (node_stable)
-			{
-				// Version
-				auto node_version = node_stable->childPTN("version");
-				if (node_version)
-				{
-					stable.major    = node_version->intValue(0);
-					stable.minor    = node_version->intValue(1);
-					stable.revision = node_version->intValue(2);
-				}
-
-				// Binaries link
-				auto node_bin = node_stable->childPTN("bin");
-				if (node_bin)
-					bin_stable = node_bin->stringValue();
-
-				// Installer link
-				auto node_install = node_stable->childPTN("install");
-				if (node_install)
-					installer_stable = node_install->stringValue();
-			}
-
-			// Beta
-			auto node_beta = parser.parseTreeRoot()->childPTN("beta");
-			if (node_beta)
-			{
-				// Version
-				auto node_version = node_beta->childPTN("version");
-				if (node_version)
-				{
-					beta.major    = node_version->intValue(0);
-					beta.minor    = node_version->intValue(1);
-					beta.revision = node_version->intValue(2);
-				}
-
-				// Beta number
-				auto node_beta_num = node_beta->childPTN("beta");
-				if (node_beta_num)
-					beta.beta = node_beta_num->intValue();
-
-				// Binaries link
-				auto node_bin = node_beta->childPTN("bin");
-				if (node_bin)
-					bin_beta = node_bin->stringValue();
-			}
-		}
-
-		// Check for correct info
-		if (stable.major == 0 || beta.major == 0)
-		{
-			log::warning("Update check failed, received invalid version info");
-			log::debug("Received version text:\n\n{}", response_string.utf8_string());
-			if (update_check_message_box)
-				wxMessageBox(wxS("Update check failed: received invalid version info."), wxS("Check for Updates"));
-			return;
-		}
-
-		log::info("Latest stable release: v{}", stable.toString());
-		log::info("Latest beta release: v{}", beta.toString());
-
-		// Compare against the SLADE we're built on. Our own number is a different
-		// line and would say nothing next to theirs
-		bool new_stable = app::upstreamVersion().cmp(stable) < 0;
-		bool new_beta   = app::upstreamVersion().cmp(beta) < 0;
-
-		// Set up for new beta/stable version prompt (if any)
-		string message, caption, version;
-		if (update_check_beta && new_beta)
-		{
-			// New Beta
-			caption = "New Beta Version Available";
-			version = beta.toString();
-			message = fmt::format(
-				"Upstream SLADE has a new beta release ({}), newer than this build. Click OK to visit the SLADE "
-				"homepage and download it - note that upstream does not carry this fork's changes.",
-				version);
-		}
-		else if (new_stable)
-		{
-			// New Stable
-			caption = "New Version Available";
-			version = stable.toString();
-			message = fmt::format(
-				"Upstream SLADE has a newer release ({}). Click OK to visit the SLADE homepage and download it - "
-				"upstream does not carry this fork's changes.",
-				version);
-		}
-		else
-		{
-			// No update
-			log::info(1, "Already up-to-date");
-			if (update_check_message_box)
-				wxMessageBox(wxS("Nothing newer upstream - this build is up to date with SLADE's releases"),
-				             wxS("Check for Updates"));
-
-			return;
-		}
-
-		// Speak up only when somebody asked. A newer upstream release isn't an update
-		// to this build, and a banner offering to download one would quietly swap it
-		// for a version without any of our changes
-		if (!update_check_message_box)
-		{
-			log::info(1, "Upstream SLADE has a newer release ({}), which says nothing about this build", version);
-			return;
-		}
-
-		// Prompt to update
-		auto main_window = maineditor::window();
-		if (main_window->startPageTabOpen() && app::useWebView())
-		{
-			// Start Page (webview version) is open, show it there
-			main_window->openStartPageTab();
-			main_window->startPage()->updateAvailable(version);
-		}
-		else
-		{
-			// No start page, show a message box
-			if (wxMessageBox(wxString::FromUTF8(message), wxString::FromUTF8(caption), wxOK | wxCANCEL) == wxOK)
-				wxLaunchDefaultBrowser(wxS("http://slade.mancubus.net/index.php?page=downloads"));
-		}
-	}
 }
 
 // -----------------------------------------------------------------------------
