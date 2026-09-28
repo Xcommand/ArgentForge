@@ -1,0 +1,11 @@
+# A brush for the gfx editor. Every line is one of the settings the brush popup
+# shows; a line you leave out is left alone.
+gfx_brush_shape = circle
+gfx_brush_size = 15
+gfx_brush_feather = 4
+gfx_brush_dither =
+gfx_brush_blend = normal
+gfx_brush_jitter_hue = 0
+gfx_brush_jitter_saturation = 0
+gfx_brush_jitter_brightness = 0
+gfx_brush_jitter_per_tip = false

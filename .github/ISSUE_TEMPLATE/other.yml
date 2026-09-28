@@ -4,9 +4,9 @@ body:
   - type: input
     id: version
     attributes:
-      label: SLADE Version
-      description: "If applicable, the version displayed in Help→About. Please add the commit hash if you have compiled SLADE yourself."
-      placeholder: "3.2.5"
+      label: Argent Forge Version
+      description: "If applicable, the version displayed in Help→About. Please add the commit hash if you have compiled Argent Forge yourself."
+      placeholder: "1.0.0"
     validations:
       required: false
   - type: dropdown

@@ -108,13 +108,13 @@ void log::init()
 	// Write logfile header
 	auto t  = std::time(nullptr);
 	auto tm = std::localtime(&t);
-	info("SLADE - It's a Doom Editor");
+	info("Argent Forge - It's more than just a Doom Editor");
 	info(fmt::format("Version {}", app::version().toString()));
 	if (!global::sc_rev.empty())
 		info(fmt::format("Git Revision {}", global::sc_rev));
 	if (app::platform() == app::Platform::Windows)
 		info(fmt::format("{} Windows Build", app::isWin64Build() ? "64bit" : "32bit"));
-	info(fmt::format("Written by Simon Judd, 2008-{:%Y}", *tm));
+	info(fmt::format("Written by Simon Judd edited by Xcommand, 2008-{:%Y}", *tm));
 #ifdef SFML_VERSION_MAJOR
 	info(
 		fmt::format(

@@ -46,3 +46,21 @@
 
 CMakeSettings.json
 CMakeUserPresets.json
+
+# What a Windows build leaves behind: the dependencies vcpkg unpacks, and the logs of one-off
+# configure and install runs. None of it is a source, and the folder alone is gigabytes.
+/vcpkg_installed/
+/*.log
+
+# Upstream's Inno Setup scripts. They take dist\build64\SLADE.exe, which this build never produces
+# (ours is dist\ArgentForge.exe), so they build nothing and only mislead the reader.
+/win_installer/
+
+# CMake build output for the vendored libraries; the sources above it are ours to track, this is not.
+/thirdparty/build/
+
+# The packing helper dist/CMakeLists.txt calls. It lives in a folder the build fills, so it needs naming rather than the wildcard.
+!/dist/7z_command.cmake
+
+# A stray VSCode task file the editor dropped next to the vendored libraries.
+/thirdparty/.vscode/

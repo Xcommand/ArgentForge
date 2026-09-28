@@ -40,6 +40,7 @@
 #include "MainEditor/GfxOffsetsClipboardItem.h"
 #include "MainEditor/MainEditor.h"
 #include "MainEditor/UI/MainWindow.h"
+#include "UI/Controls/BrushPicker.h"
 #include "UI/Controls/PaletteChooser.h"
 #include "UI/Controls/SIconButton.h"
 #include "UI/Controls/ZoomControl.h"
@@ -63,6 +64,20 @@ using namespace slade;
 //
 // -----------------------------------------------------------------------------
 EXTERN_CVAR(Bool, gfx_arc)
+EXTERN_CVAR(Int, gfx_brush_opacity)
+EXTERN_CVAR(Bool, gfx_brush_opacity_fixed)
+EXTERN_CVAR(Bool, gfx_brush_grab_opacity)
+EXTERN_CVAR(Bool, gfx_alpha_protect)
+EXTERN_CVAR(Bool, gfx_colourize)
+EXTERN_CVAR(Bool, gfx_brush_pixel_perfect)
+EXTERN_CVAR(String, gfx_brush_shape)
+EXTERN_CVAR(Int, gfx_brush_size)
+EXTERN_CVAR(Int, gfx_brush_feather)
+EXTERN_CVAR(String, gfx_brush_dither)
+EXTERN_CVAR(Int, gfx_brush_jitter_hue)
+EXTERN_CVAR(Int, gfx_brush_jitter_saturation)
+EXTERN_CVAR(Int, gfx_brush_jitter_brightness)
+EXTERN_CVAR(Bool, gfx_brush_jitter_per_tip)
 EXTERN_CVAR(String, last_colour)
 EXTERN_CVAR(String, last_tint_colour)
 EXTERN_CVAR(Int, last_tint_amount)
@@ -132,6 +147,11 @@ GfxEntryPanel::GfxEntryPanel(wxWindow* parent) : EntryPanel(parent, "gfx", true)
 	btn_auto_offset_ = new SIconButton(this, "offset", "Modify Offsets...");
 	sizer_bottom_->Add(btn_auto_offset_, 0, wxALIGN_CENTER_VERTICAL);
 
+	// What the picture is made of. A palette lump can't hold a colour the game
+	// doesn't have, and nothing about the picture says so until a stroke fails
+	label_format_ = new wxStaticText(this, -1, wxEmptyString);
+	sizer_bottom_->Add(label_format_, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, ui::padLarge());
+
 	sizer_bottom_->AddStretchSpacer();
 
 	// Image selection controls
@@ -172,10 +192,6 @@ GfxEntryPanel::GfxEntryPanel(wxWindow* parent) : EntryPanel(parent, "gfx", true)
 	GfxEntryPanel::fillCustomMenu(menu_custom_);
 	custom_menu_name_ = "Graphic";
 
-	// Brushes menu
-	menu_brushes_ = new wxMenu();
-	fillBrushMenu(menu_brushes_);
-
 	// Custom toolbar
 	setupToolbars();
 
@@ -189,8 +205,12 @@ GfxEntryPanel::GfxEntryPanel(wxWindow* parent) : EntryPanel(parent, "gfx", true)
 	Bind(wxEVT_GFXCANVAS_OFFSET_CHANGED, &GfxEntryPanel::onGfxOffsetChanged, this, gfx_canvas_->GetId());
 	Bind(wxEVT_GFXCANVAS_PIXELS_CHANGED, &GfxEntryPanel::onGfxPixelsChanged, this, gfx_canvas_->GetId());
 	Bind(wxEVT_GFXCANVAS_COLOUR_PICKED, &GfxEntryPanel::onColourPicked, this, gfx_canvas_->GetId());
+	Bind(wxEVT_GFXCANVAS_BRUSH_CHANGED, &GfxEntryPanel::onCanvasBrushChanged, this, gfx_canvas_->GetId());
+	Bind(wxEVT_GFXCANVAS_TOOL_REQUEST, &GfxEntryPanel::onToolKeyRequest, this, gfx_canvas_->GetId());
 	spin_curimg_->Bind(wxEVT_SPINCTRL, &GfxEntryPanel::onCurImgChanged, this);
 	btn_auto_offset_->Bind(wxEVT_BUTTON, &GfxEntryPanel::onBtnAutoOffset, this);
+	slider_brush_opacity_->Bind(wxEVT_SLIDER, &GfxEntryPanel::onBrushOpacityChanged, this);
+	slider_brush_opacity_->Bind(wxEVT_SCROLL_THUMBTRACK, &GfxEntryPanel::onBrushOpacityChanged, this);
 
 	// Apply layout
 	wxWindowBase::Layout();
@@ -218,6 +238,9 @@ bool GfxEntryPanel::loadEntry(ArchiveEntry* entry, int index)
 	// Attempt to load the image
 	if (!misc::loadImageFromEntry(image(), entry, index))
 		return false;
+
+	// The strokes that led to the previous contents are not part of this image
+	gfx_canvas_->clearUndoHistory();
 
 	// Only show next/prev image buttons if the entry contains multiple images
 	if (image()->size() > 1)
@@ -248,10 +271,17 @@ bool GfxEntryPanel::loadEntry(ArchiveEntry* entry, int index)
 // -----------------------------------------------------------------------------
 bool GfxEntryPanel::writeEntry(ArchiveEntry& entry)
 {
-	// Set offsets
 	auto* image = this->image();
-	image->setXOffset(spin_xoffset_->GetValue());
-	image->setYOffset(spin_yoffset_->GetValue());
+
+	// Set offsets. The boxes win, even a number typed into one that never got
+	// confirmed by enter or an arrow click, and since that's an edit like any other
+	// it leaves an undo step behind
+	if (image->offset() != Vec2i{ spin_xoffset_->GetValue(), spin_yoffset_->GetValue() })
+	{
+		image->setXOffset(spin_xoffset_->GetValue());
+		image->setYOffset(spin_yoffset_->GetValue());
+		gfx_canvas_->commitOffsets();
+	}
 
 	// Write new image data if modified
 	bool ok = true;
@@ -336,11 +366,96 @@ void GfxEntryPanel::setupToolbars()
 
 	// Brush options
 	auto* g_brush = new SToolBarGroup(toolbar_, "Brush", true);
+	// The size the brush popover or an ALT drag last set, so the number is visible
+	// without opening anything
+	label_brush_size_ = new wxStaticText(
+		g_brush,
+		wxID_ANY,
+		wxString::Format(wxS("%dpx"), (int)gfx_brush_size));
+	label_brush_size_->SetMinSize({ ui::scalePx(30), -1 });
+	label_brush_size_->SetToolTip(wxS("How many pixels across the brush is"));
+	g_brush->addCustomControl(label_brush_size_);
 	button_brush_ = g_brush->addActionButton("pgfx_setbrush");
 	cb_colour_    = new ColourBox(g_brush, -1, ColRGBA::BLACK, false, true, SToolBar::scaledButtonSize());
 	cb_colour_->setPalette(&gfx_canvas_->palette());
-	cb_colour_->SetToolTip(wxS("Set brush colour"));
+	cb_colour_->SetToolTip(wxS("Pick the colour strokes are painted with. Right click picks from the palette instead"));
 	g_brush->addCustomControl(cb_colour_);
+
+	// Brush opacity. 0% is reachable on purpose: with 'Fixed' it puts a pixel at
+	// fully transparent, which is the other way to erase one
+	slider_brush_opacity_ = new wxSlider(
+		g_brush,
+		wxID_ANY,
+		gfx_brush_opacity,
+		0,
+		100,
+		wxDefaultPosition,
+		{ ui::scalePx(90), -1 },
+		wxSL_HORIZONTAL);
+	slider_brush_opacity_->SetToolTip(wxS("How much a stroke changes the pixels, painting or erasing"));
+	g_brush->addCustomControl(slider_brush_opacity_);
+
+	label_brush_opacity_ = new wxStaticText(
+		g_brush,
+		wxID_ANY,
+		wxString::Format(wxS("%d%%"), (int)gfx_brush_opacity));
+	label_brush_opacity_->SetMinSize({ ui::scalePx(34), -1 });
+	label_brush_opacity_->SetToolTip(wxS("How much a stroke changes the pixels, painting or erasing"));
+	g_brush->addCustomControl(label_brush_opacity_);
+
+	// The four stroke behaviours as toolbar buttons instead of four rows of text,
+	// since the toolbar was running out of room. Real toolbar buttons, so they
+	// light up exactly like the brush and the eraser do and put their whole
+	// sentence in the status bar while the mouse rests on them
+	auto addBrushToggle = [g_brush](SToolBarButton*& button, string_view id, string_view icon, string_view name,
+	                                string_view help)
+	{
+		button = g_brush->addActionButton(string(id), string(name), string(icon), string(help));
+		button->SetToolTip(wxString::Format(wxS("%s - %s"), wxString(name), wxString(help)));
+	};
+
+	// Locking the opacity is the one thing 'Colourize' has no use for, so it starts
+	// greyed out if that was left on (see applyBrushOpacity)
+	addBrushToggle(
+		btn_brush_fixed_,
+		"brush_fixed",
+		"gfx_fixed",
+		"Fixed",
+		"Put the pixels at exactly the selected opacity, instead of building up or wearing down over several strokes");
+	btn_brush_fixed_->Enable(!gfx_colourize);
+	addBrushToggle(
+		btn_grab_opacity_,
+		"brush_grab_opacity",
+		"gfx_grab_opacity",
+		"Grab opacity",
+		"Picking a pixel's colour also takes its opacity for the brush");
+	addBrushToggle(
+		btn_alpha_protect_,
+		"brush_alpha_protect",
+		"gfx_alpha_protect",
+		"Alpha protect",
+		"Paint only on pixels that are already partly or fully visible, and leave their transparency alone as you do");
+	addBrushToggle(
+		btn_colourize_,
+		"brush_colourize",
+		"gfx_colourize",
+		"Colourize",
+		"Give each pixel the brush's colour at its own brightness, leaving how see-through it was as it is");
+	addBrushToggle(
+		btn_pixel_perfect_,
+		"brush_pixel_perfect",
+		"gfx_pixel_perfect",
+		"Pixel perfect",
+		"Leave out the extra pixel where a stroke turns, so a corner stays one pixel thick instead of getting a "
+		"second one beside it");
+
+	// Start them showing whatever was left on last time
+	btn_brush_fixed_->setChecked(gfx_brush_opacity_fixed);
+	btn_grab_opacity_->setChecked(gfx_brush_grab_opacity);
+	btn_alpha_protect_->setChecked(gfx_alpha_protect);
+	btn_colourize_->setChecked(gfx_colourize);
+	btn_pixel_perfect_->setChecked(gfx_brush_pixel_perfect);
+
 	g_brush->addActionButton("pgfx_settrans", "");
 	toolbar_->addGroup(g_brush);
 	g_brush->hide();
@@ -388,42 +503,6 @@ void GfxEntryPanel::setupToolbars()
 		"tool_translate", "Translate pixels", "gfx_translate", "Apply a translation to pixels of the image");
 	g_tool->Bind(wxEVT_STOOLBAR_BUTTON_CLICKED, &GfxEntryPanel::onToolSelected, this);
 	toolbar_left_->addGroup(g_tool);
-}
-
-// -----------------------------------------------------------------------------
-// Fills the brush menu with available brushes
-// -----------------------------------------------------------------------------
-void GfxEntryPanel::fillBrushMenu(wxMenu* bm) const
-{
-	SAction::fromId("pgfx_brush_sq_1")->addToMenu(bm);
-	SAction::fromId("pgfx_brush_sq_3")->addToMenu(bm);
-	SAction::fromId("pgfx_brush_sq_5")->addToMenu(bm);
-	SAction::fromId("pgfx_brush_sq_7")->addToMenu(bm);
-	SAction::fromId("pgfx_brush_sq_9")->addToMenu(bm);
-	SAction::fromId("pgfx_brush_ci_5")->addToMenu(bm);
-	SAction::fromId("pgfx_brush_ci_7")->addToMenu(bm);
-	SAction::fromId("pgfx_brush_ci_9")->addToMenu(bm);
-	SAction::fromId("pgfx_brush_di_3")->addToMenu(bm);
-	SAction::fromId("pgfx_brush_di_5")->addToMenu(bm);
-	SAction::fromId("pgfx_brush_di_7")->addToMenu(bm);
-	SAction::fromId("pgfx_brush_di_9")->addToMenu(bm);
-	wxMenu* pa = new wxMenu;
-	SAction::fromId("pgfx_brush_pa_a")->addToMenu(pa);
-	SAction::fromId("pgfx_brush_pa_b")->addToMenu(pa);
-	SAction::fromId("pgfx_brush_pa_c")->addToMenu(pa);
-	SAction::fromId("pgfx_brush_pa_d")->addToMenu(pa);
-	SAction::fromId("pgfx_brush_pa_e")->addToMenu(pa);
-	SAction::fromId("pgfx_brush_pa_f")->addToMenu(pa);
-	SAction::fromId("pgfx_brush_pa_g")->addToMenu(pa);
-	SAction::fromId("pgfx_brush_pa_h")->addToMenu(pa);
-	SAction::fromId("pgfx_brush_pa_i")->addToMenu(pa);
-	SAction::fromId("pgfx_brush_pa_j")->addToMenu(pa);
-	SAction::fromId("pgfx_brush_pa_k")->addToMenu(pa);
-	SAction::fromId("pgfx_brush_pa_l")->addToMenu(pa);
-	SAction::fromId("pgfx_brush_pa_m")->addToMenu(pa);
-	SAction::fromId("pgfx_brush_pa_n")->addToMenu(pa);
-	SAction::fromId("pgfx_brush_pa_o")->addToMenu(pa);
-	bm->AppendSubMenu(pa, wxS("Dither Patterns"));
 }
 
 // -----------------------------------------------------------------------------
@@ -493,43 +572,20 @@ void GfxEntryPanel::refresh(ArchiveEntry* entry)
 	spin_yoffset_->SetValue(image()->offset().y);
 
 	// Get some needed menu ids
-	const int menu_gfxep_pngopt      = SAction::fromId("pgfx_pngopt")->wxId();
-	const int menu_gfxep_alph        = SAction::fromId("pgfx_alph")->wxId();
-	const int menu_gfxep_trns        = SAction::fromId("pgfx_trns")->wxId();
 	const int menu_gfxep_extract     = SAction::fromId("pgfx_extract")->wxId();
 	const int menu_gfxep_translate   = SAction::fromId("pgfx_remap")->wxId();
-	const int menu_archgfx_exportpng = SAction::fromId("arch_gfx_exportpng")->wxId();
 	const int menu_gfxep_offsetpaste = SAction::fromId("pgfx_offsetpaste")->wxId();
 
 	// Set PNG check menus
-	if (entry->type() != nullptr && entry->type()->formatId() == "img_png")
+	const bool is_png = entry->type() != nullptr && entry->type()->formatId() == "img_png";
+	updatePngControls(is_png);
+	if (is_png)
 	{
-		// Check for alph
+		// Whatever the lump on disk has been written with
 		alph_ = gfx::pngGetalPh(entry->data());
-		menu_custom_->Enable(menu_gfxep_alph, true);
-		menu_custom_->Check(menu_gfxep_alph, alph_);
-
-		// Check for trns
+		menu_custom_->Check(SAction::fromId("pgfx_alph")->wxId(), alph_);
 		trns_ = gfx::pngGettRNS(entry->data());
-		menu_custom_->Enable(menu_gfxep_trns, true);
-		menu_custom_->Check(menu_gfxep_trns, trns_);
-
-		// Disable 'Export as PNG' (it already is :P)
-		menu_custom_->Enable(menu_archgfx_exportpng, false);
-
-		// Add 'Optimize PNG' option
-		menu_custom_->Enable(menu_gfxep_pngopt, true);
-		toolbar_->findActionButton("pgfx_pngopt")->Enable(true);
-	}
-	else
-	{
-		menu_custom_->Enable(menu_gfxep_alph, false);
-		menu_custom_->Enable(menu_gfxep_trns, false);
-		menu_custom_->Check(menu_gfxep_alph, false);
-		menu_custom_->Check(menu_gfxep_trns, false);
-		menu_custom_->Enable(menu_gfxep_pngopt, false);
-		menu_custom_->Enable(menu_archgfx_exportpng, true);
-		toolbar_->findActionButton("pgfx_pngopt")->Enable(false);
+		menu_custom_->Check(SAction::fromId("pgfx_trns")->wxId(), trns_);
 	}
 
 	// Set multi-image format stuff thingies
@@ -564,6 +620,39 @@ void GfxEntryPanel::refresh(ArchiveEntry* entry)
 
 	// Refresh the canvas
 	gfx_canvas_->Refresh();
+}
+
+// -----------------------------------------------------------------------------
+// Puts the options that only mean something for a PNG the way [png] wants them.
+// 'Convert to' and undo both come through here, since neither can say ahead of
+// time which format the picture is going to be written as
+// -----------------------------------------------------------------------------
+void GfxEntryPanel::updatePngControls(bool png)
+{
+	menu_custom_->Enable(SAction::fromId("pgfx_alph")->wxId(), png);
+	menu_custom_->Enable(SAction::fromId("pgfx_trns")->wxId(), png);
+	menu_custom_->Enable(SAction::fromId("pgfx_pngopt")->wxId(), png);
+	menu_custom_->Enable(SAction::fromId("arch_gfx_exportpng")->wxId(), !png);
+	toolbar_->findActionButton("pgfx_pngopt")->Enable(png);
+
+	// The same question this answers: what the lump is written as right now
+	updateFormatLabel();
+
+	// The ticks stay where they are even when the picture isn't a PNG: greyed out
+	// already says they apply to nothing right now, and clearing them would lose
+	// the one copy of what the lump had, so undoing back across a 'Convert to'
+	// couldn't put the option back. Any path that makes a PNG from here sets them
+	// from the bytes it just wrote
+}
+
+// -----------------------------------------------------------------------------
+// Whether the picture in the canvas is one a PNG option would apply to. The lump
+// itself doesn't exist yet, so the image is all there is to go by
+// -----------------------------------------------------------------------------
+bool GfxEntryPanel::imageIsPng()
+{
+	auto* format = image()->format();
+	return format && format->id() == "png";
 }
 
 // -----------------------------------------------------------------------------
@@ -613,6 +702,42 @@ void GfxEntryPanel::updateImagePalette() const
 {
 	gfx_canvas_->setPalette(maineditor::currentPalette());
 	gfx_canvas_->updateImageTexture();
+}
+
+// -----------------------------------------------------------------------------
+// Says what the picture in front of us can actually hold. Only a truecolour one
+// takes a colour the game doesn't already have, and finding that out by painting
+// a stroke that goes nowhere costs an hour of thinking the editor is broken
+// -----------------------------------------------------------------------------
+void GfxEntryPanel::updateFormatLabel()
+{
+	if (!label_format_)
+		return;
+
+	string format = "Unknown";
+	if (auto f = image()->format())
+		format = f->name();
+
+	string colours;
+	switch (image()->type())
+	{
+	case SImage::Type::PalMask:
+		colours = "Palette";
+		break;
+	case SImage::Type::RGBA:
+		colours = "Truecolour";
+		break;
+	case SImage::Type::AlphaMap:
+		colours = "Alpha only";
+		break;
+	default:
+		break;
+	}
+
+	label_format_->SetLabel(WX_FMT("{} · {}", format, colours));
+	label_format_->SetToolTip(wxS(
+		"A palette picture can only hold the colours the game's palette has: the brush "
+		"takes whatever is nearest. Use 'Convert to' → PNG to paint with any colour."));
 }
 
 // -----------------------------------------------------------------------------
@@ -710,6 +835,82 @@ void GfxEntryPanel::applyViewType(ArchiveEntry* entry) const
 	gfx_canvas_->Refresh();
 }
 
+// -----------------------------------------------------------------------------
+// Puts the brush the saved settings describe on the canvas, and shows what it is
+// on the toolbar's brush button
+// -----------------------------------------------------------------------------
+void GfxEntryPanel::applyBrush()
+{
+	// A dither pattern is a picture of its own; anything else is made from the
+	// shape, size and feather that were picked
+	SBrush* brush = nullptr;
+	if (!string{ gfx_brush_dither }.empty())
+		brush = SBrush::get(gfx_brush_dither);
+	if (brush == nullptr)
+		brush = SBrush::generated(SBrush::shapeFromName(gfx_brush_shape), gfx_brush_size, gfx_brush_feather);
+
+	gfx_canvas_->setBrush(brush);
+	button_brush_->setIcon(brush->icon());
+	label_brush_size_->SetLabel(wxString::Format(wxS("%dpx"), brush->width()));
+
+	// A brush wider than one pixel covers the diagonal step over anyway, so there
+	// would be nothing for 'Pixel perfect' to do
+	btn_pixel_perfect_->Enable(brush->width() == 1);
+
+	// Update the brush preview to match
+	gfx_canvas_->generateBrushShadow();
+	gfx_canvas_->Refresh();
+}
+
+// -----------------------------------------------------------------------------
+// Opens the brush popup under the brush button. It saves whatever it changes as
+// it goes, and closes itself when the user clicks anywhere else
+// -----------------------------------------------------------------------------
+void GfxEntryPanel::popBrushPicker()
+{
+	// Make it once and keep it, since it's cheaper than building it over again
+	if (!popover_brush_)
+	{
+		// 'Contains controls' because the sliders take the mouse while they're
+		// being dragged, which the plain popup style gets wrong
+		popover_brush_ = new wxPopupTransientWindow(this, wxBORDER_SIMPLE | wxPU_CONTAINS_CONTROLS);
+		picker_brush_  = new BrushPicker(popover_brush_);
+		picker_brush_->brushSettingChanged.connect(&GfxEntryPanel::applyBrush, this);
+
+		auto sizer = new wxBoxSizer(wxVERTICAL);
+		sizer->Add(picker_brush_, 1, wxEXPAND);
+		popover_brush_->SetSizerAndFit(sizer);
+
+		popover_brush_->Bind(
+			wxEVT_CHAR_HOOK,
+			[this](wxKeyEvent& e)
+			{
+				if (e.GetKeyCode() == WXK_ESCAPE)
+					popover_brush_->Dismiss();
+				else
+					e.Skip();
+			});
+	}
+
+	picker_brush_->showSettings();
+
+	// Under the brush button, or above it if it wouldn't all fit below
+	auto pos  = button_brush_->GetScreenPosition();
+	pos.y += button_brush_->GetSize().y;
+	auto size = popover_brush_->GetSize();
+	if (const int index = wxDisplay::GetFromWindow(this); index != wxNOT_FOUND)
+	{
+		const auto work = wxDisplay((unsigned)index).GetClientArea();
+		if (pos.y + size.y > work.GetBottom())
+			pos.y = button_brush_->GetScreenPosition().y - size.y;
+		if (pos.x + size.x > work.GetRight())
+			pos.x = work.GetRight() - size.x;
+	}
+
+	popover_brush_->Move(pos);
+	popover_brush_->Popup(picker_brush_);
+}
+
 // ----------------------------------------------------------------------------
 // Handles the action [id].
 // Returns true if the action was handled, false otherwise
@@ -722,15 +923,8 @@ bool GfxEntryPanel::handleEntryPanelAction(string_view id)
 
 	const auto entry = entry_.lock();
 
-	// For pgfx_brush actions, the string after pgfx is a brush name
-	if (strutil::startsWith(id, "pgfx_brush"))
-	{
-		gfx_canvas_->setBrush(SBrush::get(string{ id }));
-		button_brush_->setIcon(strutil::afterFirst(id, '_'));
-	}
-
 	// Editing - set translation
-	else if (id == "pgfx_settrans")
+	if (id == "pgfx_settrans")
 	{
 		// Create translation editor dialog
 		TranslationEditorDialog ted(
@@ -748,19 +942,18 @@ bool GfxEntryPanel::handleEntryPanelAction(string_view id)
 		}
 	}
 
-	// Editing - set brush
+	// Editing - choose the brush
 	else if (id == "pgfx_setbrush")
-	{
-		auto p = button_brush_->GetScreenPosition() -= GetScreenPosition();
-		p.y += button_brush_->GetMaxHeight();
-		PopupMenu(menu_brushes_, p);
-	}
+		popBrushPicker();
 
 	// Mirror
 	else if (id == "pgfx_mirror")
 	{
 		// Mirror X
 		image()->mirror(false);
+
+		// The change counts as one undoable step
+		gfx_canvas_->commitChange();
 
 		// Update UI
 		gfx_canvas_->updateImageTexture();
@@ -776,6 +969,9 @@ bool GfxEntryPanel::handleEntryPanelAction(string_view id)
 	{
 		// Mirror Y
 		image()->mirror(true);
+
+		// The change counts as one undoable step
+		gfx_canvas_->commitChange();
 
 		// Update UI
 		gfx_canvas_->updateImageTexture();
@@ -803,6 +999,10 @@ bool GfxEntryPanel::handleEntryPanelAction(string_view id)
 		default: break;
 		}
 
+		// Rotating moved the picture around, so undoing it has to take the offsets
+		// back as well
+		gfx_canvas_->commitChange(true);
+
 		// Update UI
 		gfx_canvas_->updateImageTexture();
 		gfx_canvas_->Refresh();
@@ -828,6 +1028,9 @@ bool GfxEntryPanel::handleEntryPanelAction(string_view id)
 			// Apply translation to image
 			image()->applyTranslation(&ted.getTranslation(), pal);
 
+			// The change counts as one undoable step
+			gfx_canvas_->commitChange();
+
 			// Update UI
 			gfx_canvas_->updateImageTexture();
 
@@ -850,6 +1053,9 @@ bool GfxEntryPanel::handleEntryPanelAction(string_view id)
 		{
 			// Colourise image
 			image()->colourise(gcd.colour(), pal);
+
+			// The change counts as one undoable step
+			gfx_canvas_->commitChange();
 
 			// Update UI
 			gfx_canvas_->updateImageTexture();
@@ -875,6 +1081,9 @@ bool GfxEntryPanel::handleEntryPanelAction(string_view id)
 		{
 			// Tint image
 			image()->tint(gtd.colour(), gtd.amount(), pal);
+
+			// The change counts as one undoable step
+			gfx_canvas_->commitChange();
 
 			// Update UI
 			gfx_canvas_->updateImageTexture();
@@ -910,15 +1119,17 @@ bool GfxEntryPanel::handleEntryPanelAction(string_view id)
 						wxYES_NO)
 					== wxYES)
 				{
-					spin_xoffset_->SetValue(image->offset().x - crop.tl.x);
-					spin_yoffset_->SetValue(image->offset().y - crop.tl.y);
 					image->setXOffset(image->offset().x - crop.tl.x);
 					image->setYOffset(image->offset().y - crop.tl.y);
+					syncOffsetBoxes();
 				}
 			}
 
 			// Crop image
 			image->crop(crop.x1(), crop.y1(), crop.x2(), crop.y2());
+
+			// Cropping moved the picture around too, offsets included
+			gfx_canvas_->commitChange(true);
 
 			// Update UI
 			gfx_canvas_->updateImageTexture();
@@ -985,32 +1196,25 @@ bool GfxEntryPanel::handleEntryPanelAction(string_view id)
 			image_data_modified_ = true;
 			setModified();
 
-			// Fix tRNS status if we converted to paletted PNG
-			const int MENU_GFXEP_PNGOPT      = SAction::fromId("pgfx_pngopt")->wxId();
-			const int MENU_GFXEP_ALPH        = SAction::fromId("pgfx_alph")->wxId();
-			const int MENU_GFXEP_TRNS        = SAction::fromId("pgfx_trns")->wxId();
-			const int MENU_ARCHGFX_EXPORTPNG = SAction::fromId("arch_gfx_exportpng")->wxId();
-			if (format->name() == "PNG")
-			{
-				menu_custom_->Enable(MENU_GFXEP_ALPH, true);
-				menu_custom_->Enable(MENU_GFXEP_TRNS, true);
-				menu_custom_->Check(MENU_GFXEP_TRNS, gfx::pngGettRNS(entry_data_));
-				menu_custom_->Enable(MENU_ARCHGFX_EXPORTPNG, false);
-				menu_custom_->Enable(MENU_GFXEP_PNGOPT, true);
-				toolbar_->enableGroup("PNG", true);
-			}
-			else
-			{
-				menu_custom_->Enable(MENU_GFXEP_ALPH, false);
-				menu_custom_->Enable(MENU_GFXEP_TRNS, false);
-				menu_custom_->Enable(MENU_ARCHGFX_EXPORTPNG, true);
-				menu_custom_->Enable(MENU_GFXEP_PNGOPT, false);
-				toolbar_->enableGroup("PNG", false);
-			}
-
 			// Refresh
 			this->image()->open(entry_data_, 0, format->id());
 			gfx_canvas_->Refresh();
+
+			// Whether the picture is a PNG now is what the image knows, and the two
+			// options are whatever the converter just put in the bytes it wrote
+			bool png = imageIsPng();
+			updatePngControls(png);
+			if (png)
+			{
+				menu_custom_->Check(SAction::fromId("pgfx_alph")->wxId(), gfx::pngGetalPh(entry_data_));
+				menu_custom_->Check(SAction::fromId("pgfx_trns")->wxId(), gfx::pngGettRNS(entry_data_));
+			}
+
+			// A convert is one more step to take back, not a reason to forget every
+			// stroke that led to it: the step carries the format along with the pixels.
+			// It counts as one that moved the picture, since reading the new lump back
+			// in can leave the offsets at nothing while the boxes still show the old ones
+			gfx_canvas_->commitChange(true);
 		}
 	}
 
@@ -1025,9 +1229,9 @@ bool GfxEntryPanel::handleEntryPanelAction(string_view id)
 		if (auto item = app::clipboard().firstItem(ClipboardItem::Type::GfxOffsets))
 		{
 			auto offset_item = dynamic_cast<GfxOffsetsClipboardItem*>(item);
-			spin_xoffset_->SetValue(offset_item->offsets().x);
-			spin_yoffset_->SetValue(offset_item->offsets().y);
 			image()->setOffsets(offset_item->offsets());
+			syncOffsetBoxes();
+			gfx_canvas_->commitChange(true);
 			setModified();
 			gfx_canvas_->Refresh();
 		}
@@ -1091,6 +1295,33 @@ void GfxEntryPanel::toolbarButtonClick(const string& action_id)
 		choice_offset_type_->Enable(!btn_tile_->isChecked());
 		applyViewType(entry_.lock().get());
 	}
+
+	// The stroke behaviours, which are just settings with a button each
+	else if (action_id == "brush_fixed")
+	{
+		gfx_brush_opacity_fixed = !gfx_brush_opacity_fixed;
+		applyBrushOpacity();
+	}
+	else if (action_id == "brush_grab_opacity")
+	{
+		gfx_brush_grab_opacity = !gfx_brush_grab_opacity;
+		applyBrushOpacity();
+	}
+	else if (action_id == "brush_alpha_protect")
+	{
+		gfx_alpha_protect = !gfx_alpha_protect;
+		applyBrushOpacity();
+	}
+	else if (action_id == "brush_colourize")
+	{
+		gfx_colourize = !gfx_colourize;
+		applyBrushOpacity();
+	}
+	else if (action_id == "brush_pixel_perfect")
+	{
+		gfx_brush_pixel_perfect = !gfx_brush_pixel_perfect;
+		applyBrushOpacity();
+	}
 }
 
 
@@ -1121,6 +1352,7 @@ void GfxEntryPanel::onXOffsetChanged(wxCommandEvent& e)
 
 	// Update offset & refresh
 	image()->setXOffset(offset);
+	gfx_canvas_->commitOffsets();
 	setModified();
 	gfx_canvas_->Refresh();
 }
@@ -1137,6 +1369,7 @@ void GfxEntryPanel::onYOffsetChanged(wxCommandEvent& e)
 
 	// Update offset & refresh
 	image()->setYOffset(offset);
+	gfx_canvas_->commitOffsets();
 	setModified();
 	gfx_canvas_->Refresh();
 }
@@ -1158,6 +1391,9 @@ void GfxEntryPanel::onGfxOffsetChanged(wxEvent& e)
 	spin_xoffset_->SetValue(image()->offset().x);
 	spin_yoffset_->SetValue(image()->offset().y);
 
+	// One drag is one step to take back, wherever the picture ends up
+	gfx_canvas_->commitChange(true);
+
 	// Set changed
 	setModified();
 }
@@ -1170,6 +1406,50 @@ void GfxEntryPanel::onGfxPixelsChanged(wxEvent& e)
 	// Set changed
 	image_data_modified_ = true;
 	setModified();
+}
+
+// -----------------------------------------------------------------------------
+// Takes back the last change to the image. Returns false if there's nothing of
+// ours to take back, so that the archive's own undo gets a chance
+// -----------------------------------------------------------------------------
+bool GfxEntryPanel::undo()
+{
+	if (!gfx_canvas_->undo())
+		return false;
+
+	// Rotating or cropping changes the offsets too, so the boxes have to follow
+	syncOffsetBoxes();
+
+	// Stepping back over a convert changes what the picture gets written as, which
+	// is what the PNG-only options hang on
+	updatePngControls(imageIsPng());
+	return true;
+}
+
+// -----------------------------------------------------------------------------
+// Re-applies the last change we took back
+// -----------------------------------------------------------------------------
+bool GfxEntryPanel::redo()
+{
+	if (!gfx_canvas_->redo())
+		return false;
+
+	syncOffsetBoxes();
+	updatePngControls(imageIsPng());
+	return true;
+}
+
+// -----------------------------------------------------------------------------
+// Puts the current image offsets into the two offset boxes. Done after undoing,
+// since a step that reshaped the picture moved it as well
+// -----------------------------------------------------------------------------
+void GfxEntryPanel::syncOffsetBoxes()
+{
+	if (!gfx_canvas_)
+		return;
+
+	spin_xoffset_->SetValue(gfx_canvas_->image().offset().x);
+	spin_yoffset_->SetValue(gfx_canvas_->image().offset().y);
 }
 
 // -----------------------------------------------------------------------------
@@ -1204,10 +1484,10 @@ void GfxEntryPanel::onBtnAutoOffset(wxCommandEvent& e)
 			gfx_canvas_->image().height());
 
 		// Change offsets
-		spin_xoffset_->SetValue(offsets.x);
-		spin_yoffset_->SetValue(offsets.y);
 		image()->setXOffset(offsets.x);
 		image()->setYOffset(offsets.y);
+		syncOffsetBoxes();
+		gfx_canvas_->commitChange(true);
 		refreshPanel();
 
 		// Set changed
@@ -1220,7 +1500,19 @@ void GfxEntryPanel::onBtnAutoOffset(wxCommandEvent& e)
 // -----------------------------------------------------------------------------
 void GfxEntryPanel::onColourPicked(wxEvent& e)
 {
-	cb_colour_->setColour(gfx_canvas_->paintColour());
+	auto colour = gfx_canvas_->paintColour();
+
+	// The slider is what decides how opaque a stroke is, so the alpha the pixel
+	// was picked with can't be left on the colour as well: it would keep painting
+	// translucent no matter where the slider is. 'Grab opacity' sends it to the
+	// slider instead of just dropping it
+	if (gfx_brush_grab_opacity)
+		slider_brush_opacity_->SetValue((colour.a * 100 + 127) / 255);
+
+	colour.a   = 255;
+	cb_colour_->setColour(colour);
+	gfx_canvas_->setPaintColour(colour);
+	applyBrushOpacity();
 }
 
 // -----------------------------------------------------------------------------
@@ -1228,8 +1520,15 @@ void GfxEntryPanel::onColourPicked(wxEvent& e)
 // -----------------------------------------------------------------------------
 void GfxEntryPanel::onToolSelected(wxCommandEvent& e)
 {
-	const auto id = e.GetString();
+	selectTool(e.GetString());
+}
 
+// -----------------------------------------------------------------------------
+// Puts the picture into the tool named [id], from the toolbar or from a key: the
+// check mark and the brush controls have to move either way
+// -----------------------------------------------------------------------------
+void GfxEntryPanel::selectTool(const wxString& id)
+{
 	toolbar_left_->group("Tool")->setAllButtonsChecked(false);
 
 	// Editing - drag mode
@@ -1250,6 +1549,12 @@ void GfxEntryPanel::onToolSelected(wxCommandEvent& e)
 		toolbar_left_->findActionButton("tool_draw")->setChecked(true);
 		gfx_canvas_->setEditingMode(GfxCanvas::EditMode::Paint);
 		gfx_canvas_->setPaintColour(cb_colour_->colour());
+
+		// Nothing is painted until a brush is set, so put on whatever the settings
+		// say to use - by default a 1px square, like this always started on
+		if (!gfx_canvas_->brush())
+			applyBrush();
+
 		toolbar_->updateLayout();
 	}
 
@@ -1260,6 +1565,11 @@ void GfxEntryPanel::onToolSelected(wxCommandEvent& e)
 		toolbar_->group("Brush")->hide(false);
 		toolbar_left_->findActionButton("tool_erase")->setChecked(true);
 		gfx_canvas_->setEditingMode(GfxCanvas::EditMode::Erase);
+
+		// Same as drawing: a stroke does nothing until a brush is set
+		if (!gfx_canvas_->brush())
+			applyBrush();
+
 		toolbar_->updateLayout();
 	}
 
@@ -1274,6 +1584,162 @@ void GfxEntryPanel::onToolSelected(wxCommandEvent& e)
 	}
 }
 
+// -----------------------------------------------------------------------------
+// Called when a tool key went down over the picture
+// -----------------------------------------------------------------------------
+void GfxEntryPanel::onToolKeyRequest(wxCommandEvent& e)
+{
+	applyToolKey(e.GetString().utf8_string());
+}
+
+// -----------------------------------------------------------------------------
+// True if [bind] is one of the tool keys, and the tool is switched. The keys
+// themselves live in the input settings; the toolbar knows its buttons by id
+// -----------------------------------------------------------------------------
+bool GfxEntryPanel::applyToolKey(string_view bind)
+{
+	if (bind == "gfx_brush")
+		selectTool(wxS("tool_draw"));
+	else if (bind == "gfx_erase")
+		selectTool(wxS("tool_erase"));
+	else
+		return false;
+
+	return true;
+}
+
+// -----------------------------------------------------------------------------
+// Called when one of the brush controls next to the colour box is modified
+// -----------------------------------------------------------------------------
+void GfxEntryPanel::onBrushOpacityChanged(wxCommandEvent& e)
+{
+	applyBrushOpacity();
+}
+
+// -----------------------------------------------------------------------------
+// Saves whatever the brush controls hold, and updates the opacity label and the
+// brush preview to match
+// -----------------------------------------------------------------------------
+void GfxEntryPanel::applyBrushOpacity()
+{
+	gfx_brush_opacity = slider_brush_opacity_->GetValue();
+
+	// The settings say what a button looks like, not the other way round, so
+	// anything that changes one of them lights the right button up
+	btn_brush_fixed_->setChecked(gfx_brush_opacity_fixed);
+	btn_grab_opacity_->setChecked(gfx_brush_grab_opacity);
+	btn_alpha_protect_->setChecked(gfx_alpha_protect);
+	btn_colourize_->setChecked(gfx_colourize);
+	btn_pixel_perfect_->setChecked(gfx_brush_pixel_perfect);
+
+	// 'Fixed' is about how opaque the pixel ends up, which is the one thing
+	// 'Colourize' refuses to change, so there's nothing for it to do
+	btn_brush_fixed_->Enable(!gfx_colourize);
+
+	label_brush_opacity_->SetLabel(wxString::Format(wxS("%d%%"), (int)gfx_brush_opacity));
+
+	// Update the brush preview to match
+	gfx_canvas_->generateBrushShadow();
+	gfx_canvas_->Refresh();
+}
+
+// -----------------------------------------------------------------------------
+// Called when the canvas moves a brush setting itself - a scroll for the opacity,
+// an ALT drag for the size - so the controls beside the colour box catch up
+// -----------------------------------------------------------------------------
+void GfxEntryPanel::onCanvasBrushChanged(wxEvent& e)
+{
+	if (slider_brush_opacity_->GetValue() != (int)gfx_brush_opacity)
+		slider_brush_opacity_->SetValue(gfx_brush_opacity);
+
+	label_brush_opacity_->SetLabel(wxString::Format(wxS("%d%%"), (int)gfx_brush_opacity));
+
+	// Rebuilding the brush is what shows a new size or feather: it makes the one the
+	// settings now describe, puts its picture on the button and its number beside it
+	applyBrush();
+
+	if (picker_brush_)
+		picker_brush_->showSettings();
+}
+
+// -----------------------------------------------------------------------------
+// Says what the canvas would actually do with the next click, and what the
+// toolbar claims it would do. A stroke that erases while the brush looks chosen
+// can only come from the two disagreeing, and this is the one place that sees
+// both at once
+// -----------------------------------------------------------------------------
+void GfxEntryPanel::logPaintState()
+{
+	if (!gfx_canvas_)
+	{
+		log::info(1, "paint: no canvas");
+		return;
+	}
+
+	const char* mode = "none";
+	switch (gfx_canvas_->editingMode())
+	{
+	case GfxCanvas::EditMode::Paint:
+		mode = "paint";
+		break;
+	case GfxCanvas::EditMode::Erase:
+		mode = "erase";
+		break;
+	case GfxCanvas::EditMode::Translate:
+		mode = "translate";
+		break;
+	default:
+		break;
+	}
+
+	auto* brush = gfx_canvas_->brush();
+	auto  col   = gfx_canvas_->paintColour();
+
+	log::info(
+		1,
+		"paint: mode={} brush={} radius={} shape={} size={} colour=#{:02X}{:02X}{:02X} alpha={} | slider={} fixed={} "
+		"grab={} protect={} colourize={} jitter={}+{}+{}% per_tip={}",
+		mode,
+		brush ? brush->name() : string("none"),
+		brush ? brush->radius() : 0,
+		string(gfx_brush_shape),
+		(int)gfx_brush_size,
+		col.r,
+		col.g,
+		col.b,
+		col.a,
+		(int)gfx_brush_opacity,
+		(int)gfx_brush_opacity_fixed,
+		(int)gfx_brush_grab_opacity,
+		(int)gfx_alpha_protect,
+		(int)gfx_colourize,
+		(int)gfx_brush_jitter_hue,
+		(int)gfx_brush_jitter_saturation,
+		(int)gfx_brush_jitter_brightness,
+		(int)gfx_brush_jitter_per_tip);
+
+	// What the buttons claim, so the two halves can be compared by eye
+	auto claimed = [&](const char* id)
+	{
+		auto* button = toolbar_left_->findActionButton(id);
+		return button && button->isChecked();
+	};
+	log::info(
+		1,
+		"paint: buttons drag={} draw={} erase={} translate={} | drawing={}",
+		(int)claimed("tool_drag"),
+		(int)claimed("tool_draw"),
+		(int)claimed("tool_erase"),
+		(int)claimed("tool_translate"),
+		(int)gfx_canvas_->isDrawing());
+
+	// What a repaint has to work on, since that's what decides what one costs
+	if (auto* img = image())
+		log::info(1, "paint: picture {}x{} type={}", img->width(), img->height(), (int)img->type());
+
+	// And where the time went, for when drawing comes out in lumps
+	logPaintTimings();
+}
 
 // -----------------------------------------------------------------------------
 //
@@ -1526,4 +1992,17 @@ CONSOLE_COMMAND(imgconv, 0, true)
 		if (meep->image()->format()->saveImage(*meep->image(), mc))
 			bar->importMemChunk(mc);
 	}
+}
+
+// Prints what the drawing editor is actually set to, as opposed to what its
+// buttons look like. Meant for the moment a brush stops behaving
+CONSOLE_COMMAND(paintstate, 0, true)
+{
+	auto* meep = getCurrentGfxPanel();
+	if (!meep)
+	{
+		log::info(1, "No image selected.");
+		return;
+	}
+	meep->logPaintState();
 }

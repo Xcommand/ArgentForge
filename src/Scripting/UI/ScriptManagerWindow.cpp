@@ -203,7 +203,7 @@ wxImageList* createTreeImageList()
 // -----------------------------------------------------------------------------
 // ScriptManagerWindow class constructor
 // -----------------------------------------------------------------------------
-ScriptManagerWindow::ScriptManagerWindow() : STopWindow("SLADE Script Manager", "scriptmanager")
+ScriptManagerWindow::ScriptManagerWindow() : STopWindow("Argent Forge Script Manager", "scriptmanager")
 {
 	setupLayout();
 

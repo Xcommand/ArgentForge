@@ -933,6 +933,15 @@ bool SImage::cutoffMask(uint8_t threshold)
 }
 
 // -----------------------------------------------------------------------------
+// The byte a brush paints into an alpha map: its shade. The weights add up to
+// 256 so that white comes out at 255, not a shade under it
+// -----------------------------------------------------------------------------
+static uint8_t alphaMapValue(ColRGBA colour)
+{
+	return (uint8_t)((colour.r * 77 + colour.g * 150 + colour.b * 29) >> 8);
+}
+
+// -----------------------------------------------------------------------------
 // Sets the pixel at [x],[y] to [colour].
 // Returns false if the position is out of range, true otherwise
 // -----------------------------------------------------------------------------
@@ -960,8 +969,8 @@ bool SImage::setPixel(int x, int y, ColRGBA colour, Palette* pal)
 	}
 	else if (type_ == Type::AlphaMap)
 	{
-		// Just use colour alpha
-		data_[y * width_ + x] = colour.a;
+		// The map holds a shade rather than a colour
+		data_[y * width_ + x] = alphaMapValue(colour);
 	}
 
 	// Announce
@@ -1463,6 +1472,16 @@ bool SImage::drawPixel(int x, int y, ColRGBA colour, DrawProps& properties, Pale
 	// Get pixel index
 	const unsigned p = y * stride() + x * bpp();
 
+	// An alpha map has nothing to composite against: coverage says how far the
+	// pixel moves towards the brush's shade. Reading it as bytes of colour is what
+	// made a soft edge jump between values instead of fading
+	if (type_ == Type::AlphaMap)
+	{
+		const float target = alphaMapValue(colour);
+		data_[p]           = (uint8_t)(data_[p] + (target - data_[p]) * ((float)colour.a / 255.0f) + 0.5f);
+		return true;
+	}
+
 	// Check for simple case (normal blending, no transparency involved)
 	if (colour.a == 255 && properties.blend == BlendType::Normal)
 	{
@@ -1480,7 +1499,15 @@ bool SImage::drawPixel(int x, int y, ColRGBA colour, DrawProps& properties, Pale
 	// Not-so-simple case, do full processing
 	ColRGBA d_colour;
 	if (type_ == Type::PalMask)
+	{
 		d_colour = pal->colour(data_[p]);
+
+		// The palette says nothing about whether the pixel is actually seen: a Doom
+		// sprite's transparent pixels are still index 255, still a colour, and the
+		// mask is what says they aren't there
+		if (mask_.hasData())
+			d_colour.a = mask_[p];
+	}
 	else
 		d_colour.set(data_[p], data_[p + 1], data_[p + 2], data_[p + 3]);
 	const float alpha = static_cast<float>(colour.a) / 255.0f;
@@ -1528,11 +1555,19 @@ bool SImage::drawPixel(int x, int y, ColRGBA colour, DrawProps& properties, Pale
 	// Normal blending (or unknown blend type)
 	else
 	{
-		const float inv_alpha = 1.0f - alpha;
+		// A pixel that's see-through has that much less say about the colour that
+		// ends up where it is. Weighting it by the brush's coverage alone lets the
+		// colour it's carrying show through into whatever gets painted over it, and
+		// a Doom sprite's transparent pixels carry the palette's transparency entry -
+		// bright cyan - which is why a soft brush leaves cyan halos
+		const float dst_a = (float)d_colour.a / 255.0f;
+		const float below = dst_a * (1.0f - alpha);
+		const float total = math::clamp(dst_a + alpha, 1.0f / 255.0f, 1.0f);
+
 		d_colour.set(
-			d_colour.r * inv_alpha + colour.r * alpha,
-			d_colour.g * inv_alpha + colour.g * alpha,
-			d_colour.b * inv_alpha + colour.b * alpha,
+			(colour.r * alpha + d_colour.r * below) / total,
+			(colour.g * alpha + d_colour.g * below) / total,
+			(colour.b * alpha + d_colour.b * below) / total,
 			math::clamp(d_colour.a + colour.a, 0, 255));
 	}
 

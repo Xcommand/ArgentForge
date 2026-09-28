@@ -99,6 +99,10 @@ public:
 
 	ArchiveEntry* getPaletteEntry(string_view palette, const Archive* priority = nullptr);
 	ArchiveEntry* getPatchEntry(string_view patch, string_view nspace = "patches", const Archive* priority = nullptr);
+	ArchiveEntry* getPatchByPrefix(
+		string_view    prefix,
+		string_view    nspace   = "patches",
+		const Archive* priority = nullptr);
 	ArchiveEntry* getFlatEntry(string_view flat, const Archive* priority = nullptr);
 	ArchiveEntry* getTextureEntry(
 		string_view    texture,

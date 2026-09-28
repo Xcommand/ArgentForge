@@ -40,6 +40,10 @@
 #include "General/ColourConfiguration.h"
 #include "General/UndoRedo.h"
 #include "Graphics/Icons.h"
+#include "MainEditor/MainEditor.h"
+#include "MainEditor/UI/ArchiveManagerPanel.h"
+#include "MainEditor/UI/ArchivePanel.h"
+#include "MainEditor/UI/MainWindow.h"
 #include "UI/SToolBar/SToolBarButton.h"
 #include "UI/WxUtils.h"
 #include <wx/headerctrl.h>
@@ -57,6 +61,7 @@ namespace slade::ui
 wxColour col_text_modified(0, 0, 0, 0);
 wxColour col_text_new(0, 0, 0, 0);
 wxColour col_text_locked(0, 0, 0, 0);
+wxColour col_text_orphaned(0, 0, 0, 0);
 #if wxCHECK_VERSION(3, 1, 6)
 std::unordered_map<string, wxBitmapBundle> icon_cache;
 #else
@@ -437,6 +442,29 @@ void ArchiveViewModel::GetValue(wxVariant& variant, const wxDataViewItem& item, 
 }
 
 // -----------------------------------------------------------------------------
+// True if [entry] is sitting in front of somebody right now: in a tab of its own,
+// or in the entry area of its archive's panel. Only a file that's in neither can
+// hold changes nobody is looking at
+// -----------------------------------------------------------------------------
+bool ArchiveViewModel::entryIsBeingEdited(ArchiveEntry* entry) const
+{
+	auto window = maineditor::window();
+	if (!window)
+		return false;
+
+	auto am = window->archiveManagerPanel();
+	if (am->entryIsOpenInTab(entry))
+		return true;
+
+	auto archive = archive_.lock();
+	if (!archive)
+		return false;
+
+	auto panel = am->tabForArchive(archive.get());
+	return panel && panel->isAreaShowing(entry);
+}
+
+// -----------------------------------------------------------------------------
 // Sets the cell attributes [attr] for [item] in column [col]
 // -----------------------------------------------------------------------------
 bool ArchiveViewModel::GetAttr(const wxDataViewItem& item, unsigned int col, wxDataViewItemAttr& attr) const
@@ -460,35 +488,43 @@ bool ArchiveViewModel::GetAttr(const wxDataViewItem& item, unsigned int col, wxD
 		// Init precalculated status text colours if necessary
 		if (col_text_modified.Alpha() == 0)
 		{
-			const auto     col_modified = ColRGBA(0, 85, 255);
-			const auto     col_new      = ColRGBA(0, 255, 0);
-			const auto     col_locked   = ColRGBA(255, 0, 0);
 			const auto     col_text     = wxSystemSettings::GetColour(wxSYS_COLOUR_LISTBOXTEXT);
 			constexpr auto intensity    = 0.65;
 
-			col_text_modified.Set(
-				static_cast<uint8_t>(col_modified.r * intensity + col_text.Red() * (1.0 - intensity)),
-				static_cast<uint8_t>(col_modified.g * intensity + col_text.Green() * (1.0 - intensity)),
-				static_cast<uint8_t>(col_modified.b * intensity + col_text.Blue() * (1.0 - intensity)),
-				255);
+			// Each status colour is just mixed into whatever the list's text colour
+			// is, so they read the same on any theme
+			auto mix = [intensity, &col_text](ColRGBA c)
+			{
+				return wxColour(
+					static_cast<uint8_t>(c.r * intensity + col_text.Red() * (1.0 - intensity)),
+					static_cast<uint8_t>(c.g * intensity + col_text.Green() * (1.0 - intensity)),
+					static_cast<uint8_t>(c.b * intensity + col_text.Blue() * (1.0 - intensity)));
+			};
 
-			col_text_new.Set(
-				static_cast<uint8_t>(col_new.r * intensity + col_text.Red() * (1.0 - intensity)),
-				static_cast<uint8_t>(col_new.g * intensity + col_text.Green() * (1.0 - intensity)),
-				static_cast<uint8_t>(col_new.b * intensity + col_text.Blue() * (1.0 - intensity)),
-				255);
-
-			col_text_locked.Set(
-				static_cast<uint8_t>(col_locked.r * intensity + col_text.Red() * (1.0 - intensity)),
-				static_cast<uint8_t>(col_locked.g * intensity + col_text.Green() * (1.0 - intensity)),
-				static_cast<uint8_t>(col_locked.b * intensity + col_text.Blue() * (1.0 - intensity)),
-				255);
+			// The four tones of the Argent schemes: filtered argent for 'edited', plasma
+			// green for 'new', hell energy for 'locked', pure argent for the one nobody
+			// is looking at
+			col_text_modified = mix(ColRGBA(96, 168, 224));
+			col_text_new      = mix(ColRGBA(104, 214, 150));
+			col_text_locked   = mix(ColRGBA(224, 96, 74));
+			col_text_orphaned = mix(ColRGBA(240, 186, 62));
 		}
 
 		if (entry->isLocked())
 			attr.SetColour(col_text_locked);
+		else if (entry->state() == ArchiveEntry::State::New)
+			attr.SetColour(col_text_new);
+		// Changes sitting in a file nobody has open. Blue says 'I've been edited';
+		// this one says the work is in there but nothing is showing it, so it can be
+		// saved and won't be forgotten. Gold and slanted, since red already means
+		// 'locked' and bold already means 'bookmarked'
+		else if (entry->state() == ArchiveEntry::State::Modified && !entryIsBeingEdited(entry))
+		{
+			attr.SetColour(col_text_orphaned);
+			attr.SetItalic(true);
+		}
 		else
-			attr.SetColour(entry->state() == ArchiveEntry::State::New ? col_text_new : col_text_modified);
+			attr.SetColour(col_text_modified);
 
 		has_attr = true;
 	}

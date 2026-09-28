@@ -112,7 +112,7 @@ public:
 // -----------------------------------------------------------------------------
 // MainWindow class constructor
 // -----------------------------------------------------------------------------
-MainWindow::MainWindow() : STopWindow("SLADE", "main")
+MainWindow::MainWindow() : STopWindow("Argent Forge", "main")
 {
 	custom_menus_begin_ = 2;
 
@@ -319,10 +319,13 @@ void MainWindow::setupLayout()
 	// Tools menu
 	auto tools_menu = new wxMenu();
 	SAction::fromId("main_runscript")->addToMenu(tools_menu);
+	tools_menu->AppendSeparator();
+	SAction::fromId("main_actorconstructor")->addToMenu(tools_menu);
 	menu->Append(tools_menu, wxS("&Tools"));
 
 	// Help menu
 	auto help_menu = new wxMenu();
+	SAction::fromId("main_userguide")->addToMenu(help_menu);
 	SAction::fromId("main_onlinedocs")->addToMenu(help_menu);
 	SAction::fromId("main_about")->addToMenu(help_menu);
 #ifdef __WXMSW__
@@ -457,7 +460,7 @@ bool MainWindow::exitProgram()
 	// Confirm exit
 	if (!wxGetApp().isSessionEnding() && confirm_exit && !panel_archivemanager_->askedSaveUnchanged())
 	{
-		if (wxMessageBox(wxS("Are you sure you want to exit SLADE?"), wxS("SLADE"), wxICON_QUESTION | wxYES_NO, this)
+		if (wxMessageBox(wxS("Are you sure you want to exit?"), wxS("Argent Forge"), wxICON_QUESTION | wxYES_NO, this)
 			!= wxYES)
 			return false;
 	}
@@ -658,17 +661,34 @@ bool MainWindow::handleAction(string_view id)
 	}
 #endif
 
+	// Tools->Actor Constructor
+	if (id == "main_actorconstructor")
+	{
+		// It works on the text being edited, so the text panel handles it
+		if (!SActionHandler::doAction("ptxt_actorconstructor"))
+			wxMessageBox(wxS("The Actor Constructor edits the DECORATE or ZScript lump currently open in a text panel."),
+			             wxS("Actor Constructor"),
+			             wxICON_INFORMATION,
+			             this);
+
+		return true;
+	}
+
 	// Help->About
 	if (id == "main_about")
 	{
 		wxAboutDialogInfo info;
-		info.SetName(wxS("SLADE"));
+		info.SetName(wxS("Argent Forge"));
 		string version = "v" + app::version().toString();
+		// Say what we're built on, since our own number no longer resembles theirs
+		version += " (based on SLADE " + app::upstreamVersion().toString() + ")";
 		if (!global::sc_rev.empty())
-			version = version + " (Git Rev " + global::sc_rev + ")";
+			version = version + "\nGit Rev " + global::sc_rev;
 		info.SetVersion(wxString::FromUTF8(version));
-		info.SetWebSite(wxS("http://slade.mancubus.net"));
-		info.SetDescription(wxS("It's a Doom Editor"));
+		info.SetWebSite(wxString::FromUTF8(app::repoUrl()));
+		info.SetDescription(wxS(
+			"Original SLADE3 by Simon Judd <sirjuddington@gmail.com>\n"
+			"Argent Forge is our work on top of it: the actor constructor, the image editor, and the rest"));
 		// Set icon
 		auto icon_filename = app::path(app::iconFile(), app::Dir::Temp);
 		app::archiveManager().programResourceArchive()->entry(app::iconFile())->exportFile(icon_filename);
@@ -676,7 +696,8 @@ bool MainWindow::handleAction(string_view id)
 		fileutil::removeFile(icon_filename);
 
 		auto year = wxNow().Right(4);
-		info.SetCopyright(WX_FMT("\xC2\xA9 2008-{} Simon Judd <sirjuddington@gmail.com>", year.utf8_string()));
+		info.SetCopyright(
+			WX_FMT("\xC2\xA9 2008-{} Simon Judd\nArgent Forge \xC2\xA9 2026 Xcommand", year.utf8_string()));
 
 		wxAboutBox(info);
 
@@ -691,6 +712,14 @@ bool MainWindow::handleAction(string_view id)
 #else
 		wxLaunchDefaultBrowser(wxS("http://slade.mancubus.net/wiki"));
 #endif
+		return true;
+	}
+
+	// Help->User Guide
+	if (id == "main_userguide")
+	{
+		// HEAD rather than a branch name, so the link survives them renaming master
+		wxLaunchDefaultBrowser(wxString::FromUTF8(fmt::format("{}/blob/HEAD/docs/user/README.md", app::repoUrl())));
 		return true;
 	}
 

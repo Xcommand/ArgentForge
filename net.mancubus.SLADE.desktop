@@ -1,9 +1,9 @@
 [Desktop Entry]
-Name=SLADE
+Name=Argent Forge
 Exec=slade %F
 Type=Application
 Categories=Development
-Comment=It's a Doom editor
+Comment=Doom editor, a fork of SLADE3
 Icon=net.mancubus.SLADE
 Terminal=false
 MimeType=application/x-doom-wad;

@@ -89,6 +89,7 @@ public:
 	int       index() const { return imgindex_; }
 	int       size() const { return numimages_; }
 	bool      hasPalette() const { return has_palette_; }
+	bool      hasTransMask() const { return mask_.hasData(); }
 	Palette*  palette() { return &palette_; }
 	Vec2i     offset() const { return { offset_x_, offset_y_ }; }
 	unsigned  stride() const;
@@ -96,6 +97,7 @@ public:
 	ColRGBA   pixelAt(unsigned x, unsigned y, Palette* pal = nullptr);
 	uint8_t   pixelIndexAt(unsigned x, unsigned y) const;
 	SIFormat* format() const { return format_; }
+	void      setFormat(SIFormat* format) { format_ = format; }
 	Info      info() const;
 
 	void setXOffset(int offset);

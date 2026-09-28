@@ -1,0 +1,76 @@
+<div class="back">
+  <div id="title">What's Different Here</div>
+  <p>
+    Argent Forge is a fork of SLADE, for modding the games built on the Doom engine and the ports that
+    run them. That covers Doom, Heretic, Hexen, Strife, Chex Quest and even Sonic Robo Blast 2, on
+    ports from Boom and Eternity to ZDoom. Everything the original does it still does. What we put on
+    top mostly reads DECORATE and ZScript, so it leans toward ZDoom and GZDoom, but the rest of the
+    program is the same editor for anything in that family:
+  </p>
+  <h4>Actors</h4>
+  <ul>
+    <li>The <strong>Actor Constructor</strong> is a floating window that edits an actor's flags,
+      properties and states, so most of DECORATE never has to be typed by hand. It applies changes
+      as you make them, and every one of them can be undone.</li>
+    <li>It follows the text cursor: put the cursor anywhere inside an actor and that actor is the one
+      you are editing.</li>
+    <li>A value field says what the engine wants there - INT, FLOAT or a quoted STRING - before you
+      type it.</li>
+    <li>An <strong>Actions</strong> page lists the functions the engine has for states, and writes
+      the call into your actor with its argument names already in it.</li>
+    <li>New actors and new script files can be created from the dialog, and the file is added to the
+      archive's include list for you.</li>
+    <li>A thing number goes where its language reads it: the end of the DECORATE line, or MAPINFO
+      for ZScript.</li>
+    <li>The Properties page has a divider you can drag to give the values room, and it remembers where
+      you left it.</li>
+  </ul>
+  <h4>Code editor</h4>
+  <ul>
+    <li>Hovering a sprite frame in a state line pops up the picture it points at; hold SHIFT to run
+      the whole state block as an animation.</li>
+    <li>A calltip shows a state action's arguments while you type, and resting on a flag or property
+      name says what it does.</li>
+    <li>A script lump with no extension and no type is read as what its text says it is.</li>
+  </ul>
+  <h4>Image editor</h4>
+  <ul>
+    <li><strong>Q</strong> picks up the brush and <strong>W</strong> the eraser - the Keyboard
+      Shortcuts settings page points them at other keys.</li>
+    <li>Hold ALT and drag with the right button to change the brush size and how soft its edge is;
+      ALT with the wheel changes how opaque it paints.</li>
+    <li>A brush picker for shape, size, feather and dither, and brush presets that are plain files
+      you can send to someone.</li>
+    <li>Multiply and Screen blending for shadows and glow, and colour jitter for shading without
+      reaching for the colour box.</li>
+    <li>SHIFT-click paints a straight line from wherever the last stroke ended, and
+      <strong>Pixel perfect</strong> keeps a one-pixel diagonal one pixel thick.</li>
+    <li>The brush outline keeps following the pointer outside the picture, so a stroke starts where
+      you see it starting.</li>
+    <li>Undo and redo cover the operations that used to go straight to disk, <code>Convert to</code>
+      and the offsets among them.</li>
+    <li>The wheel can zoom around the cursor or around the middle of the picture instead of the corner
+      it hangs from, for textures and sprites separately; pick it in the Image Editor settings.</li>
+    <li><strong>Tile</strong> lays copies all the way around the original instead of only to its right
+      and below, so every edge is on screen at once, and the number of copies each way is a setting.</li>
+    <li>In that view the picture loops under the brush: paint off the right edge and it comes back in on
+      the left. That's how you make a seamless texture without moving pixels into place by hand.</li>
+  </ul>
+  <h4>General</h4>
+  <ul>
+    <li>A file carrying changes with no open tab is marked gold and italic in the entry tree, so
+      nothing quietly stays unsaved.</li>
+    <li>The settings this build adds have their own branch of the preferences tree instead of being
+      mixed in with SLADE's.</li>
+    <li>Two colour schemes of our own, <strong>Argent (Light)</strong> and
+      <strong>Argent (Dark)</strong>, sit beside SLADE's in the text editor's Colour Scheme menu. They
+      are built on the four tones the art uses, and the start page goes dark or light with whichever
+      one you pick.</li>
+    <li>This page and the archive tree are drawn in those tones too, so the tree's marks keep meaning
+      what they always did: blue for edited, green for new, red for locked, gold for changed and left
+      closed.</li>
+    <li>The version is our own line now rather than upstream's: this is 1.0.0, built on SLADE 3.2.12,
+      which About says in those words. The flame over the hex is the program's mark on this page and in
+      its icon.</li>
+  </ul>
+</div>

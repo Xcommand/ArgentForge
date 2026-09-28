@@ -1,0 +1,130 @@
+Actor FS_SpawnerSet : RandomSpawner replaces "BaseSpawner"
+{
+	DropItem "FrostGrunt", 255, 1		//WAVE IV
+	DropItem "FrostRunner", 255, 1		//WAVE IV
+	DropItem "FrostSergeant", 255, 1	//WAVE IV
+}
+
+/*Actor FS_SpawnerSet : RandomSpawner replaces "BaseSpawner"
+{
+	DropItem "FrostHeavy", 255, 2		//WAVE V
+	DropItem "FrostSniper", 255, 1	//WAVE V
+}*/
+
+Actor FS_FlatSpawner : RandomSpawner
+{
+	DropItem "FrostGrunt", 255, 100
+	DropItem "FrostRunner", 255, 100
+}
+
+Actor FrostZombieAxe_Arena : FrostZombieAxe
+{
+	SpawnID 1901
+	States
+	{
+Spawn:
+		FSZA A 6 A_Look
+		Loop
+	}
+}
+
+Actor FrostZombieWrench_Arena : FrostZombieWrench 10417
+{
+	SpawnID 1905
+	States
+	{
+Spawn:
+		FSZW A 6 A_Look
+		Loop
+	}
+}
+
+Actor FrostZombieGrenade_Arena : FrostZombieGrenade
+{
+	SpawnID 1907
+	DropItem ""
+
+	SpawnID 1907
+	States
+	{
+Spawn:
+		FSZG A 6 A_Look
+		Loop
+	}
+}
+
+Actor Frost_Elita : Frost_MonsterBase2
+{
+	SpawnID 1908
+	obituary "%o was killed by a frost gunner's plasma rifle."
+	health 250
+	Scale 1.15
+	Radius 20
+	Height 56
+	Mass 150
+	PainChance 20
+	Translation "112:127=%[0.00,0.00,0.00]:[0.00,1.01,1.51]", "152:159=%[0.00,0.00,0.00]:[0.00,1.01,1.51]", "9:12=%[0.00,0.00,0.00]:[0.00,1.01,1.51]"
+	Speed 12
+	Tag "Frost Gunner Elita"
+	seesound "FSZ/sight"
+	painsound "FSZ/pain"
+	deathsound "FSZ/death"
+	activesound "FSZ/active"
+	Species "Frostline"
+	+MISSILEEVENMORE
+	dropitem ""
+	States
+	{
+Spawn:
+		FSOW A 6 A_Look
+		loop
+See:
+		FSOW AABB 3 A_Chase
+		TNT1 A 0 A_PlaySound("Normal/Footstep")
+		FSOW CCDD 3 A_Chase
+		TNT1 A 0 A_PlaySound("Normal/Footstep")
+		Loop
+Melee:
+Missile:
+		FSOW E 4 A_FaceTarget
+		FSOW F 3 light("cyan") A_CustomMissile("FrostPlasmaBall",36,7,random(-2,2),0)
+		FSOW E 2 A_FaceTarget
+		TNT1 A 0 A_Jump(150,"Done")
+		FSOW E 2 A_FaceTarget
+		FSOW F 3 light("cyan") A_CustomMissile("FrostPlasmaBall",36,7,random(-2,2),0)
+		FSOW E 2 A_FaceTarget
+		FSOW F 3 light("cyan") A_CustomMissile("FrostPlasmaBall",36,7,random(-2,2),0)
+		TNT1 A 0 A_Jump(200,"Done")
+Done:
+		FSOW E 6
+		Goto See
+Pain:
+		FSOW G 3
+		FSOW G 3 A_Pain
+		Goto See
+Death:
+		FSOW H 5
+		FSOW I 5 A_Scream
+		FSOW J 5 A_NoBlocking
+		FSOW K 5
+		FSOW L 5
+		FSOW M 5
+		FSOW N -1
+		stop
+XDeath:
+		FSOW O 4
+		{
+		A_PlaySound("Body/Explosion");
+		A_SpawnItem("FrostBloodSpray");
+		A_SpawnItem("FrostBloodBang2",0,0,0,0);
+		}
+		FSOW P 4 A_XScream
+		FSOW Q 4 A_NoBlocking
+		FSOW RSTUV 4
+		FSOW W -1
+		stop
+Raise:
+		FSOW MLKJIH 5
+		Goto See
+	}
+}

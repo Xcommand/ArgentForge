@@ -83,8 +83,12 @@ bool            exiting         = false;
 std::thread::id main_thread_id;
 bool            win_darkmode_enabled = false;
 
-// Version
-Version version_num{ 3, 2, 12, 0 };
+// Our own line, counted from this fork's first release. SLADE's numbers are theirs
+// to use, not ours
+Version version_num{ 1, 0, 0, 0 };
+
+// Which SLADE we were cut from. Only the online update check can say anything about it
+Version upstream_version_num{ 3, 2, 12, 0 };
 
 // Directory paths
 string dir_data;
@@ -466,7 +470,7 @@ bool app::init(const vector<string>& args, double ui_scale)
 	{
 		wxMessageBox(
 			wxS("Unable to find slade.pk3, make sure it exists in the same directory as the "
-				"SLADE executable"),
+				"ArgentForge executable"),
 			wxS("Error"),
 			wxICON_ERROR);
 		return false;
@@ -569,7 +573,7 @@ bool app::init(const vector<string>& args, double ui_scale)
 	ui::hideSplash();
 
 	init_ok = true;
-	log::info("SLADE Initialisation OK");
+	log::info("Argent Forge Initialisation OK");
 
 	// Show Setup Wizard if needed
 	if (!setup_wizard_run)
@@ -747,6 +751,23 @@ void app::exit(bool save_config)
 const app::Version& app::version()
 {
 	return version_num;
+}
+
+// -----------------------------------------------------------------------------
+// The SLADE release this fork is built on, for comparing against what's online
+// -----------------------------------------------------------------------------
+const app::Version& app::upstreamVersion()
+{
+	return upstream_version_num;
+}
+
+// -----------------------------------------------------------------------------
+// Where this fork lives, for anything that sends a person to it
+// -----------------------------------------------------------------------------
+const string& app::repoUrl()
+{
+	static const string url{ "https://github.com/Xcommand/ArgentForge" };
+	return url;
 }
 
 // -----------------------------------------------------------------------------

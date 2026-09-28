@@ -331,7 +331,6 @@ ArchiveManagerPanel::ArchiveManagerPanel(wxWindow* parent, STabCtrl* nb_archives
 	list_recent_->Bind(wxEVT_LIST_ITEM_RIGHT_CLICK, &ArchiveManagerPanel::onListRecentRightClick, this);
 	list_bookmarks_->Bind(wxEVT_LIST_ITEM_ACTIVATED, [&](wxListEvent& e) { goToBookmark(e.GetIndex()); });
 	list_bookmarks_->Bind(wxEVT_LIST_ITEM_RIGHT_CLICK, &ArchiveManagerPanel::onListBookmarksRightClick, this);
-	stc_archives_->Bind(wxEVT_AUINOTEBOOK_PAGE_CHANGING, [&](wxAuiNotebookEvent& e) { e.Skip(); });
 	stc_archives_->Bind(wxEVT_AUINOTEBOOK_PAGE_CHANGED, &ArchiveManagerPanel::onArchiveTabChanged, this);
 	stc_archives_->Bind(wxEVT_AUINOTEBOOK_PAGE_CLOSE, &ArchiveManagerPanel::onArchiveTabClose, this);
 	stc_archives_->Bind(wxEVT_AUINOTEBOOK_PAGE_CLOSED, &ArchiveManagerPanel::onArchiveTabClosed, this);
@@ -994,9 +993,10 @@ void ArchiveManagerPanel::closeTextureTab(int archive_index) const
 }
 
 // -----------------------------------------------------------------------------
-// Redirects to the separated tab with given entry if exists
+// Redirects to the separated tab with given entry if exists. [select] false means
+// just report that it's open, without taking him away from wherever he is
 // -----------------------------------------------------------------------------
-bool ArchiveManagerPanel::redirectToTab(ArchiveEntry* entry) const
+bool ArchiveManagerPanel::redirectToTab(ArchiveEntry* entry, bool select) const
 {
 	for (unsigned a = 0; a < stc_archives_->GetPageCount(); a++)
 	{
@@ -1008,8 +1008,14 @@ bool ArchiveManagerPanel::redirectToTab(ArchiveEntry* entry) const
 		auto ep = dynamic_cast<EntryPanel*>(stc_archives_->GetPage(a));
 		if (ep->entry() == entry)
 		{
-			// Already open, switch to tab
-			stc_archives_->SetSelection(a);
+			// Already open, switch to tab. The focus has to come along with it: the
+			// click that got us here belongs to the tree, which sits on the tab we're
+			// leaving, and while it holds the focus that tab stays where it is
+			if (select)
+			{
+				stc_archives_->SetSelection(a);
+				ep->SetFocus();
+			}
 			return true;
 		}
 	}
@@ -1037,6 +1043,19 @@ bool ArchiveManagerPanel::entryIsOpenInTab(ArchiveEntry* entry) const
 }
 
 // -----------------------------------------------------------------------------
+// Redraws every archive's file list. Which colour a changed file goes depends on
+// whether a tab is showing it, and the tabs have just changed
+// -----------------------------------------------------------------------------
+void ArchiveManagerPanel::refreshEntryTrees() const
+{
+	for (unsigned a = 0; a < stc_archives_->GetPageCount(); a++)
+	{
+		if (isArchiveTab(a))
+			dynamic_cast<ArchivePanel*>(stc_archives_->GetPage(a))->refreshEntryTree();
+	}
+}
+
+// -----------------------------------------------------------------------------
 // Closes the currently selected tab
 // -----------------------------------------------------------------------------
 void ArchiveManagerPanel::closeCurrentTab()
@@ -1045,6 +1064,7 @@ void ArchiveManagerPanel::closeCurrentTab()
 	if (prepareCloseTab(index))
 	{
 		stc_archives_->DeletePage(index);
+		refreshEntryTrees();
 
 		if (pending_closed_archive_)
 		{
@@ -1088,12 +1108,14 @@ bool ArchiveManagerPanel::saveCurrentTab() const
 }
 
 // -----------------------------------------------------------------------------
-// Opens the appropriate EntryPanel for [entry] in a new tab
+// Opens the appropriate EntryPanel for [entry] in a new tab. [select] false parks
+// it at the end of the tab row without going to it, which is what an entry whose
+// changes were left behind wants
 // -----------------------------------------------------------------------------
-void ArchiveManagerPanel::openEntryTab(ArchiveEntry* entry) const
+void ArchiveManagerPanel::openEntryTab(ArchiveEntry* entry, bool select) const
 {
 	// First check if the entry is already open in a tab
-	if (redirectToTab(entry))
+	if (redirectToTab(entry, select))
 		return;
 
 	// If the entry is an archive, open it
@@ -1103,9 +1125,11 @@ void ArchiveManagerPanel::openEntryTab(ArchiveEntry* entry) const
 		return;
 	}
 
-	// Switch to the default entry panel in the archive tab
+	// Switch to the default entry panel in the archive tab, but only when that's
+	// where the entry is being shown from. An entry parked from a panel that has
+	// since moved on to another one has nothing to give up
 	auto panel = tabForArchive(entry->parent());
-	if (!panel->switchToDefaultEntryPanel())
+	if (panel && panel->currentEntry() == entry && !panel->switchToDefaultEntryPanel())
 		return;
 
 	// Create an EntryPanel for the entry
@@ -1122,14 +1146,28 @@ void ArchiveManagerPanel::openEntryTab(ArchiveEntry* entry) const
 		return;
 	}
 
-	// Create new tab for the EntryPanel
-	stc_archives_->AddPage(ep, WX_FMT("{}/{}", entry->parent()->filename(false), entry->name()), true);
+	// Create new tab for the EntryPanel. Only the file's name goes on the tab; the
+	// whole path is more than the tab has room for, so the archive it came from goes
+	// in the tooltip
+	stc_archives_->AddPage(ep, wxString::FromUTF8(entry->name()), select);
+	stc_archives_->SetPageToolTip(
+		stc_archives_->GetPageCount() - 1,
+		WX_FMT("{}", entry->parent()->filename(false)));
 	stc_archives_->SetPageBitmap(
 		stc_archives_->GetPageCount() - 1, icons::getIcon(icons::Entry, entry->type()->icon()));
 	ep->SetName(wxS("entry"));
+	maineditor::window()->Thaw();
+
+	// A tab now stands where the file list used to be the only witness
+	refreshEntryTrees();
+
+	// A tab that isn't being gone to stays out of the menu bar and the picture until
+	// he clicks it, which is what onArchiveTabChanged does from then on
+	if (!select)
+		return;
+
 	ep->Show(true);
 	ep->addCustomMenu(true);
-	maineditor::window()->Thaw();
 
 	// Select the new tab
 	for (size_t a = 0; a < stc_archives_->GetPageCount(); a++)
@@ -2178,12 +2216,35 @@ void ArchiveManagerPanel::onListBookmarksRightClick(wxListEvent& e)
 }
 
 // -----------------------------------------------------------------------------
+// The panel a tab is showing, whether that's a whole archive or one entry on its
+// own. nullptr if there's no such tab, or it holds neither
+// -----------------------------------------------------------------------------
+static EntryPanel* entryPanelAtTab(wxAuiNotebook* tabs, int page)
+{
+	if (page < 0 || page >= (int)tabs->GetPageCount())
+		return nullptr;
+
+	auto window = tabs->GetPage(page);
+	if (auto archive = dynamic_cast<ArchivePanel*>(window))
+		return archive->currentArea();
+
+	return dynamic_cast<EntryPanel*>(window);
+}
+
+// -----------------------------------------------------------------------------
 // Called when the current archive tab has changed
 // -----------------------------------------------------------------------------
 void ArchiveManagerPanel::onArchiveTabChanged(wxAuiNotebookEvent& e)
 {
 	// Page has changed, update custom menus and toolbars
 	int selection = stc_archives_->GetSelection();
+
+	// A panel's own windows belong to its tab, so they go out of view with it and
+	// come back when it does
+	if (auto away = entryPanelAtTab(stc_archives_, e.GetOldSelection()))
+		away->panelHidden();
+	if (auto back = entryPanelAtTab(stc_archives_, selection))
+		back->panelShown();
 
 	// Remove any current custom menus/toolbars
 	theMainWindow->Freeze();
@@ -2237,6 +2298,9 @@ void ArchiveManagerPanel::onArchiveTabClose(wxAuiNotebookEvent& e)
 // -----------------------------------------------------------------------------
 void ArchiveManagerPanel::onArchiveTabClosed(wxAuiNotebookEvent& e)
 {
+	// The file list has to learn that nothing is watching this one any more
+	refreshEntryTrees();
+
 	// Actually close the archive the CLOSE event decided to close
 	if (pending_closed_archive_)
 	{
@@ -2382,28 +2446,13 @@ bool ArchiveManagerPanel::prepareCloseTab(int index)
 	if (isEntryTab(index))
 	{
 		auto ep = dynamic_cast<EntryPanel*>(page);
+
+		// Closing a tab takes whatever is in it to the file and gets out of the way.
+		// No question, and nothing is thrown away: the file goes red in the tree to
+		// say there's work in it that nobody is looking at, until somebody opens it
+		// again. 'Don't save changes when leaving an entry' still means what it says
 		if (ep->isModified() && autosave_entry_changes > 0)
-		{
-			// Ask if needed
-			if (autosave_entry_changes > 1)
-			{
-				int result = wxMessageBox(
-					WX_FMT("Save changes to entry \"{}\"?", ep->entry()->name()),
-					wxS("Unsaved Changes"),
-					wxYES_NO | wxCANCEL | wxICON_QUESTION);
-
-				// Stop if user clicked cancel
-				if (result == wxCANCEL)
-					return false;
-
-				// Don't save if user clicked no
-				if (result == wxNO)
-					return true;
-			}
-
-			// Save entry changes
 			ep->saveEntry();
-		}
 	}
 
 	// Check for texture editor

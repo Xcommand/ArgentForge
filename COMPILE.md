@@ -42,3 +42,26 @@ The above libraries are required for building SLADE on windows. Note that you'll
 ```
 .\vcpkg install <libraries> --triplet x64-windows-static
 ```
+
+### Building here on Windows
+
+This fork has two scripts at the top of the repository, and they are the shortest way through:
+
+```
+configure.bat
+build.bat
+```
+
+`configure.bat` sets up a Ninja build in `out/build/win-x64-release` and `build.bat` runs it; the
+program lands in `dist\` as `ArgentForge.exe` next to its `slade.pk3`. Both take a target:
+`build.bat slade` builds just the program.
+
+They look for Visual Studio and its vcpkg in the usual place. If yours sits elsewhere, set these
+before running them and they will be used instead:
+
+* `VCVARS` - full path to `vcvars64.bat`
+* `VCPKG_TOOLCHAIN` - full path to `vcpkg.cmake`
+* `NINJA`, `CMAKE` - folders or commands for those two
+
+The gates under `scripts/gates/` need the headless parser build first: `scripts\harness\build.bat`,
+which links against the objects `build.bat` already left behind.

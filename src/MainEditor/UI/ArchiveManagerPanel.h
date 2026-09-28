@@ -118,13 +118,13 @@ public:
 	void            openTextureTab(int archive_index, ArchiveEntry* entry = nullptr) const;
 	TextureXEditor* textureTabForArchive(int archive_index) const;
 	void            closeTextureTab(int archive_index) const;
-	void            openEntryTab(ArchiveEntry* entry) const;
+	void            openEntryTab(ArchiveEntry* entry, bool select = true) const;
 	void            closeEntryTab(ArchiveEntry* entry) const;
 	void            closeEntryTabs(Archive* parent) const;
 	void            openFile(const string& filename) const;
 	void            openFiles(const wxArrayString& files) const;
 	void            openDirAsArchive(string_view dir) const;
-	bool            redirectToTab(ArchiveEntry* entry) const;
+	bool            redirectToTab(ArchiveEntry* entry, bool select = true) const;
 	bool            entryIsOpenInTab(ArchiveEntry* entry) const;
 	void            closeCurrentTab();
 	bool            saveCurrentTab() const;
@@ -174,6 +174,9 @@ public:
 	void onArchiveTabClose(wxAuiNotebookEvent& e);
 	void onArchiveTabClosed(wxAuiNotebookEvent& e);
 	void onDirArchiveCheckCompleted(wxThreadEvent& e);
+
+	// Redraws every archive's file list after the tabs have changed
+	void refreshEntryTrees() const;
 
 private:
 	STabCtrl*        stc_tabs_                    = nullptr;

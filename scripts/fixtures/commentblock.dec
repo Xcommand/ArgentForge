@@ -1,0 +1,38 @@
+// The shapes where a line inside a /* */ looks like a statement. GZDoom's lexer
+// throws the comment away before it reads anything, so these flags are disabled
+// code, not something to tick - and the line that closes the comment has to stay
+// in the file when everything around it goes.
+
+ACTOR CommentedFlags 9001 : Thing
+{
+	Default
+	{
+		Health 10;
+/*		+SHOOTABLE;
+		+NOBLOOD; */
+		+FLOAT;
+	}
+}
+
+ACTOR CommentedMiddle 9002 : Thing
+{
+	Default
+	{
+		/* disabled for now:
+		+NOREDRIS;
+		Health 5;
+		*/
+		Speed 5;
+	}
+}
+
+ACTOR CommentedTail 9003 : Thing
+{
+	Default
+	{
+		Radius 4; // not a comment about the radius, just a note
+		+DONTSPLASH; /* this one is, and it closes on
+		the next line */
+		+CANBLAST;
+	}
+}

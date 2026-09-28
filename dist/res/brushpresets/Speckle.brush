@@ -1,0 +1,10 @@
+# A brush for the gfx editor. Every line is one of the settings the brush popup
+# shows; a line you leave out is left alone.
+# One pixel of a dither pattern, so a stroke is a field of dots instead of a blob
+gfx_brush_size = 1
+gfx_brush_dither = pgfx_brush_pa_c
+gfx_brush_blend = normal
+gfx_brush_jitter_hue = 0
+gfx_brush_jitter_saturation = 0
+gfx_brush_jitter_brightness = 30
+gfx_brush_jitter_per_tip = true

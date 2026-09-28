@@ -1,0 +1,105 @@
+class Frost_MonsterBase : Actor abstract
+{
+	Default
+	{
+		Monster;
+		DamageFactor "FrostDamage", 0;
+		+FloorClip;
+
+		+DONTHARMSPECIES;
+		+DONTHARMCLASS;
+	}
+	override Void Tick()
+	{
+		super.Tick();
+		{
+			if(WaveToggle == 1)
+			{
+				if(!FindInventory("WaveHide",FALSE))
+				{
+					if(!self.bCORPSE)
+					{	
+						Spawn("Frost_Step1",Vec3Offset (0,0,32));
+					}
+				}
+			}
+		}
+	}
+	override Void Die(Actor source, Actor inflictor, int dmgflags, Name MeansOfDeath)
+	{
+		super.Die(source, inflictor, dmgflags, MeansOfDeath);
+		{
+			if(WaveToggle == 1)
+			{
+				Spawn("Frost_Step1Fade",Vec3Offset (0,0,32));
+			}
+		}
+	}
+}
+
+class Frost_MonsterBase2 : Frost_MonsterBase abstract
+{
+	Default
+	{
+		Monster;
+		DamageFactor "FrostDamage", 0;
+		+FloorClip;
+
+		+DONTHARMSPECIES;
+		+DONTHARMCLASS;
+	}
+	override Void Tick()
+	{
+		super.Tick();
+		{
+			if(WaveToggle == 2)
+			{
+				if(!FindInventory("WaveHide",FALSE))
+				{
+					if(!self.bCORPSE)
+					{	
+						Spawn("Frost_Step2",Vec3Offset (0,0,WaveTiny));
+					}
+				}
+			}
+		}
+	}
+	override Void Die(Actor source, Actor inflictor, int dmgflags, Name MeansOfDeath)
+	{
+		super.Die(source, inflictor, dmgflags, MeansOfDeath);
+		{
+			if(WaveToggle == 2)
+			{
+				Spawn("Frost_Step2Fade",Vec3Offset (0,0,WaveTiny));
+			}
+		}
+	}
+}
+
+class Frost_MonsterBase3 : Frost_MonsterBase abstract
+{
+	Default
+	{
+		Monster;
+		DamageFactor "FrostDamage", 0;
+		+FloorClip;
+
+		+DONTHARMCLASS;
+	}
+	override Void Tick()
+	{
+		super.Tick();
+		{
+			if(WaveToggle == 3)
+			{
+				if(!FindInventory("WaveHide",FALSE))
+				{
+					if(!self.bCORPSE)
+					{	
+						Spawn("Frost_Step3",Vec3Offset (0,0,48));
+					}
+				}
+			}
+		}
+	}
+}

@@ -5,6 +5,7 @@
 #include "General/UndoRedo.h"
 #include "MainEditor/ExternalEditManager.h"
 #include "UI/Lists/ArchiveEntryTree.h"
+#include "UI/Dialogs/ActorConstructor/ActorConstructor.h"
 #include <wx/splitter.h>
 
 class wxStaticText;
@@ -36,6 +37,21 @@ public:
 	// Archive manipulation actions
 	bool newEntry();
 	bool newDirectory();
+	// Writes a new actor into a file of its own. [into] is an empty file that's
+	// already on screen, which the dialog then offers as the path
+	bool newActorFile(ArchiveEntry* into = nullptr);
+	bool registerActorScript(ArchiveEntry* entry, ActorFormat format, string_view actor);
+
+	// The editor number the archive's MAPINFO gives [class_name], for a ZScript class
+	// that has no number in its own declaration. -1 when nothing registers it. [from]
+	// is the script lump the actor is in, which decides which archive to look in
+	int actorEditorNumber(ArchiveEntry* from, string_view class_name);
+
+	// Writes that number into the archive's MAPINFO, making the lump when the archive
+	// has none. Nought or less takes the actor's line back out. [was_named] is what the
+	// class went by before this edit, whose line moves along with it. False when
+	// nothing changed or the archive won't be written to
+	bool setActorEditorNumber(ArchiveEntry* from, string_view class_name, int number, string_view was_named = "");
 	bool importFiles();
 	bool importDir();
 	bool convertArchiveTo() const;
@@ -90,6 +106,13 @@ public:
 	ArchiveEntry*         currentEntry() const;
 	vector<ArchiveEntry*> currentEntries() const;
 	ArchiveDir*           currentDir() const;
+
+	// True if the entry area is showing [entry] for the one file picked in the tree
+	bool isAreaShowing(ArchiveEntry* entry) const;
+
+	// Redraws the file list, so the colours that depend on which files are being
+	// edited catch up with the tabs
+	void refreshEntryTree() const;
 
 	// UI related
 	bool    openDir(const shared_ptr<ArchiveDir>& dir) const;

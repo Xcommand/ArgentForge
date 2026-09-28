@@ -1,0 +1,31 @@
+// A defaults block written empty stays when a flag comes and goes: it was the file's
+// own shape before the constructor got here, so taking the added line back out has to
+// leave the empty block standing exactly where it was
+
+Actor EmptyDefaults : Actor
+{
+	Default
+	{
+	}
+}
+
+Actor SpaceDefaults : Actor
+{
+	defaults { }
+}
+
+Actor GluedDefaults : Actor
+{
+	defaults{}
+}
+
+Actor NospacedDefaults : Actor
+{
+	defaults
+	{
+	}
+}
+
+Actor BodylessDefaults : Actor
+{
+}

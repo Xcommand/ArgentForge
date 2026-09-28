@@ -1,0 +1,10 @@
+ACTOR TestTab 1234 : Thing
+{
+	+NOGRAVITY
+	Health 500
+    Radius 16
+	// a comment
+	+SHOOTABLE
+	radius 20
+	Speed 30
+}

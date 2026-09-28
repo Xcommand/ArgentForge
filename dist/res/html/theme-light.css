@@ -2,11 +2,11 @@
 /* --------- Start Page ---------- */
 
 #slade {
-	color: hsl(220, 27%, 57%);
+	color: hsl(35, 25%, 45%);
 }
 
 #version {
-	color: hsl(220, 27%, 57%);
+	color: hsl(35, 25%, 45%);
 }
 
 
@@ -18,12 +18,12 @@ td,
 th,
 div,
 a {
-	color: #000000;
+	color: #38322e;
 }
 
 html,
 body {
-	background-color: hsl(220, 100%, 94%);
+	background-color: hsl(35, 40%, 96%);
 }
 
 
@@ -31,12 +31,12 @@ body {
 
 A:link,
 A:visited {
-	color: hsl(220, 100%, 40%);
+	color: hsl(207, 76%, 32%);
 }
 
 A:hover,
 A:active {
-	color: hsl(40, 100%, 55%);
+	color: hsl(35, 85%, 40%);
 }
 
 
@@ -50,15 +50,15 @@ div.news_byline,
 div.news_comments,
 div.news_postbody,
 #side {
-	background-color: hsl(220, 100%, 99%);
-	border-color: hsl(220, 36%, 76%);
+	background-color: hsl(40, 45%, 98%);
+	border-color: hsl(33, 25%, 78%);
 }
 
 .back,
 #back,
 div.wikifooter,
 #side {
-	box-shadow: 0px 0px 20px hsl(220, 35%, 71%);
+	box-shadow: 0px 0px 20px hsl(33, 25%, 78%);
 }
 
 
@@ -67,9 +67,9 @@ div.wikifooter,
 #title,
 div.news_title,
 #date {
-	background-color: hsl(220, 27%, 57%);
-	color: hsl(220, 100%, 97%);
-	border-color: hsl(220, 24%, 51%);
+	background-color: hsl(12, 55%, 34%);
+	color: hsl(40, 60%, 96%);
+	border-color: hsl(12, 40%, 28%);
 }
 
 /* News page box content */
@@ -105,7 +105,7 @@ span.news_time {
 	position: relative;
 	top: -30px;
 	right: -16px;
-	color: hsl(220, 100%, 97%);
+	color: hsl(40, 60%, 96%);
 }
 */
 
@@ -116,8 +116,8 @@ span.news_time {
 #code,
 div.code,
 div.newspost blockquote {
-	background: none repeat scroll 0 0 hsl(220, 93%, 97%);
-	border: 1px solid hsl(220, 12%, 78%);
+	background: none repeat scroll 0 0 hsl(38, 45%, 95%);
+	border: 1px solid hsl(33, 20%, 80%);
 }
 
 
@@ -132,52 +132,52 @@ a.menur-hover,
 a.menu-current,
 a.menul-current,
 a.menur-current {
-	background-color: hsl(220, 27%, 57%);
-	border-color: hsl(220, 20%, 42%);
-	color: hsl(220, 100%, 97%);
+	background-color: hsl(12, 55%, 34%);
+	border-color: hsl(12, 40%, 28%);
+	color: hsl(40, 60%, 96%);
 }
 
 a.menul-hover,
 a.menur-hover,
 a.menu-hover2 {
-	background-color: hsl(220, 27%, 57%);
+	background-color: hsl(12, 55%, 34%);
 	color: #ffffff;
-	border-color: hsl(40, 100%, 63%);
-	text-shadow: hsl(220, 100%, 83%) 0px 0px 6px;
+	border-color: hsl(35, 85%, 45%);
+	text-shadow: hsl(38, 60%, 80%) 0px 0px 6px;
 }
 
 a.menur-current,
 a.menul-current,
 a.menu-current {
-	background: linear-gradient(to bottom, hsl(220, 27%, 57%), hsl(220, 19%, 46%));
+	background: linear-gradient(to bottom, hsl(12, 55%, 34%), hsl(12, 55%, 28%));
 }
 
 
 /* --------- Page Header --------- */
 
 div.header {
-	background: linear-gradient(to bottom, hsl(220, 31%, 61%), hsl(220, 27%, 57%));
+	background: linear-gradient(to bottom, hsl(12, 58%, 40%), hsl(12, 55%, 34%));
 }
 
 div.headershadow {
-	background: linear-gradient(to bottom, hsl(220, 20%, 42%), hsl(220, 100%, 94%));
+	background: linear-gradient(to bottom, hsl(33, 25%, 60%), hsl(35, 40%, 96%));
 }
 
 table.hidden,
 td.title1,
 td.title2,
 td.title3 {
-	background: linear-gradient(to bottom, hsla(220, 31%, 61%, 1), hsl(220, 27%, 57%));
-	color: hsla(220, 19%, 30%, 1);
+	background: linear-gradient(to bottom, hsla(12, 58%, 40%, 1), hsl(12, 55%, 34%));
+	color: hsla(33, 25%, 25%, 1);
 }
 
 
 /* Page Title */
 
 div#pagetitle {
-	background-color: hsl(220, 27%, 57%);
-	color: hsl(220, 100%, 97%);
-	border-color: hsl(220, 36%, 76%);
+	background-color: hsl(12, 55%, 34%);
+	color: hsl(40, 60%, 96%);
+	border-color: hsl(33, 25%, 78%);
 }
 
 
@@ -185,8 +185,8 @@ div#pagetitle {
 
 table.inner,
 table.wiki {
-	background-color: hsl(220, 100%, 99%);
-	border-color: hsl(220, 12%, 88%);
+	background-color: hsl(40, 45%, 98%);
+	border-color: hsl(33, 25%, 86%);
 }
 
 td.inner,
@@ -195,38 +195,38 @@ th.innertop,
 table.wiki th,
 table.wiki td,
 th.innertopright {
-	background-color: hsl(220, 100%, 99%);
-	border-color: hsl(220, 12%, 88%);
+	background-color: hsl(40, 45%, 98%);
+	border-color: hsl(33, 25%, 86%);
 }
 
 th.inner,
 table.wiki th {
-	background-color: hsl(220, 78%, 96%);
-	color: hsl(220, 27%, 57%);
-	border-color: hsl(220, 35%, 90%);
+	background-color: hsl(38, 45%, 94%);
+	color: hsl(35, 25%, 45%);
+	border-color: hsl(33, 28%, 88%);
 }
 
 th.innertop,
 th.innertopright {
-	background-color: hsl(220, 57%, 91%);
-	color: hsl(220, 24%, 51%);
+	background-color: hsl(36, 40%, 90%);
+	color: hsl(33, 30%, 35%);
 }
 
 table.wiki tr:nth-child(even) td {
-	background-color: hsl(220, 100%, 98%) !important;
+	background-color: hsl(40, 42%, 97%) !important;
 }
 
 
 /* ------------- Wiki ------------- */
 
 div.wiki hr {
-	color: hsl(220, 35%, 90%);
-	border-color: hsl(220, 35%, 90%);
+	color: hsl(33, 28%, 86%);
+	border-color: hsl(33, 28%, 86%);
 }
 
 code {
-	border-color: hsl(220, 35%, 80%);
-	background-color: hsl(220, 88%, 93%);
+	border-color: hsl(33, 25%, 78%);
+	background-color: hsl(38, 50%, 92%);
 }
 
 h1,
@@ -234,23 +234,23 @@ h2,
 h3,
 h4,
 h5 {
-	color: hsl(220, 28%, 43%);
+	color: hsl(33, 35%, 28%);
 }
 
 h2,
 h1 {
-	border-color: hsl(220, 35%, 90%);
+	border-color: hsl(33, 28%, 86%);
 }
 
 pre code {
-	background: none repeat scroll 0 0 hsl(220, 33%, 95%);
-	border: 1px solid hsl(220, 12%, 88%);
+	background: none repeat scroll 0 0 hsl(38, 45%, 95%);
+	border: 1px solid hsl(33, 25%, 86%);
 }
 
 div.wikifooter {
-	background-color: hsl(220, 27%, 57%);
-	color: hsl(220, 36%, 76%);
-	border-color: hsl(220, 24%, 51%);
+	background-color: hsl(12, 55%, 34%);
+	color: hsl(33, 30%, 80%);
+	border-color: hsl(12, 40%, 28%);
 }
 
 div.wikifooter a {
@@ -258,26 +258,26 @@ div.wikifooter a {
 }
 
 div.wikifooter a:hover {
-	color: hsl(40, 100%, 55%);
+	color: hsl(40, 90%, 70%);
 }
 
 div.wiki blockquote {
-	color: hsl(220, 18%, 52%);
-	border-color: hsl(220, 36%, 76%);
+	color: hsl(33, 15%, 45%);
+	border-color: hsl(33, 25%, 78%);
 }
 
 
 /* --------- WebKit Stuff --------- */
 
 ::-webkit-scrollbar-track {
-	background-color: hsl(220, 33%, 95%);
+	background-color: hsl(38, 40%, 94%);
 }
 
 ::-webkit-scrollbar-thumb {
-	background-color: hsl(220, 26%, 72%);
-	border-color: hsl(220, 33%, 95%);
+	background-color: hsl(33, 25%, 66%);
+	border-color: hsl(38, 40%, 94%);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-	background-color: hsl(220, 27%, 57%);
+	background-color: hsl(12, 50%, 38%);
 }

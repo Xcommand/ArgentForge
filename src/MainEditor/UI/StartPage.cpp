@@ -39,7 +39,6 @@
 #include "General/SAction.h"
 #include "Utility/FileUtils.h"
 #include "Utility/Tokenizer.h"
-#include <wx/webrequest.h>
 
 using namespace slade;
 
@@ -59,6 +58,27 @@ CVAR(Bool, web_dark_theme, false, CVar::Flag::Save)
 // -----------------------------------------------------------------------------
 EXTERN_CVAR(String, iconset_general)
 EXTERN_CVAR(String, iconset_entry_list)
+
+
+#ifdef USE_WEBVIEW_STARTPAGE
+// -----------------------------------------------------------------------------
+// StartPageDropTarget Class
+//
+// Opens whatever gets dropped on the start page, the way the rest of the window
+// already does
+// -----------------------------------------------------------------------------
+class StartPageDropTarget : public wxFileDropTarget
+{
+public:
+	bool OnDropFiles(wxCoord x, wxCoord y, const wxArrayString& filenames) override
+	{
+		for (const auto& filename : filenames)
+			app::archiveManager().openArchive(filename.utf8_string());
+
+		return true;
+	}
+};
+#endif
 
 
 // -----------------------------------------------------------------------------
@@ -105,6 +125,21 @@ void SStartPage::init()
 	// Add to sizer
 	GetSizer()->Add(html_startpage_, 1, wxEXPAND);
 
+#ifdef USE_WEBVIEW_STARTPAGE
+	// The page lives in the browser's own process and keeps any file dropped on it,
+	// so this is our window over it. It stays hidden until a drag that began outside
+	// the window comes across the page - a click on a link always starts inside it,
+	// so the page keeps everything it does the rest of the time
+	drop_overlay_ = new wxWindow(this, -1, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+	drop_overlay_->SetDropTarget(new StartPageDropTarget());
+	drop_overlay_->Bind(wxEVT_PAINT, &SStartPage::onDropOverlayPaint, this);
+	drop_overlay_->Hide();
+
+	drop_timer_.SetOwner(this, 1);
+	Bind(wxEVT_TIMER, &SStartPage::onDropOverlayTimer, this, 1);
+	drop_timer_.Start(100);
+#endif
+
 	// Bind events
 #ifdef USE_WEBVIEW_STARTPAGE
 	html_startpage_->Bind(wxEVT_WEBVIEW_NAVIGATING, &SStartPage::onHTMLLinkClicked, this);
@@ -124,25 +159,6 @@ void SStartPage::init()
 		html_startpage_->Bind(wxEVT_WEBVIEW_LOADED, [&](wxWebViewEvent& e) { html_startpage_->Reload(); });
 	}
 #endif
-
-	Bind(
-		wxEVT_WEBREQUEST_STATE,
-		[&](wxWebRequestEvent& e)
-		{
-			switch (e.GetState())
-			{
-			case wxWebRequest::State_Failed:
-			case wxWebRequest::State_Unauthorized:
-				latest_news_ = "<center>Unable to load latest SLADE news</center>";
-				load(false);
-				break;
-			case wxWebRequest::State_Completed:
-				latest_news_ = e.GetResponse().AsString().Trim().utf8_string();
-				load(false);
-				break;
-			default: break;
-			}
-		});
 
 #else
 	html_startpage_->Bind(wxEVT_COMMAND_HTML_LINK_CLICKED, &SStartPage::onHTMLLinkClicked, this);
@@ -183,7 +199,25 @@ void SStartPage::init()
 			while (!tz.atEnd() && !tz.peekToken().empty())
 				tips_.emplace_back(tz.getToken());
 		}
+
+		// What's new. This build's own changes, not whatever SLADE last posted online
+		auto entry_news = res_archive->entryAtPath("html/news.htm");
+		if (entry_news)
+			latest_news_.assign((const char*)entry_news->rawData(), entry_news->size());
 	}
+}
+
+// -----------------------------------------------------------------------------
+// Re-reads the theme stylesheet for the page and reloads it. Called when a colour
+// scheme is switched so the page follows the scheme instead of its own switch
+// -----------------------------------------------------------------------------
+void SStartPage::reloadTheme()
+{
+	auto res_archive = app::archiveManager().programResourceArchive();
+	if (res_archive)
+		entry_css_ = res_archive->entryAtPath(web_dark_theme ? "html/theme-dark.css" : "html/theme-light.css");
+
+	load(false);
 }
 
 
@@ -195,14 +229,6 @@ void SStartPage::init()
 // -----------------------------------------------------------------------------
 void SStartPage::load(bool new_tip)
 {
-	// Get latest news post
-	if (latest_news_.empty())
-	{
-		auto request = wxWebSession::GetDefault().CreateRequest(
-			this, wxS("https://slade.mancubus.net/news-latest.php"));
-		request.Start();
-	}
-
 	// Can't do anything without html entry
 	if (!entry_base_html_)
 	{
@@ -497,6 +523,109 @@ void SStartPage::onHTMLLinkClicked(wxEvent& e)
 		app::archiveManager().openDirArchive(href.utf8_string());
 		ev.Veto();
 	}
+}
+
+// -----------------------------------------------------------------------------
+// Draws the drop zone that covers the page while a file is being dragged over it
+// -----------------------------------------------------------------------------
+void SStartPage::onDropOverlayPaint(wxPaintEvent& e)
+{
+	wxPaintDC dc(drop_overlay_);
+	auto      size = drop_overlay_->GetClientSize();
+
+	// The page's own colours, so it reads as the page lighting up rather than a
+	// different window appearing on top of it
+	wxColour bg, fg, line;
+	if (web_dark_theme)
+	{
+		bg   = wxColour(38, 29, 28);
+		fg   = wxColour(232, 230, 228);
+		line = wxColour(226, 150, 70);
+	}
+	else
+	{
+		bg   = wxColour(250, 240, 220);
+		fg   = wxColour(40, 34, 30);
+		line = wxColour(154, 106, 20);
+	}
+
+	dc.SetBrush(bg);
+	dc.SetPen(*wxTRANSPARENT_PEN);
+	dc.DrawRectangle(size);
+
+	dc.SetBrush(*wxTRANSPARENT_BRUSH);
+	dc.SetPen(wxPen(line, 3));
+	dc.DrawRectangle(8, 8, size.x - 16, size.y - 16);
+
+	dc.SetTextForeground(fg);
+	dc.SetFont(wxFontInfo(18).Bold());
+	const wxString text = wxS("Drop here to open");
+	auto           tw   = dc.GetTextExtent(text);
+	dc.DrawText(text, (size.x - tw.x) / 2, (size.y - tw.y) / 2);
+}
+
+// -----------------------------------------------------------------------------
+// Puts the drop zone over the page while a drag that started outside the window
+// is passing across it
+// -----------------------------------------------------------------------------
+void SStartPage::onDropOverlayTimer(wxTimerEvent& e)
+{
+	// Which tab is up is the notebook's business, not something to read off our own
+	// shown flag - a page of it can be visible without ever being told to show
+	if (auto nb = wxDynamicCast(GetParent(), wxAuiNotebook); !nb || nb->GetCurrentPage() != this)
+	{
+		if (drop_overlay_->IsShown())
+			drop_overlay_->Hide();
+
+		drag_from_outside_ = false;
+		return;
+	}
+
+	// The drag belongs to another process, so ask the physical button directly -
+	// the ordinary mouse state is kept per thread and can read as nothing held
+#ifdef __WXMSW__
+	bool down = (::GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+#else
+	bool down = wxGetMouseState().LeftIsDown();
+#endif
+
+	wxPoint pos = wxGetMousePosition();
+
+	// Whose window the pointer is over right now. The page's own windows belong to
+	// the browser, but they sit inside our frame, so they read as ours just like a
+	// floating panel does - only another program's window reads as outside
+#ifdef __WXMSW__
+	bool ours = false;
+	if (auto tlw = wxGetTopLevelParent(this))
+	{
+		POINT pt{pos.x, pos.y};
+		if (auto under = ::WindowFromPoint(pt))
+			ours = ::GetAncestor(under, GA_ROOT) == (HWND)tlw->GetHandle();
+	}
+#else
+	bool ours = wxGetTopLevelParent(this)->GetRect().Contains(pos);
+#endif
+
+	// Holding the button down over another program's window is what a drag from
+	// outside looks like; a click or a text selection never leaves our own
+	if (!down)
+		drag_from_outside_ = false;
+	else if (!ours)
+		drag_from_outside_ = true;
+
+	ScreenToClient(&pos.x, &pos.y);
+	bool over = html_startpage_->GetRect().Contains(pos);
+
+	bool show = down && drag_from_outside_ && over;
+	if (show == drop_overlay_->IsShown())
+		return;
+
+	if (show)
+	{
+		drop_overlay_->SetSize(html_startpage_->GetRect());
+		drop_overlay_->Raise();
+	}
+	drop_overlay_->Show(show);
 }
 
 #else

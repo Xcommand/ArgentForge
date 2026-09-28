@@ -568,6 +568,20 @@ int StyleSet::defaultFontSize()
 	return style("default")->fontSize();
 }
 
+// -----------------------------------------------------------------------------
+// Returns true if this set is written to be read on a dark background, which
+// decides whether the start page and the help pages go dark along with it
+// -----------------------------------------------------------------------------
+bool StyleSet::isDark()
+{
+	// A set that never said what its background is can't be called dark
+	if (!ts_default_.hasBackground())
+		return false;
+
+	// The same cut the current line fallback uses to tell a dark set from a light one
+	return ts_default_.background().greyscale().r < 100;
+}
+
 
 // -----------------------------------------------------------------------------
 //

@@ -1,15 +1,33 @@
-## Submitting an Issue
+# Reporting something
 
-### Bug Reports
+This is a fork, so the first thing to work out is whose bug it is. If the same thing happens in
+[SLADE itself](https://github.com/sirjuddington/SLADE), it belongs over there - upstream won't see it
+if you file it here, and I can't fix what I haven't inherited. If it only happens in Argent Forge, or
+it's about something this fork added (the actor constructor, the sprite preview on a state line, the
+painting tools, the start page), then it's mine and I want to hear about it.
 
-When submitting a bug report, be sure to include the version of SLADE you are using, your OS and any other details that may be helpful.
+## Bugs
 
-If it is a crash, be sure to include the stack trace that was output when the program crashed, if it showed up. The crash dialog should look something like this:
+Say which version you're on - it's in Help -> About - your OS, and what you did right before it went
+wrong. A mod file that reproduces it is worth more than a paragraph of description, so attach one if
+you can share it.
 
-<p align="center"><img src="http://i.imgur.com/NJvhqxw.png"/></p>
+If it crashed, the dialog that came up has the stack trace in it. Press `Copy Stack Trace` and paste
+that into the report.
 
-To get the stack trace, simply click the 'Copy Stack Trace' button.
+## Ideas for changes
 
-### Feature Requests
+Check the [open issues](https://github.com/Xcommand/ArgentForge/issues) first so we aren't having the
+same conversation twice, then file one. What you'd want it for matters more than what you'd press: a
+report that says "I have to do X every time I add a weapon" is easier to work with than a spec, and
+sometimes there's a better answer than the one suggested.
 
-If you have a feature request, first make sure that it hasn't already been [requested](https://github.com/sirjuddington/SLADE/issues?q=is%3Aopen+is%3Aissue+label%3A%22feature+request%22), and that it is not already a [planned feature](https://github.com/sirjuddington/SLADE/wiki/Planned-Features).
+## Pull requests
+
+The gates this project is checked against are in `scripts/gates/`, and `COMPILE.md` says how to build.
+If a change touches how DECORATE or ZScript is read or written, run the corpus sweep before asking -
+every file it's given has to come back byte-identical when nothing was edited.
+
+I'll take fixes for things this fork does. I'm not going to merge a reimplementation of something
+upstream is already working on, and I'd rather not take wholesale changes that would make a future
+merge from SLADE painful.

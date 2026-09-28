@@ -9,6 +9,17 @@
 *.vcxproj text eol=crlf
 *.vcxproj.filters text eol=crlf
 
+# The gates under scripts/ are run by bash and the build by cmd, and each of them
+# breaks on the other's line ending: a '\r' at the end of a shell line is part of
+# the command, and cmd has been known to mind a bare LF
+*.sh text eol=lf
+*.bat text eol=crlf
+
+# The parser fixtures are compared byte for byte, and some of them exist precisely
+# because they hold CRLF, or both kinds in one file, so no end-of-line translation
+# is allowed to quietly rewrite them
+scripts/fixtures/** -text
+
 ###############################################################################
 # Set default behavior for command prompt diff.
 #

@@ -1,0 +1,29 @@
+actor FrameAbove : Actor
+{
+	States
+	{
+	Spawn:
+		MANA A 8
+		MANA B 8
+		mana c 8
+		Loop
+	Death:
+		"****" A 8
+		POPPA234 A 8
+		MANA A 8
+		# 4
+	Stop
+	Hurt:
+		EBLT IJK 4;
+		TNT1 A 0 A_FaceTarget;
+		TNT1 A 0 A_Look;
+		TNT1 A 0 A_Scream;
+		EBCD ABCD 3;
+		"####" B 3;
+		MANA # 4;
+		EBLT D 4;
+		FRAM AAAAASSSSSSSSSAAAFFFFFFFFFFFFFFFFFFF 1;
+		TNT1 A 0 A_Pain;
+	Loop
+	}
+}

@@ -39,6 +39,7 @@
 #include "Graphics/Icons.h"
 #include "SCallTip.h"
 #include "SLADEWxApp.h"
+#include "SpritePreview.h"
 #include "UI/WxUtils.h"
 #include "Utility/StringUtils.h"
 #include "Utility/Tokenizer.h"
@@ -199,6 +200,7 @@ wxThread::ExitCode JumpToCalculator::Entry()
 TextEditorCtrl::TextEditorCtrl(wxWindow* parent, int id) :
 	wxStyledTextCtrl(parent, id),
 	call_tip_{ new SCallTip(this) },
+	sprite_preview_{ new SpritePreview(this) },
 	lexer_{ std::make_unique<Lexer>() },
 	last_modified_{ app::runTimer() },
 	timer_update_{ this }
@@ -892,7 +894,38 @@ void TextEditorCtrl::showCalltip(int position)
 void TextEditorCtrl::hideCalltip()
 {
 	call_tip_->Hide();
+	sprite_preview_->dismiss();
 	CallTipCancel();
+}
+
+// -----------------------------------------------------------------------------
+// Shows what the sprite named under [pos] looks like. False if there's nothing
+// there that names one, or the archive has no picture for it
+// -----------------------------------------------------------------------------
+bool TextEditorCtrl::openSpritePreview(int pos)
+{
+	// Text with no archive behind it has no sprites to look up either
+	if (!preview_archive_)
+		return false;
+
+	auto line   = LineFromPosition(pos);
+	auto offset = (size_t)(pos - PositionFromLine(line));
+
+	// The buffer as it stands now, not as it was saved: the whole point is being
+	// able to see a frame before the line around it is finished
+	string text = GetText().utf8_string();
+
+	// The rectangle of the name on screen, so the preview knows what to put itself
+	// above. Below the line it would cover the rest of the block being animated
+	auto tl    = GetScreenPosition() + PointFromPosition(pos);
+	auto after = GetScreenPosition() + PointFromPosition(pos + 1);
+	wxRect anchor(tl.x, tl.y, std::max(1, after.x - tl.x), TextHeight(line));
+
+	auto ss_current = StyleSet::currentSet();
+	sprite_preview_->setBackgroundColour(ss_current->style("calltip")->background());
+	sprite_preview_->setTextColour(ss_current->style("calltip")->foreground());
+
+	return sprite_preview_->open(text, line, offset, preview_archive_, anchor);
 }
 
 // -----------------------------------------------------------------------------
@@ -1682,11 +1715,25 @@ void TextEditorCtrl::onCalltipClicked(wxStyledTextEvent& e)
 // -----------------------------------------------------------------------------
 void TextEditorCtrl::onMouseDwellStart(wxStyledTextEvent& e)
 {
-	if (wxGetApp().IsActive() && HasFocus() && !call_tip_->IsShown() && txed_calltips_mouse && e.GetPosition() >= 0)
+	if (!wxGetApp().IsActive() || !HasFocus() || e.GetPosition() < 0)
+		return;
+
+	// A state frame line is the one place in an actor script where the words stand
+	// for a picture, so resting on one shows that instead of saying anything about
+	// the words
+	if (openSpritePreview(e.GetPosition()))
 	{
-		openCalltip(e.GetPosition(), -1, true);
 		ct_dwell_ = true;
+		return;
 	}
+
+	if (call_tip_->IsShown() || !txed_calltips_mouse)
+		return;
+
+	if (!openCalltip(e.GetPosition(), -1, true))
+		openWordDescription(e.GetPosition());
+
+	ct_dwell_ = true;
 }
 
 // -----------------------------------------------------------------------------
@@ -1694,8 +1741,40 @@ void TextEditorCtrl::onMouseDwellStart(wxStyledTextEvent& e)
 // -----------------------------------------------------------------------------
 void TextEditorCtrl::onMouseDwellEnd(wxStyledTextEvent& e)
 {
-	if (call_tip_->IsShown() && ct_dwell_)
-		hideCalltip();
+	if (!ct_dwell_)
+		return;
+
+	// A key going down ends the dwell just as much as moving the mouse does, and
+	// the key that asks for the animation is shift, so a preview with shift held
+	// stays up and comes down on its own when the pointer moves on
+	if (sprite_preview_->IsShown() && wxGetMouseState().ShiftDown())
+		return;
+
+	hideCalltip();
+}
+
+// -----------------------------------------------------------------------------
+// Shows a calltip explaining the word the mouse is resting on, for words that
+// aren't functions. False if nothing is known about the word there
+// -----------------------------------------------------------------------------
+bool TextEditorCtrl::openWordDescription(int pos)
+{
+	if (!word_description_)
+		return false;
+
+	auto start = WordStartPosition(pos, true);
+	auto end   = WordEndPosition(pos, true);
+	if (end <= start)
+		return false;
+
+	auto description = word_description_(GetTextRange(start, end).utf8_string());
+	if (description.empty())
+		return false;
+
+	CallTipSetPosition(0);
+	CallTipShow(start, wxutil::strFromView(description));
+
+	return true;
 }
 
 // -----------------------------------------------------------------------------

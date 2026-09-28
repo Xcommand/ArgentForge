@@ -42,8 +42,15 @@ file(GLOB_RECURSE SLADE_HEADERS CONFIGURE_DEPENDS
 )
 
 # Setup depending on platform
-if (WIN32 AND MSVC)
-	include("win_msvc") # Windows+MSVC
+if (WIN32)
+	if (MSVC)
+		include("${CMAKE_SOURCE_DIR}/cmake/win_msvc.cmake") # Windows+MSVC
+	else ()
+		# Windows with MinGW or Clang: reuse the unix.cmake setup,
+		# which already handles MINGW (wx-config, windres, __WXMSW__)
+		message(STATUS "Non-MSVC compiler detected (${CMAKE_CXX_COMPILER_ID}) on Windows: using MinGW/Unix build setup")
+		include("${CMAKE_SOURCE_DIR}/cmake/unix.cmake")
+	endif ()
 else ()
-	include("unix") # Linux or MacOS
+	include("${CMAKE_SOURCE_DIR}/cmake/unix.cmake") # Linux or MacOS
 endif ()

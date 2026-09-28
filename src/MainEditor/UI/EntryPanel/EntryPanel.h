@@ -29,6 +29,13 @@ public:
 	virtual bool   revertEntry(bool confirm = true);
 	virtual void   refreshPanel();
 	virtual void   closeEntry();
+
+	// Called when the panel goes out of view and comes back. A panel with a window
+	// of its own outside it (the text panel's actor constructor) uses these to take
+	// that window along, instead of leaving it floating over another entry
+	virtual void panelHidden() {}
+	virtual void panelShown() {}
+
 	void           updateStatus();
 	virtual string statusString() { return ""; }
 	void           addCustomMenu(bool add_entry_menu = false) const;

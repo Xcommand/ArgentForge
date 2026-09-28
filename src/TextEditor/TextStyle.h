@@ -89,6 +89,10 @@ public:
 	string  defaultFontFace();
 	int     defaultFontSize();
 
+	// True if the set is meant for a dark background. Used to keep the start page
+	// and the text editor scheme in step
+	bool isDark();
+
 	// Static functions for styleset management
 	static void      initCurrent();
 	static void      saveCurrent();

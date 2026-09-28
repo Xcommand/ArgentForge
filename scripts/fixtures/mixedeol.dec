@@ -1,0 +1,13 @@
+ACTOR MixedEnd : Thing
+{
+	Health 30
+	Speed 8
+	Radius 16 //note
+DamageType "Claw"
+	+NOGRAVITY
+	States
+	{
+	Spawn:
+		TNT1 A 1
+		Loop
+	}}

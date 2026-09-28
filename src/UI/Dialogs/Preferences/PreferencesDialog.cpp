@@ -32,6 +32,7 @@
 #include "Main.h"
 #include "PreferencesDialog.h"
 #include "ACSPrefsPanel.h"
+#include "ActorConstructorPrefsPanel.h"
 #include "AdvancedPrefsPanel.h"
 #include "App.h"
 #include "Archive/ArchiveManager.h"
@@ -41,10 +42,12 @@
 #include "ColourPrefsPanel.h"
 #include "DECOHackPrefsPanel.h"
 #include "EditingPrefsPanel.h"
+#include "ExtraFeaturesPrefsPanel.h"
 #include "General/UI.h"
 #include "GeneralPrefsPanel.h"
 #include "GraphicsPrefsPanel.h"
 #include "HudOffsetsPrefsPanel.h"
+#include "ImageEditorPrefsPanel.h"
 #include "InputPrefsPanel.h"
 #include "InterfacePrefsPanel.h"
 #include "MainEditor/MainEditor.h"
@@ -117,7 +120,7 @@ wxSizer* createTitleSizer(wxWindow* parent, const string& title, const string& d
 // -----------------------------------------------------------------------------
 // PreferencesDialog class constructor
 // -----------------------------------------------------------------------------
-PreferencesDialog::PreferencesDialog(wxWindow* parent) : SDialog(parent, "SLADE Settings", "prefs")
+PreferencesDialog::PreferencesDialog(wxWindow* parent) : SDialog(parent, "Argent Forge Settings", "prefs")
 {
 	// Setup main sizer
 	auto sizer = new wxBoxSizer(wxVERTICAL);
@@ -154,6 +157,13 @@ PreferencesDialog::PreferencesDialog(wxWindow* parent) : SDialog(parent, "SLADE 
 	addPrefsPage<MapDisplayPrefsPanel>("Display", true);
 	addPrefsPage<Map3DPrefsPanel>("3D Mode", true);
 	addPrefsPage<NodesPrefsPanel>("Node Builder", true);
+
+	// The settings this fork adds get a branch of their own, so they're not mixed in
+	// with SLADE's and don't have to be hunted for
+	addPrefsPage<ExtraFeaturesPrefsPanel>("Extra Features");
+	addPrefsPage<ImageEditorPrefsPanel>("Image Editor", true);
+	addPrefsPage<ActorConstructorPrefsPanel>("Actor Constructor", true);
+
 	tree_prefs_->AddPage(setupAdvancedPanel(), wxS("Advanced"));
 
 	// Expand all tree nodes (so it gets sized properly)

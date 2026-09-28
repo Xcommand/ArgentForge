@@ -1,0 +1,25 @@
+// An actor whose states block is written on one line with nothing in it. "Add to
+// states" has to be able to put the first frame in there
+Actor EmptyStates : Actor
+{
+  States {}
+}
+
+Actor SpaceStates : Actor
+{
+  States { }
+}
+
+Actor NewlinedStates : Actor
+{
+  States
+  {
+  }
+}
+
+// The same shape but not empty: the new frame goes in on a line of its own and the
+// '}' moves down, so the line as it was written keeps its bytes
+Actor FullStates : Actor
+{
+  States { TNT1 A 0 A_Look }
+}

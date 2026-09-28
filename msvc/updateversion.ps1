@@ -1,7 +1,7 @@
-# Current version
-$version_major =    "3"
-$version_minor =    "2"
-$version_revision = "12"
+# Current version. Ours, not SLADE's: this fork counts from its own first release
+$version_major =    "1"
+$version_minor =    "0"
+$version_revision = "0"
 $version_beta =     "0"
 
 # Prompt for new version numbers

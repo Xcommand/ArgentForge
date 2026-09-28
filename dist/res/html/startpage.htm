@@ -3,7 +3,7 @@
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-  <title>SLADE - It's a Doom Editor</title>
+  <title>Argent Forge - It's more than just a Doom Editor</title>
   <style type="text/css">
     @import url('base.css');
 
@@ -44,8 +44,10 @@
       font-style: normal;
     }
 
+    /* These few sit outside the theme files, so they have to read on both
+       backgrounds: gold and hell energy work on either */
     #topbar {
-      background-color: rgb(116, 135, 175);
+      background-color: rgb(226, 150, 70);
       width: 100%;
       height: 0.2em;
       position: fixed;
@@ -53,7 +55,7 @@
     }
 
     #update {
-      background-color: rgb(200, 80, 60);
+      background-color: rgb(178, 48, 30);
       color: white;
       width: 100%;
       font-size: 1.2em;
@@ -64,11 +66,11 @@
     }
 
     #update a {
-      color: hsl(40, 100%, 70%);
+      color: hsl(43, 85%, 74%);
     }
 
     #update a:hover {
-      color: hsl(40, 100%, 95%);
+      color: hsl(45, 85%, 90%);
     }
 
     a.link,
@@ -95,6 +97,12 @@
 
     #content img.link {
       margin-right: 0.5em;
+    }
+
+    /* A recent file is a whole path, so it reads better a size down than wrapped.
+       Only the row needs it: links and icons inherit */
+    .recentbox .link {
+      font-size: 0.85em;
     }
     
     #side {
@@ -148,11 +156,11 @@
     }
 
     a.refresh {
-      color: hsl(220, 100%, 97%);
+      color: hsl(40, 40%, 92%);
     }
 
     a.refresh:hover {
-      color: hsl(40, 100%, 55%);
+      color: hsl(43, 85%, 70%);
     }
 
     /*#hideupdate#*/
@@ -165,7 +173,8 @@
 
   <!-- Update -->
   <div id="update">
-    <strong>Update Available</strong>: <a href="action://update">#updateversion#</a>
+    <strong>Upstream released SLADE</strong> <a href="action://update">#updateversion#</a>,
+    <span style="font-size:0.85em;">that build carries none of this fork's changes</span>
     <span style="float: right; padding-right: 1.6em;">
       <a href="action://hide-update">&#10060;</a>
     </span>
@@ -178,7 +187,7 @@
     <center>
       <img src="logo_icon.png" />
       <div id="slade">
-        SLADE
+        Argent Forge
         <span id="version">v#version#</span>
       </div>
     </center>
@@ -209,19 +218,19 @@
     <p>
       <div class="link">
         <img src="wiki.svg" class="link" />
-        <a href="http://slade.mancubus.net" class="link">Home Page</a>
+        <a href="https://github.com/Xcommand/ArgentForge" class="link">GitHub</a>
       </div>
       <div class="link">
         <img src="wiki.svg" class="link" />
-        <a href="http://slade.mancubus.net/index.php?page=wiki" class="link">Documentation</a>
+        <a href="https://github.com/Xcommand/ArgentForge/blob/HEAD/docs/user/README.md" class="link">User Guide</a>
       </div>
       <div class="link">
         <img src="wiki.svg" class="link" />
-        <a href="http://slade.mancubus.net/index.php?page=downloads" class="link">Downloads</a>
+        <a href="https://github.com/Xcommand/ArgentForge/wiki" class="link">Documentation</a>
       </div>
       <div class="link">
         <img src="wiki.svg" class="link" />
-        <a href="https://github.com/sirjuddington/SLADE" class="link">GitHub</a>
+        <a href="http://slade.mancubus.net" class="link">Original SLADE</a>
       </div>
     </p>
 

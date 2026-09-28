@@ -34,6 +34,8 @@
 #include "Main.h"
 #include "ArchivePanel.h"
 #include "App.h"
+#include <wx/datetime.h>
+#include "Archive/ArchiveDir.h"
 #include "Archive/ArchiveManager.h"
 #include "Archive/Formats/ZipArchive.h"
 #include "ArchiveManagerPanel.h"
@@ -47,6 +49,7 @@
 #include "EntryPanel/PaletteEntryPanel.h"
 #include "EntryPanel/TextEntryPanel.h"
 #include "Game/Configuration.h"
+#include "Game/Game.h"
 #include "General/Clipboard.h"
 #include "General/Executables.h"
 #include "General/KeyBind.h"
@@ -64,6 +67,7 @@
 #include "UI/Controls/PaletteChooser.h"
 #include "UI/Controls/SIconButton.h"
 #include "UI/Controls/Splitter.h"
+#include "UI/Dialogs/ActorConstructor/NewActorDialog.h"
 #include "UI/Dialogs/GfxColouriseDialog.h"
 #include "UI/Dialogs/GfxConvDialog.h"
 #include "UI/Dialogs/GfxTintDialog.h"
@@ -562,6 +566,7 @@ wxPanel* ArchivePanel::createEntryListPanel(wxWindow* parent)
 	tbg_create->addActionButton("arch_newentry");
 	if (has_dirs)
 		tbg_create->addActionButton("arch_newdir");
+	tbg_create->addActionButton("arch_actor_new");
 	tbg_create->addActionButton("arch_importfiles");
 	tbg_create->addActionButton("arch_importdir");
 	toolbar_elist_->addGroup(tbg_create);
@@ -684,6 +689,7 @@ void ArchivePanel::addMenus() const
 		menu_archive = new wxMenu();
 		SAction::fromId("arch_newentry")->addToMenu(menu_archive);
 		SAction::fromId("arch_newdir")->addToMenu(menu_archive);
+		SAction::fromId("arch_actor_new")->addToMenu(menu_archive);
 		menu_archive->AppendSeparator();
 		SAction::fromId("arch_importfiles")->addToMenu(menu_archive);
 		SAction::fromId("arch_importdir")->addToMenu(menu_archive);
@@ -896,6 +902,353 @@ bool ArchivePanel::newEntry()
 
 	// Return whether the entry was created ok
 	return !!new_entry;
+}
+
+// -----------------------------------------------------------------------------
+// The folders an archive holds, as paths a new file's path can start from
+// -----------------------------------------------------------------------------
+static void subDirPaths(const ArchiveDir& dir, wxArrayString& list)
+{
+	for (auto& sub : dir.subdirs())
+	{
+		auto path = sub->path(true);
+		while (!path.empty() && path.front() == '/')
+			path.erase(0, 1);
+
+		if (!path.empty())
+			list.Add(wxString::FromUTF8(path));
+
+		subDirPaths(*sub, list);
+	}
+}
+
+// -----------------------------------------------------------------------------
+// The line ending a chunk of text was written with. A new file matches the lump
+// that will include it, so a mod written with CRLF doesn't get one LF file dropped
+// into the middle of it
+// -----------------------------------------------------------------------------
+static string lineEndingOf(string_view text)
+{
+	auto nl = text.find('\n');
+
+	if (nl != string_view::npos && nl > 0 && text[nl - 1] == '\r')
+		return "\r\n";
+
+	return "\n";
+}
+
+// -----------------------------------------------------------------------------
+// The text of an entry, or empty if there isn't one
+// -----------------------------------------------------------------------------
+static string entryText(ArchiveEntry* entry)
+{
+	if (!entry)
+		return "";
+
+	return { (const char*)entry->rawData(), entry->size() };
+}
+
+// -----------------------------------------------------------------------------
+// The lump that pulls a mod's scripts together: ZSCRIPT for ZScript, DECORATE for
+// DECORATE, at the archive's root the way the engine looks for it. Null if the mod
+// doesn't have one yet
+// -----------------------------------------------------------------------------
+static ArchiveEntry* rootScriptLump(Archive* archive, ActorFormat format)
+{
+	return archive->entry(format == ActorFormat::Decorate ? "DECORATE" : "ZSCRIPT", true, archive->rootDir().get());
+}
+
+// -----------------------------------------------------------------------------
+// The lump editor numbers get written into: a MAPINFO or ZMAPINFO the archive
+// already has, preferring one that already holds a DoomEdNums block, so a mod with
+// both keeps its numbers in one place. A UMAPINFO lump is JSON, which the numbers
+// aren't written into, and isn't matched. Null when the archive has neither
+// -----------------------------------------------------------------------------
+static ArchiveEntry* mapInfoLump(Archive* archive)
+{
+	ArchiveEntry* with_block = nullptr;
+	ArchiveEntry* first      = nullptr;
+
+	vector<shared_ptr<ArchiveEntry>> entries;
+	archive->putEntryTreeAsList(entries);
+
+	for (auto& entry : entries)
+	{
+		auto name = strutil::lower(entry->name());
+		auto dot  = name.find('.');
+		if (dot != string::npos)
+			name.resize(dot);
+
+		if (name != "mapinfo" && name != "zmapinfo")
+			continue;
+
+		if (mapInfoHasNumbers(entryText(entry.get())))
+		{
+			with_block = entry.get();
+			break;
+		}
+
+		if (!first)
+			first = entry.get();
+	}
+
+	return with_block ? with_block : first;
+}
+
+// -----------------------------------------------------------------------------
+// The entry type that knows the language: it carries the syntax colours, shows up
+// in the Type column, and survives the archive closing and opening again, which a
+// hint set on the open file doesn't
+// -----------------------------------------------------------------------------
+static EntryType* actorEntryType(ActorFormat format)
+{
+	return EntryType::fromId(format == ActorFormat::ZScript ? "zscript" : "decorate");
+}
+
+// -----------------------------------------------------------------------------
+// Writes a new actor into a file of its own, where the user points. The file gets
+// the definition, the lump that pulls the mod's scripts together gets its
+// '#include', and the constructor opens on the actor to fill in the rest
+// -----------------------------------------------------------------------------
+bool ArchivePanel::newActorFile(ArchiveEntry* into)
+{
+	// Check the archive is still open
+	auto archive = archive_.lock();
+	if (!archive)
+		return false;
+
+	if (archive->isReadOnly())
+	{
+		wxMessageBox(
+			wxS("This archive is read only, so there's nowhere to write a new file."),
+			wxS("New Actor File"),
+			wxICON_INFORMATION,
+			this);
+		return false;
+	}
+
+	NewFileAsk ask;
+	subDirPaths(*archive->rootDir(), ask.dirs);
+
+	// Start the path where the file list is pointed, so a new actor lands with its
+	// neighbours instead of always turning up in the archive's root. An empty file
+	// already on screen is the better offer still: it's the one being looked at
+	if (into)
+		ask.suggest = into->path(true);
+	else if (auto dir = currentDir(); dir && dir != archive->rootDir().get())
+	{
+		auto dp = dir->path(true);
+		while (!dp.empty() && dp.front() == '/')
+			dp.erase(0, 1);
+		if (!dp.empty())
+			ask.suggest = dp + "/";
+	}
+
+	NewActorDialog dlg(this, ask);
+	if (dlg.ShowModal() != wxID_OK)
+		return false;
+
+	auto spec   = dlg.spec();
+	auto format = dlg.format();
+	auto path   = dlg.filePath();
+
+	// The dialog spells the whole path out; this is only here so a path can't be lost
+	if (path.empty())
+		path = string(spec.name) + (format == ActorFormat::ZScript ? ".zs" : ".dec");
+
+	// The file that's already there takes the definition if there's nothing in it,
+	// since that's the empty lump the constructor was opened from. Any more than
+	// that and two files would be asking the compile for one path
+	auto exists = archive->entryAtPath(path);
+	if (exists && exists->size() > 0)
+	{
+		wxMessageBox(
+			WX_FMT("There's already a file at {} in this archive.", path),
+			wxS("New Actor File"),
+			wxICON_INFORMATION,
+			this);
+		return false;
+	}
+
+	undo_manager_->beginRecord("New Actor File");
+
+	// The folder the path asked for, made if the archive doesn't have it yet
+	ArchiveDir* dir = archive->rootDir().get();
+	if (auto slash = path.find_last_of('/'); slash != string::npos && slash > 0)
+	{
+		auto dir_path = path.substr(0, slash);
+		dir           = archive->dirAtPath(dir_path);
+		if (!dir)
+			dir = archive->createDir(dir_path).get();
+	}
+
+	// The definition itself, in the entry the path asked for
+	auto eol  = lineEndingOf(entryText(rootScriptLump(archive.get(), format)));
+	auto text = newActorText(spec, format, eol);
+
+	shared_ptr<ArchiveEntry> entry;
+	if (exists)
+	{
+		// The empty file keeps its place in the list, and the write is a step of its own
+		undo_manager_->recordUndoStep(std::make_unique<EntryDataUS>(exists));
+		exists->importMem(text.data(), text.size());
+		exists->setType(actorEntryType(format));
+		entry = exists->getShared();
+	}
+	else
+	{
+		entry      = std::make_shared<ArchiveEntry>(path.substr(path.find_last_of('/') + 1));
+		entry->importMem(text.data(), text.size());
+		entry->setType(actorEntryType(format));
+
+		if (!archive->addEntry(entry, 0xFFFFFFFF, dir))
+		{
+			undo_manager_->endRecord(false);
+			return false;
+		}
+	}
+
+	registerActorScript(entry.get(), format, spec.name);
+
+	undo_manager_->endRecord(true);
+
+	// Show the file and bring the constructor onto the actor that just appeared,
+	// which is the whole reason any of this happened. Force it, because an empty
+	// file can already be the one on screen
+	focusOnEntry(entry.get());
+	openEntry(entry.get(), true);
+
+	if (auto panel = dynamic_cast<TextEntryPanel*>(maineditor::currentEntryPanel()))
+		panel->showActorConstructor();
+
+	return true;
+}
+
+// -----------------------------------------------------------------------------
+// Puts the '#include' line for [entry] into that lump, making the lump itself if
+// the archive has none. [actor] and today's date ride along behind the line as a
+// comment, which is the one thing a mod with 300 includes can't remember later
+// -----------------------------------------------------------------------------
+bool ArchivePanel::registerActorScript(ArchiveEntry* entry, ActorFormat format, string_view actor)
+{
+	auto archive = entry->parent();
+	if (!archive)
+		return false;
+
+	auto lump = rootScriptLump(archive, format);
+	auto eol  = lineEndingOf(entryText(lump));
+	auto note = string(actor) + " " + wxDateTime::Now().Format(wxS("%Y-%m-%d %H:%M")).ToStdString();
+	auto path = entry->path(true);
+
+	// A mod with no root lump at all: the engine compiles nothing it wasn't asked to,
+	// so the lump gets made with the one line it needs
+	if (!lump)
+	{
+		string text;
+		addScriptInclude(text, path, note, eol);
+
+		auto made = std::make_shared<ArchiveEntry>(format == ActorFormat::Decorate ? "DECORATE" : "ZSCRIPT");
+		made->importMem(text.data(), text.size());
+		made->setType(actorEntryType(format));
+
+		return !!archive->addEntry(made, 0, archive->rootDir().get());
+	}
+
+	auto text = entryText(lump);
+	if (!addScriptInclude(text, path, note, eol))
+		return true; // it's already in there, so there's nothing to say twice
+
+	// One undo step, so the include goes back out with the file it was for
+	undo_manager_->recordUndoStep(std::make_unique<EntryDataUS>(lump));
+
+	lump->importMem(text.data(), text.size());
+	EntryType::detectEntryType(*lump);
+
+	// If the lump is on screen, what's in it is now out of date
+	if (auto panel = maineditor::currentEntryPanel(); panel && panel->entry() == lump)
+		panel->openEntry(lump);
+
+	return true;
+}
+
+// -----------------------------------------------------------------------------
+// The editor number the archive's MAPINFO gives [class_name], or -1 when it has no
+// line for it. Only read out of this archive: what another mod registers isn't
+// this mod's business, and it's this archive's lump the number goes into
+// -----------------------------------------------------------------------------
+int ArchivePanel::actorEditorNumber(ArchiveEntry* from, string_view class_name)
+{
+	auto archive = from ? from->parent() : nullptr;
+	if (!archive)
+		return -1;
+
+	auto lump = mapInfoLump(archive);
+	if (!lump)
+		return -1;
+
+	return mapInfoEditorNumber(entryText(lump), class_name);
+}
+
+// -----------------------------------------------------------------------------
+// Registers [class_name] at editor number [number] in the archive's MAPINFO, or
+// takes its line out again for nought. Everything else in the lump comes back as
+// it was, and the write is one undo step
+// -----------------------------------------------------------------------------
+bool ArchivePanel::setActorEditorNumber(ArchiveEntry* from, string_view class_name, int number, string_view was_named)
+{
+	auto archive = from ? from->parent() : nullptr;
+	if (!archive || archive->isReadOnly())
+		return false;
+
+	auto lump = mapInfoLump(archive);
+
+	// A mod that never needed a MAPINFO gets one at the root, the way the engine
+	// looks for it. It holds nothing but this actor's line. It's the one thing here
+	// that undo can't take away, since the steps on hand only put bytes back
+	if (!lump)
+	{
+		string text;
+		if (!setMapInfoEditorNumber(text, class_name, number, "\n"))
+			return false;
+
+		auto made = std::make_shared<ArchiveEntry>("MAPINFO");
+		made->importMem(text.data(), text.size());
+		made->setType(EntryType::fromId("mapinfo"));
+
+		if (!archive->addEntry(made, 0, archive->rootDir().get()))
+			return false;
+
+		// So the number reads as taken the next time he reaches for it
+		game::updateCustomDefinitions();
+		return true;
+	}
+
+	auto text = entryText(lump);
+	auto eol  = lineEndingOf(text);
+
+	// A class that's been renamed leaves its line behind under the name it went by
+	bool changed = false;
+	if (!was_named.empty() && !strutil::equalCI(was_named, class_name))
+		changed = setMapInfoEditorNumber(text, was_named, 0, eol);
+
+	changed |= setMapInfoEditorNumber(text, class_name, number, eol);
+
+	if (!changed)
+		return false;
+
+	undo_manager_->recordUndoStep(std::make_unique<EntryDataUS>(lump));
+
+	lump->importMem(text.data(), text.size());
+	EntryType::detectEntryType(*lump);
+
+	// If that lump is the one on screen, what's showing is now out of date
+	if (auto panel = maineditor::currentEntryPanel(); panel && panel->entry() == lump)
+		panel->openEntry(lump);
+
+	// So the number reads as taken the next time he reaches for it
+	game::updateCustomDefinitions();
+
+	return true;
 }
 
 // -----------------------------------------------------------------------------
@@ -2343,7 +2696,7 @@ bool ArchivePanel::voxelConvert() const
 	// Show message if errors occurred
 	if (errors)
 		wxMessageBox(
-			wxS("Some entries could not be converted, see console log for details"), wxS("SLADE"), wxICON_INFORMATION);
+			wxS("Some entries could not be converted, see console log for details"), wxS("Argent Forge"), wxICON_INFORMATION);
 
 	return true;
 }
@@ -2357,6 +2710,21 @@ ArchiveEntry* ArchivePanel::currentEntry() const
 		return cur_area_->entry();
 	else
 		return nullptr;
+}
+
+// -----------------------------------------------------------------------------
+// True if the entry area is showing [entry] for the one file picked in the tree.
+// currentEntry() can't say this: it reads the area as soon as a single row is
+// selected, and clicking a row whose file has a tab of its own jumps over to that
+// tab and leaves the area holding onto whatever it was holding
+// -----------------------------------------------------------------------------
+bool ArchivePanel::isAreaShowing(ArchiveEntry* entry) const
+{
+	if (!entry || cur_area_->entry() != entry)
+		return false;
+
+	auto selected = currentEntries();
+	return selected.size() == 1 && selected[0] == entry;
 }
 
 // -----------------------------------------------------------------------------
@@ -2378,6 +2746,15 @@ ArchiveDir* ArchivePanel::currentDir() const
 	// if (entry_list_)
 	//	return entry_list_->currentDir().lock().get();
 	return nullptr;
+}
+
+// -----------------------------------------------------------------------------
+// Redraws the file list
+// -----------------------------------------------------------------------------
+void ArchivePanel::refreshEntryTree() const
+{
+	if (entry_tree_)
+		entry_tree_->Refresh();
 }
 
 // -----------------------------------------------------------------------------
@@ -2602,7 +2979,7 @@ bool ArchivePanel::wavDSndConvert() const
 	// Show message if errors occurred
 	if (errors)
 		wxMessageBox(
-			wxS("Some entries could not be converted, see console log for details"), wxS("SLADE"), wxICON_INFORMATION);
+			wxS("Some entries could not be converted, see console log for details"), wxS("Argent Forge"), wxICON_INFORMATION);
 
 	return true;
 }
@@ -2663,7 +3040,7 @@ bool ArchivePanel::dSndWavConvert() const
 	// Show message if errors occurred
 	if (errors)
 		wxMessageBox(
-			wxS("Some entries could not be converted, see console log for details"), wxS("SLADE"), wxICON_INFORMATION);
+			wxS("Some entries could not be converted, see console log for details"), wxS("Argent Forge"), wxICON_INFORMATION);
 
 	return true;
 }
@@ -2891,6 +3268,11 @@ bool ArchivePanel::openEntry(ArchiveEntry* entry, bool force)
 	if (cur_area_->entry() == entry && !force)
 		return false;
 
+	// An entry sitting in a tab of its own is gone to there. Showing it here as well
+	// would be two editors on one set of bytes
+	if (am_panel->entryIsOpenInTab(entry))
+		return am_panel->redirectToTab(entry);
+
 	// Detect entry type if it hasn't been already
 	if (entry->type() == EntryType::unknownType())
 		EntryType::detectEntryType(*entry);
@@ -2912,17 +3294,23 @@ bool ArchivePanel::openEntry(ArchiveEntry* entry, bool force)
 	}
 	else
 	{
-		// Save changes if needed
-		saveEntryChanges();
+		// Instead of asking whether to keep what's in the panel, the file it belongs to
+		// gets a tab of its own at the end of this function, so nothing is left to
+		// answer a question about. The changes go into the entry first, which is what
+		// the tab then reads
+		auto* previous = cur_area_->entry();
+		bool  park     = previous && previous != entry && cur_area_->isModified() && autosave_entry_changes > 1;
+		if (park)
+			park = cur_area_->saveEntry();
+		else
+			saveEntryChanges();
 
 		// Close the current entry
 		cur_area_->closeEntry();
 
 		// Get the appropriate entry panel for the entry's type
 		auto new_area = default_area_;
-		if (am_panel->entryIsOpenInTab(entry))
-			new_area = default_area_;
-		else if (entry->type() == EntryType::mapMarkerType())
+		if (entry->type() == EntryType::mapMarkerType())
 			new_area = mapArea();
 		else if (entry->type()->editor() == "gfx")
 			new_area = gfxArea();
@@ -2951,6 +3339,10 @@ bool ArchivePanel::openEntry(ArchiveEntry* entry, bool force)
 			return false;
 		else if (changed)
 			new_area->updateToolbar();
+
+		// Only after this one is on screen, so the tab doesn't take him away from it
+		if (park)
+			am_panel->openEntryTab(previous, false);
 	}
 	return true;
 }
@@ -3039,11 +3431,15 @@ bool ArchivePanel::showEntryPanel(EntryPanel* new_area, bool ask_save)
 		Freeze();
 		cur_area_->Show(false);        // Hide current
 		cur_area_->removeCustomMenu(); // Remove current custom menu (if any)
+		cur_area_->panelHidden();      // Anything of its own outside the panel goes with it
 		if (new_area != nullptr)
 		{
 			splitter_->ReplaceWindow(cur_area_, new_area); // Swap the panels
 			cur_area_ = new_area;                          // Set the new panel to current
 			cur_area_->Show(true);                         // Show current
+
+			// Whatever the panel had open outside itself comes back with it
+			cur_area_->panelShown();
 
 			// Add the current panel's custom menu and toolbar if needed
 			cur_area_->addCustomMenu();
@@ -3063,6 +3459,7 @@ bool ArchivePanel::showEntryPanel(EntryPanel* new_area, bool ask_save)
 	{
 		// Show current
 		cur_area_->Show();
+		cur_area_->panelShown();
 	}
 
 	return true;
@@ -3211,6 +3608,10 @@ bool ArchivePanel::handleAction(string_view id)
 	// Archive->New->Directory
 	else if (id == "arch_newdir")
 		newDirectory();
+
+	// Archive->New->Actor
+	else if (id == "arch_actor_new")
+		newActorFile();
 
 	// Archive->Import Files
 	else if (id == "arch_importfiles")
@@ -4099,10 +4500,14 @@ void ArchivePanel::onEntryListRightClick(wxDataViewEvent& e)
 		auto menu_new = new wxMenu();
 		SAction::fromId("arch_newentry")->addToMenu(menu_new, true, "Entry");
 		SAction::fromId("arch_newdir")->addToMenu(menu_new, true, "Directory");
+		SAction::fromId("arch_actor_new")->addToMenu(menu_new, true, "Actor");
 		context.AppendSubMenu(menu_new, wxS("New"));
 	}
 	else
+	{
 		SAction::fromId("arch_newentry")->addToMenu(&context, true);
+		SAction::fromId("arch_actor_new")->addToMenu(&context, true);
+	}
 
 	// Popup the context menu
 	PopupMenu(&context);
@@ -4232,6 +4637,14 @@ void ArchivePanel::onEntryListKeyDown(wxKeyEvent& e)
 		{
 			entry_tree_->upDir();
 			return;
+		}
+
+		// The image editor's tools. Asked from the file list too, because picking a
+		// file and reaching for the brush happens before the picture ever gets a click
+		else if (auto gfx = dynamic_cast<GfxEntryPanel*>(cur_area_))
+		{
+			if (gfx->applyToolKey(bind))
+				return;
 		}
 	}
 

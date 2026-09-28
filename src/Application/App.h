@@ -46,6 +46,12 @@ namespace app
 	};
 	const Version& version();
 
+	// Which SLADE this fork came from, since our own number says nothing about that
+	const Version& upstreamVersion();
+
+	// Where this fork lives, for anything that sends a person to it
+	const string& repoUrl();
+
 	// Path related stuff
 	enum class Dir
 	{

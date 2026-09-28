@@ -29,7 +29,6 @@ jobs:
 
           - name: "Linux Clang (wx3.3, No WebView)"
             os: ubuntu-24.04
-            release_appimage: true
             build_wx33: true
             shell: bash
             extra_options: "-DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
@@ -91,8 +90,7 @@ jobs:
       - name: Build AppImage
         run: |
           export LD_LIBRARY_PATH=$HOME/wxWidgets/build-cmake/lib:$LD_LIBRARY_PATH
-          export LDAI_OUTPUT="SLADE.AppImage"
-          export LDAI_UPDATE_INFORMATION="gh-releases-zsync|sirjuddington|SLADE|latest|SLADE.AppImage.zsync"
+          export LDAI_OUTPUT="ArgentForge.AppImage"
           export NO_STRIP=1
           ${{ steps.install-linuxdeploy.outputs.linuxdeploy }} --output=appimage --appdir AppDir
 
@@ -108,13 +106,3 @@ jobs:
         with:
           name: AppImage-${{ matrix.config.package_name }}
           path: './*.AppImage*'
-
-      - name: Release AppImage
-        if: ${{ contains(github.ref, 'tags') && matrix.config.release_appimage }}
-        uses: ncipollo/release-action@v1
-        with:
-          name: ${{ github.ref_name }}
-          allowUpdates: true
-          omitBodyDuringUpdate: true
-          omitNameDuringUpdate: true
-          artifacts: './*.AppImage*'

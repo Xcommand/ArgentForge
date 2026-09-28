@@ -560,6 +560,12 @@ void KeyBind::initBinds()
 	addBind("txed_tex_new_file", Keypress("N", KPM_CTRL | KPM_ALT), "New Texture from File", group);
 	addBind("txed_tex_delete", Keypress("delete"), "Delete Texture", group);
 
+	// Image editor (gfx*). Q and W because the other hand is on the mouse; they're
+	// ordinary binds, so anything else can be pointed at them in the input settings
+	group = "Image Editor";
+	addBind("gfx_brush", Keypress("Q"), "Brush tool", group);
+	addBind("gfx_erase", Keypress("W"), "Eraser tool", group);
+
 	// Map Editor (map*)
 	group = "Map Editor General";
 	addBind("map_edit_accept", Keypress("return"), "Accept edit", group);

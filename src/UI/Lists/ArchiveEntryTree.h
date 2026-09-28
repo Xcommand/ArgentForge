@@ -82,6 +82,7 @@ namespace ui
 			const override;
 
 		bool matchesFilter(const ArchiveEntry& entry) const;
+		bool entryIsBeingEdited(ArchiveEntry* entry) const;
 		void getDirChildItems(wxDataViewItemArray& items, const ArchiveDir& dir, bool filter = true) const;
 		bool entryIsInList(
 			const ArchiveEntry& entry,

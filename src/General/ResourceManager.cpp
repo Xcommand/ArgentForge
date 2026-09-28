@@ -673,14 +673,43 @@ ArchiveEntry* ResourceManager::getPatchEntry(string_view patch, string_view nspa
 	if (strutil::equalCI(nspace, "textures"))
 		return getTextureEntry(patch, "textures", priority);
 
-	auto  patch_upper = strutil::upper(patch);
-	auto* entry       = patches_[patch_upper].getEntry(priority, nspace, true);
-	if (entry)
-		return entry;
+	auto patch_upper = strutil::upper(patch);
 
-	entry = patches_fp_[patch_upper].getEntry(priority, nspace, true);
-	if (entry)
-		return entry;
+	// find rather than [], since asking for a patch that isn't there is normal - a
+	// preview hover does it for every frame the archive doesn't have - and [] would
+	// leave an empty row behind for each one
+	if (auto it = patches_.find(patch_upper); it != patches_.end())
+	{
+		if (auto* entry = it->second.getEntry(priority, nspace, true))
+			return entry;
+	}
+
+	if (auto it = patches_fp_.find(patch_upper); it != patches_fp_.end())
+	{
+		if (auto* entry = it->second.getEntry(priority, nspace, true))
+			return entry;
+	}
+
+	return nullptr;
+}
+
+// -----------------------------------------------------------------------------
+// Returns the most appropriate managed resource entry for any patch whose name
+// starts with [prefix], the shortest name first. nullptr if there's no such patch
+// -----------------------------------------------------------------------------
+ArchiveEntry* ResourceManager::getPatchByPrefix(string_view prefix, string_view nspace, const Archive* priority)
+{
+	auto prefix_upper = strutil::upper(prefix);
+
+	// The map is ordered, so everything that starts with the prefix sits between
+	// the first key that could and the first that doesn't
+	for (auto i = patches_.lower_bound(prefix_upper); i != patches_.end() && strutil::startsWith(i->first, prefix_upper);
+	     ++i)
+	{
+		auto* entry = i->second.getEntry(priority, nspace, true);
+		if (entry)
+			return entry;
+	}
 
 	return nullptr;
 }

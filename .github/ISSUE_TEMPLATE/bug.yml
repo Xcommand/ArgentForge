@@ -5,16 +5,16 @@ body:
   - type: markdown
     attributes:
       value: |
-        A bug is when something works differently than it is expected to. Note that if the issue causes SLADE to crash, please use the crash report issue template instead.
+        A bug is when something works differently than it is expected to. Note that if the issue causes Argent Forge to crash, please use the crash report issue template instead.
         # Remember to search before filing a new report
         Please search for this bug in the issue tracker, and use a bug report title that
         would have made your bug report turn up in the search results for your search query.
   - type: input
     id: version
     attributes:
-      label: SLADE Version
-      description: "The version displayed in Help→About. Please add the commit hash if you have compiled SLADE yourself."
-      placeholder: "3.2.5"
+      label: Argent Forge Version
+      description: "The version displayed in Help→About. Please add the commit hash if you have compiled Argent Forge yourself."
+      placeholder: "1.0.0"
     validations:
       required: true
   - type: dropdown
@@ -33,11 +33,16 @@ body:
     id: editor
     attributes:
       label: "Editor"
-      description: "In which part of SLADE are you experiencing this bug?"
+      description: "In which part of Argent Forge are you experiencing this bug?"
       multiple: true
       options:
         - Resource editor
         - Map editor
+        - Text editor
+        - Sprite preview
+        - Actor Constructor
+        - Image editor
+        - Start page
     validations:
       required: true
   - type: textarea

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <defs>
+    <pattern id="checker" width="4" height="4" patternUnits="userSpaceOnUse">
+      <rect width="2" height="2" fill="#E5E7EB"/>
+      <rect x="2" width="2" height="2" fill="#FFFFFF"/>
+      <rect y="2" width="2" height="2" fill="#FFFFFF"/>
+      <rect x="2" y="2" width="2" height="2" fill="#E5E7EB"/>
+    </pattern>
+  </defs>
+  <path d="M7 10V7C7 4.23858 9.23858 2 12 2C14.7614 2 17 4.23858 17 7V10" fill="none" stroke="#374151" stroke-width="2" stroke-linecap="round"/>
+  <rect x="4" y="10" width="16" height="11" rx="2.5" fill="url(#checker)" stroke="#374151" stroke-width="2"/>
+  <circle cx="12" cy="14.5" r="1.5" fill="#374151"/>
+  <path d="M12 16V18" stroke="#374151" stroke-width="1.5" stroke-linecap="round"/>
+</svg>

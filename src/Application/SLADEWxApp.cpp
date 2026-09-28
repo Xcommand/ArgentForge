@@ -89,7 +89,9 @@ const string update_check_url{
 } // namespace
 
 CVAR(String, dir_last, "", CVar::Flag::Save)
-CVAR(Bool, update_check, true, CVar::Flag::Save)
+// Off by default here: this build isn't updated from SLADE's releases, so the
+// check has nothing to say on its own
+CVAR(Bool, update_check, false, CVar::Flag::Save)
 CVAR(Bool, update_check_beta, false, CVar::Flag::Save)
 
 
@@ -202,7 +204,7 @@ private:
 class SLADECrashDialog : public wxDialog
 {
 public:
-	SLADECrashDialog() : wxDialog(wxGetApp().GetTopWindow(), -1, wxS("SLADE Application Crash"))
+	SLADECrashDialog() : wxDialog(wxGetApp().GetTopWindow(), -1, wxS("Argent Forge Application Crash"))
 	{
 		auto px10 = ui::scalePx(10);
 		auto px6  = ui::scalePx(6);
@@ -228,9 +230,10 @@ public:
 
 		// Add general crash message
 		wxString message = wxS(
-			"SLADE has crashed unexpectedly. To help fix the problem that caused this crash, "
-			"please click 'Send and Exit' to send the crash report. If the issue is recurring often, "
-			"please click 'Create GitHub Issue' below and complete the issue details on GitHub.");
+			"Argent Forge has crashed unexpectedly. To help fix the problem that caused this crash, "
+			"please click 'Create GitHub Issue' below and complete the report on GitHub. Everything "
+			"you see in the box underneath is already filled in for you, and 'Copy Stack Trace' puts "
+			"it on the clipboard if you'd rather paste it somewhere else.");
 		auto label = new wxStaticText(this, -1, message);
 		hbox->Add(label, 1, wxEXPAND | wxALL, px10);
 
@@ -255,41 +258,10 @@ public:
 		hbox->Add(btn_github_issue_, 0, wxLEFT | wxRIGHT | wxBOTTOM, px4);
 		btn_github_issue_->Bind(wxEVT_COMMAND_BUTTON_CLICKED, &SLADECrashDialog::onBtnPostReport, this);
 
-		// Add 'Exit Without Sending' button
-		btn_exit_ = new wxButton(this, -1, wxS("Exit Without Sending"));
+		// Add 'Exit' button
+		btn_exit_ = new wxButton(this, -1, wxS("Exit"));
 		hbox->Add(btn_exit_, 0, wxLEFT | wxRIGHT | wxBOTTOM, px4);
 		btn_exit_->Bind(wxEVT_COMMAND_BUTTON_CLICKED, &SLADECrashDialog::onBtnExit, this);
-
-		// Add 'Send and Exit' button
-		btn_send_exit_ = new wxButton(this, -1, wxS("Send and Exit"));
-		hbox->Add(btn_send_exit_, 0, wxLEFT | wxRIGHT | wxBOTTOM, px4);
-		btn_send_exit_->Bind(wxEVT_COMMAND_BUTTON_CLICKED, &SLADECrashDialog::onBtnSendAndExit, this);
-
-		Bind(
-			wxEVT_WEBREQUEST_STATE,
-			[this](wxWebRequestEvent& e)
-			{
-				if (e.GetId() == send_report_request_id_)
-				{
-					if (e.GetState() == wxWebRequest::State::State_Active
-						|| e.GetState() == wxWebRequest::State::State_Idle)
-						return;
-
-					if (e.GetState() == wxWebRequest::State::State_Failed
-						|| e.GetState() == wxWebRequest::State::State_Unauthorized
-						|| e.GetState() == wxWebRequest::State::State_Cancelled)
-					{
-						wxMessageBox(
-							WX_FMT(
-								"Failed to send crash report:\n{}\n\nSLADE will now exit.",
-								e.GetErrorDescription().utf8_string()),
-							wxS("Report Failed"),
-							wxICON_ERROR);
-					}
-
-					EndModal(wxID_OK);
-				}
-			});
 
 		// Setup layout
 		wxDialog::Layout();
@@ -335,19 +307,17 @@ public:
 		trace_ += "\nStack Trace:\n";
 		trace_ += stack_trace_;
 
-		// Last 10 log lines (500 for log_history_)
+		// Last 10 log lines
 		trace_ += "\nLast Log Messages:\n";
 		auto& log = log::history();
-		log_history_.clear();
 		auto num = log.size() < 500 ? 0 : log.size() - 500;
 		for (auto a = num; a < log.size(); a++)
 		{
 			if (a >= log.size() - 10)
 				trace_ += log[a].message + "\n";
-			log_history_ += log[a].message + "\n";
 		}
 
-		// Last 5 actions (all for action_history_)
+		// Last 5 actions
 		auto& actions = SAction::history();
 		if (!actions.empty())
 		{
@@ -357,7 +327,6 @@ public:
 			{
 				if (a >= num)
 					trace_ += fmt::format("{}\n", actions[a]);
-				action_history_ += fmt::format("{}\n", actions[a]);
 			}
 		}
 
@@ -391,7 +360,7 @@ public:
 
 	void onBtnPostReport(wxCommandEvent& e)
 	{
-		auto url_base = "https://github.com/sirjuddington/SLADE/issues/new?labels=crash+bug&template=crash.yml";
+		auto url_base = app::repoUrl() + "/issues/new?labels=crash+bug&template=crash.yml";
 		auto version  = global::sc_rev.empty() ? app::version().toString()
 											   : app::version().toString() + " " + global::sc_rev;
 
@@ -400,56 +369,18 @@ public:
 		wxLaunchDefaultBrowser(url.BuildURI());
 	}
 
-	void onBtnSendAndExit(wxCommandEvent& e)
-	{
-		// Build JSON for request
-		string json = "{";
-		string platform;
-		switch (app::platform())
-		{
-		case app::Platform::Windows: platform = "Windows"; break;
-		case app::Platform::Linux: platform = "Linux"; break;
-		case app::Platform::MacOS: platform = "MacOS"; break;
-		default: platform = "Unknown"; break;
-		}
-		json += fmt::format(R"("slade-version":"{}",)", version_);
-		json += fmt::format(R"("platform":"{}",)", platform);
-		json += fmt::format(R"("system-info":"{}",)", strutil::escapedString(sys_info_));
-		json += fmt::format(R"("stack-trace":"{}",)", strutil::escapedString(stack_trace_));
-		json += fmt::format(R"("log":"{}",)", strutil::escapedString(log_history_));
-		json += fmt::format(R"("action-log":"{}")", strutil::escapedString(action_history_));
-		json += "}";
-		json = strutil::replace(json, "\n", "\\n");
-
-		// wxMessageBox(wxString::FromUTF8(json));
-
-		// Send request to crash report worker
-		auto request = wxWebSession::GetDefault().CreateRequest(
-			this, wxS("https://slade-crash-report.sirjuddington.workers.dev/"));
-		request.SetMethod(wxS("POST"));
-		request.SetData(wxString::FromUTF8(json), wxS("application/json"));
-		send_report_request_id_ = request.GetId();
-		btn_send_exit_->SetLabel(wxS("Sending..."));
-		btn_send_exit_->Enable(false);
-		request.Start();
-	}
-
 	void onBtnExit(wxCommandEvent& e) { EndModal(wxID_OK); }
 
 private:
 	wxTextCtrl* text_stack_;
 	wxButton*   btn_copy_trace_;
 	wxButton*   btn_exit_;
-	wxButton*   btn_send_exit_;
 	wxButton*   btn_github_issue_;
 	string      trace_;
 	string      top_level_;
 	string      version_;
 	string      stack_trace_;
 	string      sys_info_;
-	string      log_history_;
-	string      action_history_;
-	int         send_report_request_id_ = 0;
 };
 #endif // wxUSE_STACKWALKER
 
@@ -537,7 +468,7 @@ bool SLADEWxApp::singleInstanceCheck()
 		wxMkdir(data_dir);
 
 	single_instance_checker_ = new wxSingleInstanceChecker;
-	single_instance_checker_->Create(WX_FMT("SLADE-{}", app::version().toString()), data_dir);
+	single_instance_checker_->Create(WX_FMT("ArgentForge-{}", app::version().toString()), data_dir);
 
 	if (argc == 1)
 		return true;
@@ -871,9 +802,10 @@ void SLADEWxApp::onWebRequestUpdate(wxWebRequestEvent& e)
 		log::info("Latest stable release: v{}", stable.toString());
 		log::info("Latest beta release: v{}", beta.toString());
 
-		// Check if new stable version
-		bool new_stable = app::version().cmp(stable) < 0;
-		bool new_beta   = app::version().cmp(beta) < 0;
+		// Compare against the SLADE we're built on. Our own number is a different
+		// line and would say nothing next to theirs
+		bool new_stable = app::upstreamVersion().cmp(stable) < 0;
+		bool new_beta   = app::upstreamVersion().cmp(beta) < 0;
 
 		// Set up for new beta/stable version prompt (if any)
 		string message, caption, version;
@@ -883,8 +815,8 @@ void SLADEWxApp::onWebRequestUpdate(wxWebRequestEvent& e)
 			caption = "New Beta Version Available";
 			version = beta.toString();
 			message = fmt::format(
-				"A new beta version of SLADE is available ({}), click OK to visit the SLADE homepage "
-				"and download the update.",
+				"Upstream SLADE has a new beta release ({}), newer than this build. Click OK to visit the SLADE "
+				"homepage and download it - note that upstream does not carry this fork's changes.",
 				version);
 		}
 		else if (new_stable)
@@ -893,8 +825,8 @@ void SLADEWxApp::onWebRequestUpdate(wxWebRequestEvent& e)
 			caption = "New Version Available";
 			version = stable.toString();
 			message = fmt::format(
-				"A new version of SLADE is available ({}), click OK to visit the SLADE homepage and "
-				"download the update.",
+				"Upstream SLADE has a newer release ({}). Click OK to visit the SLADE homepage and download it - "
+				"upstream does not carry this fork's changes.",
 				version);
 		}
 		else
@@ -902,8 +834,18 @@ void SLADEWxApp::onWebRequestUpdate(wxWebRequestEvent& e)
 			// No update
 			log::info(1, "Already up-to-date");
 			if (update_check_message_box)
-				wxMessageBox(wxS("SLADE is already up to date"), wxS("Check for Updates"));
+				wxMessageBox(wxS("Nothing newer upstream - this build is up to date with SLADE's releases"),
+				             wxS("Check for Updates"));
 
+			return;
+		}
+
+		// Speak up only when somebody asked. A newer upstream release isn't an update
+		// to this build, and a banner offering to download one would quietly swap it
+		// for a version without any of our changes
+		if (!update_check_message_box)
+		{
+			log::info(1, "Upstream SLADE has a newer release ({}), which says nothing about this build", version);
 			return;
 		}
 

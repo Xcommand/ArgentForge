@@ -33,6 +33,9 @@
 #include "TextStylePrefsPanel.h"
 #include "App.h"
 #include "General/UI.h"
+#include "MainEditor/MainEditor.h"
+#include "MainEditor/UI/MainWindow.h"
+#include "MainEditor/UI/StartPage.h"
 #include "TextEditor/UI/TextEditorCtrl.h"
 #include "UI/WxUtils.h"
 
@@ -46,6 +49,7 @@ using namespace slade;
 // -----------------------------------------------------------------------------
 EXTERN_CVAR(String, txed_override_font)
 EXTERN_CVAR(Int, txed_override_font_size)
+EXTERN_CVAR(Bool, web_dark_theme)
 
 
 // -----------------------------------------------------------------------------
@@ -510,6 +514,11 @@ void TextStylePrefsPanel::applyPreferences()
 	// Apply styleset to global current
 	StyleSet::currentSet()->copySet(&ss_current_);
 	StyleSet::applyCurrentToAll();
+
+	// The start page goes with the set instead of keeping its own switch
+	web_dark_theme = StyleSet::currentSet()->isDark();
+	if (auto page = maineditor::window()->startPage())
+		page->reloadTheme();
 }
 
 

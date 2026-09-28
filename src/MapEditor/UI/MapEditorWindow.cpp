@@ -100,7 +100,7 @@ EXTERN_CVAR(Int, flat_drawtype);
 // -----------------------------------------------------------------------------
 // MapEditorWindow class constructor
 // -----------------------------------------------------------------------------
-MapEditorWindow::MapEditorWindow() : STopWindow{ "SLADE", "map" }
+MapEditorWindow::MapEditorWindow() : STopWindow{ "Argent Forge", "map" }
 {
 	if (mew_maximized)
 		CallAfter(&MapEditorWindow::Maximize, this);
@@ -676,9 +676,9 @@ bool MapEditorWindow::openMap(const Archive::MapDesc& map)
 
 		// Set window title
 		if (archive)
-			SetTitle(WX_FMT("SLADE - {} of {}", map.name, archive->filename(false)));
+			SetTitle(WX_FMT("Argent Forge - {} of {}", map.name, archive->filename(false)));
 		else
-			SetTitle(WX_FMT("SLADE - {} (UNSAVED)", map.name));
+			SetTitle(WX_FMT("Argent Forge - {} (UNSAVED)", map.name));
 
 		// Create backup
 		auto head = map.head.lock();
@@ -1037,7 +1037,7 @@ bool MapEditorWindow::saveMapAs()
 	mdesc_current.end     = maps[0].end;
 
 	// Set window title
-	SetTitle(wxString::FromUTF8(fmt::format("SLADE - {} of {}", mdesc_current.name, wad.filename(false))));
+	SetTitle(wxString::FromUTF8(fmt::format("Argent Forge - {} of {}", mdesc_current.name, wad.filename(false))));
 
 	return true;
 }
@@ -1217,7 +1217,7 @@ bool MapEditorWindow::handleAction(string_view id)
 						if (maineditor::saveArchiveAs(a))
 							SetTitle(
 								wxString::FromUTF8(
-									fmt::format("SLADE - {} of {}", mdesc_current.name, a->filename(false))));
+									fmt::format("Argent Forge - {} of {}", mdesc_current.name, a->filename(false))));
 					}
 				}
 			}

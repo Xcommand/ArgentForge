@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <defs>
+    <!-- Шахматный паттерн прозрачности (альфа-канал) -->
+    <pattern id="alpha-grid" width="4" height="4" patternUnits="userSpaceOnUse">
+      <rect width="2" height="2" fill="#E8E8E8"/>
+      <rect x="2" width="2" height="2" fill="#FFFFFF"/>
+      <rect y="2" width="2" height="2" fill="#FFFFFF"/>
+      <rect x="2" y="2" width="2" height="2" fill="#E8E8E8"/>
+    </pattern>
+
+    <!-- Градиент яркости (от черного к белому через серый) -->
+    <linearGradient id="brightness-grad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#000000" />
+      <stop offset="50%" stop-color="#808080" />
+      <stop offset="100%" stop-color="#FFFFFF" />
+    </linearGradient>
+  </defs>
+
+  <!-- Базовый фон прозрачности -->
+  <rect x="2" y="2" width="20" height="20" rx="3" fill="url(#alpha-grid)" stroke="#CCCCCC" stroke-width="1"/>
+
+  <!-- Подложка в виде круга с градиентом яркости (собственная яркость пикселей) -->
+  <circle cx="10" cy="14" r="7" fill="url(#brightness-grad)" stroke="#212529" stroke-width="1.2"/>
+
+  <!-- Силуэт кисти, которая приносит "цвет" -->
+  <g transform="translate(1, -1)">
+    <!-- Белая обводка кисти для отделения от темного фона градиента -->
+    <path d="M17 3a2 2 0 0 1 2.83 2.83L11 14.66l-3.5.84.84-3.5z" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linejoin="round"/>
+    <!-- Сама кисть (окрашена в активный цвет, например, фиолетовый/синий) -->
+    <path d="M17 3a2 2 0 0 1 2.83 2.83L11 14.66l-3.5.84.84-3.5z" fill="#6F42C1" stroke="#212529" stroke-width="1.2" stroke-linejoin="round"/>
+    <!-- Наконечник ворса кисти -->
+    <path d="M8.5 13l1 1" stroke="#212529" stroke-width="1.2"/>
+  </g>
+
+  <!-- Маленький значок "спектра/цвета" (радужное кольцо или искра), показывающий влияние цвета -->
+  <circle cx="6" cy="7" r="2" fill="#E83E8C"/>
+</svg>

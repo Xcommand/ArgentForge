@@ -28,6 +28,8 @@ if (NO_WEBVIEW)
 else (NO_WEBVIEW)
 	SET(WX_LIBS ${WX_LIBS} wx::webview)
 	ADD_DEFINITIONS(-DUSE_WEBVIEW_STARTPAGE)
+	# wx::webview needs the WebView2 loader library (full path not carried by wx target)
+	find_package(unofficial-webview2 CONFIG REQUIRED)
 endif (NO_WEBVIEW)
 
 # FTGL
@@ -92,7 +94,7 @@ add_executable(slade WIN32
 )
 
 if (NOT SLADE_EXE_NAME)
-	set(SLADE_EXE_NAME SLADE)
+	set(SLADE_EXE_NAME ArgentForge)
 endif ()
 
 if (NOT SLADE_EXE_DIR)
@@ -129,6 +131,10 @@ endif ()
 
 if (NOT NO_FLUIDSYNTH)
 	target_link_libraries(slade FluidSynth::libfluidsynth)
+endif ()
+
+if (NOT NO_WEBVIEW)
+	target_link_libraries(slade unofficial::webview2::webview2)
 endif ()
 
 if (NOT BUILD_WX)

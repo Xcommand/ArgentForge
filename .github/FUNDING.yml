@@ -5,4 +5,6 @@ patreon: # Replace with a single Patreon username
 open_collective: # Replace with a single Open Collective username
 ko_fi: # Replace with a single Ko-fi username
 tidelift: # Replace with a single Tidelift platform-name/package-name e.g., npm/babel
-custom: https://www.paypal.me/sirjuddington
+# Nothing here. This fork is free and asks for nothing; the sponsor button that used to point at
+# upstream's PayPal would only have confused people about where the money went.
+# custom: https://www.paypal.me/sirjuddington

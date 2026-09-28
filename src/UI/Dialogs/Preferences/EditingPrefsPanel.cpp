@@ -243,7 +243,9 @@ wxPanel* EditingPrefsPanel::setupGeneralTab()
 	choice_dir_mod_           = new wxChoice(panel, -1);
 
 	// Populate dropdowns
-	choice_entry_mod_->Set(wxutil::arrayStringStd({ "Don't Save", "Save", "Ask" }));
+	// The third choice used to ask every time; it now parks the file in a tab of its
+	// own, which is what the label has to say
+	choice_entry_mod_->Set(wxutil::arrayStringStd({ "Don't Save", "Save", "Keep In A Tab" }));
 	choice_dir_mod_->Set(wxutil::arrayStringStd({ "Ignore Changes", "Apply Changes", "Ask" }));
 
 	// Layout

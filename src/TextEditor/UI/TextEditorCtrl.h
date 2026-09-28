@@ -16,8 +16,10 @@ wxDECLARE_EVENT(wxEVT_TEXT_CHANGED, wxCommandEvent);
 
 namespace slade
 {
+class Archive;
 class FindReplacePanel;
 class SCallTip;
+class SpritePreview;
 
 class JumpToCalculator : public wxThread
 {
@@ -81,6 +83,19 @@ public:
 	bool openCalltip(int pos, int arg = 0, bool dwell = false);
 	void updateCalltip();
 
+	// Says what a word that isn't a function means, used for the calltip shown
+	// when the mouse rests on one. [fn] returns nothing for words it doesn't
+	// know, which is how a language without such words stays as it was
+	void setWordDescriptionFunction(std::function<string_view(string_view)> fn)
+	{
+		word_description_ = std::move(fn);
+	}
+
+	// Which archive to look in for the sprite a state line names, so resting the
+	// mouse on one shows it. Null turns that off, which is how a language with no
+	// state lines stays quiet
+	void setSpritePreviewArchive(const Archive* archive) { preview_archive_ = archive; }
+
 	// Jump To
 	void setJumpToControl(wxChoice* jump_to);
 	void updateJumpToList();
@@ -99,6 +114,9 @@ private:
 	TextLanguage*     language_           = nullptr;
 	FindReplacePanel* panel_fr_           = nullptr;
 	SCallTip*         call_tip_           = nullptr;
+	// What a state line's sprite looks like, shown when the mouse rests on one
+	SpritePreview*  sprite_preview_  = nullptr;
+	const Archive*  preview_archive_ = nullptr;
 	wxChoice*         choice_jump_to_     = nullptr;
 	JumpToCalculator* jump_to_calculator_ = nullptr;
 	unique_ptr<Lexer> lexer_;
@@ -123,6 +141,12 @@ private:
 	int         ct_argset_   = 0;
 	int         ct_start_    = 0;
 	bool        ct_dwell_    = false;
+
+	std::function<string_view(string_view)> word_description_;
+	bool                                    openWordDescription(int pos);
+
+	// Hover preview stuff
+	bool openSpritePreview(int pos);
 
 	// Default comment strings
 	const wxString default_line_comment_  = wxS("//");

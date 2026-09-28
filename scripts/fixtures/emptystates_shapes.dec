@@ -1,0 +1,30 @@
+// States blocks written in the shapes the engine takes but a parser likes to miss
+Actor LowerStates : Actor
+{
+  states {}
+}
+
+Actor LabelledStates : Actor
+{
+  States {} // the powerup has nothing running
+}
+
+// The whole actor on one line, which compact mods do write
+Actor GluedStates : Actor { States {} }
+
+Actor TabStates : Actor
+{
+	States {}
+}
+
+// No space at all between the keyword and the braces
+Actor TightStates : Actor
+{
+  States{}
+}
+
+// A whole state packed onto the '{' line, the way a short one reads better
+Actor PackedStates : Actor
+{
+  states { Spawn: SPKW B 1 bright A_FadeOut (0.1) loop }
+}
