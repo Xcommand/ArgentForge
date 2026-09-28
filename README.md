@@ -26,6 +26,10 @@ Less typing, more modding. That's the whole idea, and everything below is in ser
 At some point keeping that to myself stopped making sense. An editor that saves you an hour a week
 is not a personal tool any more, it's an hour other modders are also losing.
 
+The build is one zip, under [Releases](https://github.com/Xcommand/ArgentForge/releases/latest):
+unzip it wherever you like and run `ArgentForge.exe`. Nothing installs and no file is written beside
+the exe. It's a 64-bit Windows build.
+
 If you know SLADE, you can use this without reading anything first. Every difference is listed in
 [CHANGES.md](CHANGES.md) and on the program's own start page.
 
