@@ -1,6 +1,11 @@
 name: Continuous Integration (Linux)
 
-on: [push, pull_request]
+# Not on push: nobody here can run or fix a Linux or macOS build, and a red cross on your own
+# commit for a platform you don't ship says nothing useful. A pull request still gets built,
+# and the Run workflow button is there whenever someone wants a pair.
+on:
+  pull_request:
+  workflow_dispatch:
 
 jobs:
   build:

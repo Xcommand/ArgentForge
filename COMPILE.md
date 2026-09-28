@@ -65,3 +65,17 @@ before running them and they will be used instead:
 
 The gates under `scripts/gates/` need the headless parser build first: `scripts\harness\build.bat`,
 which links against the objects `build.bat` already left behind.
+
+### Packing a portable build
+
+Once `build.bat` has run:
+
+```
+sh scripts/release/portable_zip.sh
+```
+
+It takes the version from `src/Application/App.cpp`, checks it against the version the exe already
+carries in its file properties, and writes `dist/release/argentforge_<version>_win64_portable.zip`:
+the program, `slade.pk3`, the license and a page of README. Windows needs nothing else with it, the
+libraries are linked in. If 7-Zip isn't installed in `C:\Program Files\7-Zip`, point at it with
+`SEVENZ=C:\path\to\7z.exe`.
