@@ -294,7 +294,9 @@ Around the editor
   the gold one went blue without growing a tab. It only counts as watched while the area is showing the
   same file the tree has selected.
 * It has its own artwork now: the flame over the hex is on the start page and in the program's icon,
-  which the exe carries as well.
+  which the exe carries as well. Where the mark is only 16 or 32 pixels across (the start page tab, a
+  dialog's title bar, the Linux desktop icon) it's a flat version of the same thing: hex and flame, no
+  inner facets, no core, because the detailed one turns to mud at that size.
 * Help->About says who made what: Simon Judd wrote SLADE3, and what's on top of it is ours.
 * A crash keeps its report on this machine. SLADE's dialog had a `Send and Exit` button that posted the
   stack trace, the last log lines, the last actions and the hardware to upstream's own server; a fork's
