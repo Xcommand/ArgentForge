@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="dist/res/logo_icon.png" width="128" height="128" alt="Argent Forge logo">
+</p>
+
 ## Argent Forge
 
 It's more than just a Doom editor.
