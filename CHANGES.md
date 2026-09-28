@@ -311,10 +311,17 @@ Around the editor
   changes shape. A new SLADE underneath us moves the `based on` number, not ours.
 * The preferences window is called `Argent Forge Settings`. The links on the start page go to this
   repository and its wiki, with SLADE's own page listed as what it is: the original.
-* The one thing that still asks upstream is the version check, and it now says what it found. It stays
-  off until you tick it in Preferences, and its answer used to arrive on the start page as
-  `Update Available`. A newer SLADE isn't a newer Argent Forge, so the banner reads
-  `Upstream released SLADE 3.3.2, that build carries none of this fork's changes`.
+* Nothing in the program phones home any more. SLADE's version check asked its own server whether a
+  newer build exists and offered its download page from the Help menu and the start page. A fork has
+  nothing to report there and the user has nothing to gain from being sent to someone else's downloads,
+  so the whole thing is gone: the request, the two preferences tickboxes, the start page banner, and the
+  menu item. In its place Help has `Releases...`, which opens this repository's releases page.
+* On Linux the program registers itself as `io.github.Xcommand.ArgentForge` rather than
+  `net.mancubus.SLADE`, and the second-instance handoff uses its own topic name, so an Argent Forge
+  window and a SLADE window stop mistaking each other for the same application.
+* Dialogs and messages that said "SLADE" while meaning this program now say Argent Forge: the first-run
+  setup title, the "configure it in the preferences" errors from the texture and PNG-tool operations,
+  the archive-saved and directory-changed notices, the script manager, and the start page's window title.
 * There's a written guide for someone who has never opened SLADE, in `docs/user`: the archive window,
   the actor constructor, and the picture editor's brush and mouse gestures. Help->`User Guide` and the
   start page's link list both open it.

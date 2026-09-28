@@ -210,7 +210,7 @@ ScriptManagerWindow::ScriptManagerWindow() : STopWindow("Argent Forge Script Man
 	// Open 'scratch box' initially
 	script_scratchbox_.name = "Scratch Box";
 	script_scratchbox_.text =
-		"-- Use this script to write ad-hoc SLADE editor scripts\n"
+		"-- Use this script to write ad-hoc Argent Forge editor scripts\n"
 		"-- Note that this will not be saved between sessions\n\n";
 	script_scratchbox_.read_only = true;
 	openScriptTab(&script_scratchbox_);
@@ -548,7 +548,7 @@ void ScriptManagerWindow::populateScriptsTree()
 	auto root = tree_scripts_->AddRoot(wxS("Scripts"));
 
 	// Editor scripts (general)
-	auto editor_scripts = tree_scripts_->AppendItem(root, wxS("SLADE Editor Scripts"), 1);
+	auto editor_scripts = tree_scripts_->AppendItem(root, wxS("Argent Forge Editor Scripts"), 1);
 	tree_scripts_->AppendItem(editor_scripts, wxS("Scratch Box"), 0, 0, new ScriptTreeItemData(&script_scratchbox_));
 	for (auto& script : scriptmanager::editorScripts())
 		tree_scripts_->AppendItem(

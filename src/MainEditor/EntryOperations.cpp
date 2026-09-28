@@ -986,7 +986,7 @@ bool entryoperations::compileACS(ArchiveEntry* entry, bool hexen, ArchiveEntry* 
 	if (path_acc.value.empty() || !fileutil::fileExists(path_acc))
 	{
 		wxMessageBox(
-			wxS("Error: ACC path not defined, please configure in SLADE preferences"),
+			wxS("Error: ACC path not defined, please configure in Argent Forge preferences"),
 			wxS("Error"),
 			wxOK | wxCENTRE | wxICON_ERROR);
 		PreferencesDialog::openPreferences(parent, "ACS");
@@ -1188,7 +1188,7 @@ bool entryoperations::compileDECOHack(ArchiveEntry* entry, ArchiveEntry* target,
 	if (path_decohack.empty() || !fileutil::fileExists(path_decohack))
 	{
 		wxMessageBox(
-			wxS("Error: DoomTools path not defined, please configure in SLADE preferences"),
+			wxS("Error: DoomTools path not defined, please configure in Argent Forge preferences"),
 			wxS("Error"),
 			wxOK | wxCENTRE | wxICON_ERROR);
 		PreferencesDialog::openPreferences(parent, "DECOHack");
@@ -1199,7 +1199,7 @@ bool entryoperations::compileDECOHack(ArchiveEntry* entry, ArchiveEntry* target,
 	if (path_java.empty() || !fileutil::fileExists(path_java))
 	{
 		wxMessageBox(
-			wxS("Error: Java path not defined, please configure in SLADE preferences"),
+			wxS("Error: Java path not defined, please configure in Argent Forge preferences"),
 			wxS("Error"),
 			wxOK | wxCENTRE | wxICON_ERROR);
 		PreferencesDialog::openPreferences(parent, "DECOHack");

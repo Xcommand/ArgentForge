@@ -38,7 +38,7 @@ public:
 	string pageTitle() override { return "Extra Features"; }
 	string pageDescription() override
 	{
-		return "Settings for what this version of SLADE adds on top of the original. The image "
+		return "Settings for what Argent Forge adds on top of the original SLADE. The image "
 			   "editor's brush and the actor constructor have pages of their own below.";
 	}
 };

@@ -54,7 +54,7 @@ SetupWizardDialog::SetupWizardDialog(wxWindow* parent) :
 	wxDialog(
 		parent,
 		-1,
-		wxS("First Time SLADE Setup"),
+		wxS("First Time Argent Forge Setup"),
 		wxDefaultPosition,
 		wxDefaultSize,
 		wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER)

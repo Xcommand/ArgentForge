@@ -59,7 +59,7 @@ DirArchiveUpdateDialog::DirArchiveUpdateDialog(wxWindow* parent, DirArchive* arc
 
 	// Message
 	wxString message = WX_FMT(
-		"Contents of the directory \"{}\" have been modified outside of SLADE,\n", archive->filename());
+		"Contents of the directory \"{}\" have been modified outside of Argent Forge,\n", archive->filename());
 	message += wxS("please tick the changes below that you wish to apply.");
 	sizer->Add(new wxStaticText(this, -1, message), 0, wxEXPAND | wxALL, ui::padLarge());
 	message = wxS("Note that any unticked changes will be overwritten on disk when the directory is saved.");

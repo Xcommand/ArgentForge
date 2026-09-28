@@ -3130,7 +3130,7 @@ bool ArchivePanel::optimizePNG() const
 		&& (path_deflopt.empty() || !fileutil::fileExists(path_deflopt)))
 	{
 		wxMessageBox(
-			wxS("Error: PNG tool paths not defined or invalid, please configure in SLADE preferences"),
+			wxS("Error: PNG tool paths not defined or invalid, please configure in Argent Forge preferences"),
 			wxS("Error"),
 			wxOK | wxCENTRE | wxICON_ERROR);
 		return false;

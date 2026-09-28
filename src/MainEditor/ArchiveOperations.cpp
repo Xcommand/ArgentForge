@@ -1454,7 +1454,7 @@ void archiveoperations::removeUnusedZDoomTextures(Archive* archive)
 	// removedEntry signal is what takes long, but having the archive open in a minimal unmanaged state seems to help
 
 	int dialog_answer = wxMessageBox(
-		wxS("This operation is extremely slow if the archive has many entries and is open in SLADE with a tab. This "
+		wxS("This operation is extremely slow if the archive has many entries and is open in Argent Forge with a tab. This "
 			"tool will close the archive and reopen it in the background to process it, and save changes when done. "
 			"You should make sure to save any changes now if you have any. Also, keep in mind this tool won't find any "
 			"textures you reference in scripts. There is currently limited support for animated and switch textures so "
@@ -2016,7 +2016,7 @@ void archiveoperations::removeUnusedZDoomTextures(Archive* archive)
 
 	archive->save();
 
-	wxMessageBox(WX_FMT("Archive {} has been saved to disk. You can reopen it in SLADE now.", archive->filename()));
+	wxMessageBox(WX_FMT("Archive {} has been saved to disk. You can reopen it in Argent Forge now.", archive->filename()));
 	app::archiveManager().closeArchive(archive);
 }
 
