@@ -137,21 +137,18 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	split_inner_->SetMinimumPaneSize(90);
 	split_inner_->SetSashGravity(1.0);
 
-	// LEFT SIDE: menus listbox
+	// LEFT SIDE: menus listbox only
 	panel_menus_ = new wxPanel(split_outer_);
 	list_menus_ = new wxListBox(panel_menus_, wxID_ANY, wxDefaultPosition, wxDefaultSize, 0, nullptr, wxLB_SINGLE);
-	tree_lines_ = new wxTreeCtrl(panel_menus_, wxID_ANY, wxDefaultPosition, wxDefaultSize,
-	                               wxTR_DEFAULT_STYLE | wxTR_HIDE_ROOT | wxBORDER_SUNKEN);
-	tree_lines_->AddRoot(wxEmptyString);
-	auto menus_sizer = new wxBoxSizer(wxHORIZONTAL);
-	menus_sizer->Add(list_menus_, 0, wxEXPAND | wxRIGHT, ui::pad());
-	menus_sizer->Add(tree_lines_, 1, wxEXPAND);
+	
+	auto menus_sizer = new wxBoxSizer(wxVERTICAL);
+	menus_sizer->Add(list_menus_, 1, wxEXPAND);
 	panel_menus_->SetSizer(menus_sizer);
 
-	// RIGHT SIDE: block header, lines, and arguments
+	// RIGHT SIDE: block header, tree lines, and arguments  
 	panel_right_ = new wxPanel(split_outer_);
 	
-	// Block header line (kind, name, protected checkbox)
+	// Block header line (kind, name, protected checkbox) - for OptionMenu
 	auto header_hbox = new wxBoxSizer(wxHORIZONTAL);
 	label_kind_ = new wxStaticText(panel_right_, wxID_ANY, wxS(""));
 	text_menu_name_ = new wxTextCtrl(panel_right_, wxID_ANY, wxEmptyString, wxDefaultPosition, wxSize(200, -1));
@@ -161,12 +158,12 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	header_hbox->Add(text_menu_name_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, ui::pad());
 	header_hbox->Add(check_protected_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, ui::pad());
 	
-	// Lines area above arguments
+	// Tree control for lines - THIS is the actual tree_lines_ member
 	tree_lines_ = new wxTreeCtrl(panel_right_, wxID_ANY, wxDefaultPosition, wxDefaultSize,
 	                               wxTR_DEFAULT_STYLE | wxTR_HIDE_ROOT | wxBORDER_SUNKEN);
 	tree_lines_->AddRoot(wxEmptyString);
 	
-	// Arguments area below lines
+	// Arguments area below tree
 	grid_args_ = new wxPropertyGrid(panel_right_, wxID_ANY, wxDefaultPosition, wxDefaultSize,
 	                                wxPG_SPLITTER_AUTO_CENTER | wxPG_TOOLTIPS);
 	help_ = new DescriptionText(panel_right_);
@@ -176,24 +173,21 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	button_up_ = new wxButton(panel_right_, wxID_ANY, "^", wxDefaultPosition, wxSize(28, -1));
 	button_down_ = new wxButton(panel_right_, wxID_ANY, "v", wxDefaultPosition, wxSize(28, -1));
 
-	// Build args sizer
-	auto args_vbox = new wxBoxSizer(wxVERTICAL);
-	args_vbox->Add(grid_args_, 1, wxEXPAND);
-	args_vbox->Add(help_, 0, wxEXPAND | wxTOP, ui::pad());
+	// Build right side layout: header at top, tree in middle, args at bottom
+	auto right_vbox = new wxBoxSizer(wxVERTICAL);
+	right_vbox->Add(header_hbox, 0, wxEXPAND | wxBOTTOM, ui::pad());
+	right_vbox->Add(tree_lines_, 1, wxEXPAND);
+	right_vbox->Add(grid_args_, 0, wxEXPAND);
+	right_vbox->Add(help_, 0, wxEXPAND | wxTOP, ui::pad());
 	auto row_buttons = new wxBoxSizer(wxHORIZONTAL);
 	row_buttons->Add(choice_add_, 0, wxRIGHT, ui::pad());
 	row_buttons->AddStretchSpacer();
 	row_buttons->Add(button_up_, 0, wxRIGHT, 2);
 	row_buttons->Add(button_down_, 0);
-	args_vbox->Add(row_buttons, 0, wxEXPAND | wxTOP, ui::pad());
-	panel_right_->SetSizer(args_vbox);
-
-	// Create panel for split_inner_ bottom part
-	wxPanel* panel_args_bottom = new wxPanel(split_inner_);
-	panel_args_bottom->SetSizer(args_vbox);
+	right_vbox->Add(row_buttons, 0, wxEXPAND | wxTOP, ui::pad());
+	panel_right_->SetSizer(right_vbox);
 
 	split_outer_->SplitVertically(panel_menus_, panel_right_, menucon_sash_menus);
-	split_inner_->SplitHorizontally(tree_lines_, panel_args_bottom, menucon_sash_lines);
 
 	auto frame = new wxBoxSizer(wxHORIZONTAL);
 	frame->Add(split_outer_, 1, wxEXPAND);
