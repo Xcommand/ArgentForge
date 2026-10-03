@@ -258,6 +258,7 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	button_del_block_->Bind(wxEVT_BUTTON, &MenuConstructorDialog::onBlockDelete, this);
 	block_up_->Bind(wxEVT_BUTTON, &MenuConstructorDialog::onBlockMove, this);
 	block_down_->Bind(wxEVT_BUTTON, &MenuConstructorDialog::onBlockMove, this);
+	text_menu_name_->Bind(wxEVT_TEXT, [this](wxCommandEvent&){ updateNameNote(); showHelp(); });
 	text_menu_name_->Bind(wxEVT_KILL_FOCUS, [this](wxFocusEvent& e){ commitHeader(); e.Skip(); });
 	check_protected_->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent&){ commitHeader(); });
 	button_del_line->Bind(wxEVT_BUTTON, &MenuConstructorDialog::onDelete, this);
@@ -597,6 +598,8 @@ void MenuConstructorDialog::showHelp()
         if (!hint.empty()) text += ". " + string(hint); } }
   if (auto* def_ptr = currentDefinition(); def_ptr && !isOptionMenu(*def_ptr) && !isValueTable(*def_ptr))
       text += ". No new lines offered in this block type";
+  // A name that answers to another block too isn't a second menu - say which way it goes, live
+  if (!name_clash_.empty()) text += ". " + name_clash_;
   help_->setText(text);
   auto width = panel_right_->GetClientSize().GetWidth() - ui::pad() * 2;
   auto lines = help_->wrapTo(std::max(60, width));
@@ -885,7 +888,25 @@ void MenuConstructorDialog::onBlockMove(wxCommandEvent& e)
 
 void MenuConstructorDialog::onAddLineChosen(wxCommandEvent&) {}
 void MenuConstructorDialog::onNameTyped(wxCommandEvent&) {}
-void MenuConstructorDialog::updateNameNote() {}
+// What a name being typed collides with, in the engine's own terms (menudef.cpp ReplaceMenu):
+// a same-type name appends to the existing menu, a protected one is refused, a different type is
+// refused. Kept in name_clash_ and shown in the note while he types, not after the rename lands
+void MenuConstructorDialog::updateNameNote()
+{ name_clash_.clear();
+  auto* def = currentDefinition(); if (!def) return;
+  string nm = strutil::trim(text_menu_name_->GetValue().utf8_string());
+  if (nm.empty()) return;
+  for (size_t i = 0; i < source_.definitions().size(); i++) {
+    if (i == block_) continue;
+    auto& other = source_.definitions()[i];
+    if (!strutil::equalCI(nm, other.nameText())) continue;
+    if (other.isProtected())
+        name_clash_ = "another block already names a menu this and is protected, so the engine drops this one";
+    else if (strutil::equalCI(other.keyword, def->keyword))
+        name_clash_ = fmt::format("a {} already uses this name, so the engine appends this block's lines to that one instead of making a second menu", other.keyword);
+    else
+        name_clash_ = fmt::format("another block declares this name as a {}, and the engine rejects replacing a menu with a different type", other.keyword);
+    return; } }
 
 // Shows the block on screen in the header: its kind, its name and whether it is
 // protected. The name box is dead for the kinds that carry no name, and protected
