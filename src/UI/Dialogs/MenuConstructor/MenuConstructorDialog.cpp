@@ -19,6 +19,7 @@
 #include <wx/button.h>
 #include <wx/choice.h>
 #include <wx/listbox.h>
+#include <wx/msgdlg.h>
 #include <wx/panel.h>
 #include <wx/propgrid/advprops.h>
 #include <wx/propgrid/propgrid.h>
@@ -137,11 +138,22 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	                                    wxSP_3DSASH | wxSP_LIVE_UPDATE);
 	split_outer_->SetMinimumPaneSize(120);
 
-	// LEFT: the block list
+	// LEFT: the block list, with the block operations under it
 	panel_menus_ = new wxPanel(split_outer_);
 	list_menus_ = new wxListBox(panel_menus_, wxID_ANY, wxDefaultPosition, wxDefaultSize, 0, nullptr, wxLB_SINGLE);
+	button_new_block_ = new wxButton(panel_menus_, wxID_ANY, wxS("New"));
+	button_del_block_ = new wxButton(panel_menus_, wxID_ANY, wxS("Delete"));
+	block_up_   = new wxButton(panel_menus_, wxID_ANY, wxS("^"), wxDefaultPosition, wxSize(28, -1));
+	block_down_ = new wxButton(panel_menus_, wxID_ANY, wxS("v"), wxDefaultPosition, wxSize(28, -1));
+	auto block_row = new wxBoxSizer(wxHORIZONTAL);
+	block_row->Add(button_new_block_, 0, wxRIGHT, ui::pad());
+	block_row->Add(button_del_block_, 0, wxRIGHT, ui::pad());
+	block_row->AddStretchSpacer();
+	block_row->Add(block_up_, 0, wxRIGHT, 2);
+	block_row->Add(block_down_, 0);
 	auto menus_sizer = new wxBoxSizer(wxVERTICAL);
-	menus_sizer->Add(list_menus_, 1, wxEXPAND);
+	menus_sizer->Add(list_menus_, 1, wxEXPAND | wxBOTTOM, ui::pad());
+	menus_sizer->Add(block_row, 0, wxEXPAND);
 	panel_menus_->SetSizer(menus_sizer);
 
 	// RIGHT: header, the tree of lines, the arguments under it, then help and buttons
@@ -202,6 +214,10 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	button_up_->Bind(wxEVT_BUTTON, &MenuConstructorDialog::onMove, this);
 	button_down_->Bind(wxEVT_BUTTON, &MenuConstructorDialog::onMove, this);
 	button_preview->Bind(wxEVT_BUTTON, [this](wxCommandEvent&){ showPreviewWindow(); });
+	button_new_block_->Bind(wxEVT_BUTTON, &MenuConstructorDialog::onBlockAdd, this);
+	button_del_block_->Bind(wxEVT_BUTTON, &MenuConstructorDialog::onBlockDelete, this);
+	block_up_->Bind(wxEVT_BUTTON, &MenuConstructorDialog::onBlockMove, this);
+	block_down_->Bind(wxEVT_BUTTON, &MenuConstructorDialog::onBlockMove, this);
 	grid_args_->Bind(wxEVT_PG_CHANGED, &MenuConstructorDialog::onGridChanged, this);
 	grid_args_->Bind(wxEVT_PG_SELECTED, &MenuConstructorDialog::onGridSelected, this);
 	grid_args_->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent& e){grid_args_->SetFocus(); e.Skip();});
@@ -545,8 +561,57 @@ void MenuConstructorDialog::updatePreviewWindow()
   preview_->setRows(rows, "");
   preview_->fitToZoom();}
 void MenuConstructorDialog::setArchive(Archive*) {} void MenuConstructorDialog::saveGeometry() {}
-void MenuConstructorDialog::onBlockAdd(wxCommandEvent&) {} void MenuConstructorDialog::onBlockDelete(wxCommandEvent&) {}
-void MenuConstructorDialog::onBlockMove(wxCommandEvent&) {} void MenuConstructorDialog::onAddLineChosen(wxCommandEvent&) {}
+void MenuConstructorDialog::onBlockAdd(wxCommandEvent&)
+{ const auto& vocab = MenuVocabulary::instance();
+  // The kinds offered, filtered by what the resource declares, so the dialog can't
+  // invent one the parser wouldn't take
+  vector<wxString> kinds;
+  for (auto word : { "OptionMenu", "AddOptionMenu", "DefaultOptionMenu",
+                     "ListMenu", "AddListMenu", "DefaultListMenu",
+                     "OptionValue", "OptionString", "OptionMenuSettings", "ImageScroller" })
+      if (!vocab.blockFamily(word).empty()) kinds.push_back(wxString::FromUTF8(word));
+  if (kinds.empty()) return;
+
+  wxDialog dlg(this, wxID_ANY, wxS("New Menu Block"), wxDefaultPosition, wxDefaultSize, wxDEFAULT_DIALOG_STYLE);
+  auto kind_choice = new wxChoice(&dlg, wxID_ANY, wxDefaultPosition, wxDefaultSize, kinds);
+  kind_choice->SetSelection(0);
+  auto name_text = new wxTextCtrl(&dlg, wxID_ANY);
+  auto protect_check = new wxCheckBox(&dlg, wxID_ANY, wxS("protected"));
+  auto sizer = new wxBoxSizer(wxVERTICAL);
+  sizer->Add(new wxStaticText(&dlg, wxID_ANY, wxS("Kind")), 0, wxBOTTOM, 2);
+  sizer->Add(kind_choice, 0, wxEXPAND | wxBOTTOM, ui::pad());
+  sizer->Add(new wxStaticText(&dlg, wxID_ANY, wxS("Name")), 0, wxBOTTOM, 2);
+  sizer->Add(name_text, 0, wxEXPAND | wxBOTTOM, ui::pad());
+  sizer->Add(protect_check, 0, wxBOTTOM, ui::pad());
+  sizer->Add(dlg.CreateStdDialogButtonSizer(wxOK | wxCANCEL), 0, wxEXPAND);
+  dlg.SetSizer(sizer);
+  if (dlg.ShowModal() != wxID_OK) return;
+
+  string keyword = kind_choice->GetStringSelection().utf8_string();
+  string word = strutil::lower(keyword);
+  bool nameless = word == "defaultlistmenu" || word == "defaultoptionmenu" || word == "optionmenusettings";
+  string name = nameless ? "" : strutil::trim(name_text->GetValue().utf8_string());
+  bool protect = word == "optionmenu" && protect_check->IsChecked();
+
+  if (!source_.appendDefinition(keyword, name, protect))
+  { wxMessageBox(wxS("That block could not be added."), wxS("Menu Constructor"), wxICON_WARNING, this); return; }
+
+  block_ = source_.definitions().size() - 1; have_selection_ = false; selected_ = LinePath{};
+  buildMenuList(); buildAddList(); buildTree(); apply(); }
+
+void MenuConstructorDialog::onBlockDelete(wxCommandEvent&)
+{ if (source_.definitions().empty() || !source_.removeDefinition(block_)) return;
+  if (block_ >= source_.definitions().size()) block_ = source_.definitions().empty() ? 0 : source_.definitions().size() - 1;
+  have_selection_ = false; selected_ = LinePath{};
+  buildMenuList(); buildAddList(); buildTree(); apply(); }
+
+void MenuConstructorDialog::onBlockMove(wxCommandEvent& e)
+{ int dir = e.GetEventObject() == (wxObject*)block_down_ ? 1 : -1;
+  if (!source_.moveDefinition(block_, dir)) return;
+  block_ = (size_t)((int)block_ + dir);
+  buildMenuList(); buildTree(); apply(); }
+
+void MenuConstructorDialog::onAddLineChosen(wxCommandEvent&) {}
 void MenuConstructorDialog::onNameTyped(wxCommandEvent&) {} void MenuConstructorDialog::updateHeader() {}
 void MenuConstructorDialog::updateNameNote() {} void MenuConstructorDialog::commitHeader() {}
 void MenuConstructorDialog::onHeaderCommitted(wxCommandEvent&) {} void MenuConstructorDialog::onHeaderFocusLost(wxFocusEvent&) {}
