@@ -420,9 +420,11 @@ void MenuConstructorDialog::buildGrid(const wxString& keep)
               else if (range) { range_args_.push_back((int)i); // V_FindFontColor: a TEXTCOLO range name
                   wxArrayString arr; for (auto& n : rangeNames()) arr.Add(wxString::FromUTF8(n));
                   completions_[prop->GetName()] = arr; }
-              // Show a colour argument in its own colour, in the field where it is written
+              // Show a colour argument in its own colour, in the field where it is written. The
+              // value is drawn from cell 1's own foreground (cell 0 is the name), which is the one
+              // wxPropertyGrid paints through the value renderer
               if (colour || range) { auto c = argColour(unquote(st->args[i].value), range);
-                  if (c.IsOk()) grid_args_->SetPropertyTextColour(prop, c); }
+                  if (c.IsOk()) prop->GetCell(1).SetFgCol(c); }
               else { auto offers = offersFor(st->word, i < params.size() ? params[i].name : "", unquote(st->args[i].value));
                   if (!offers.names.empty()) { wxArrayString arr; for (auto& n : offers.names) arr.Add(wxString::FromUTF8(n));
                       completions_[prop->GetName()] = arr; } } }
@@ -617,11 +619,12 @@ void MenuConstructorDialog::applyCaption()
 { auto* def = currentDefinition(); auto* st = currentStatement(); auto item = itemForPath(selected_);
   if (!def || !st || !item.IsOk()) return;
   tree_lines_->SetItemText(item, wxString::FromUTF8(caption(*st, isValueTable(*def))));
-  // The colour reads in the field where it is written, not in the tree: paint the grid cell that
-  // holds the edited argument, so choosing a colour tints that value and nothing else
+  // The colour reads in the field where it is written, not in the tree: paint the value cell of
+  // the edited argument, so choosing a colour tints that value and nothing else. An invalid colour
+  // (no colour named, or a non-colour argument) resets the cell to the grid's default text colour
   if (auto* prop = grid_args_->GetSelectedProperty())
-  { auto col = colourCellTint(prop->GetName(), st);
-    grid_args_->SetPropertyTextColour(prop, col.IsOk() ? col : grid_args_->GetForegroundColour()); }
+  { prop->GetCell(1).SetFgCol(colourCellTint(prop->GetName(), st));
+    grid_args_->Refresh(); }
 }
 
 // The colour a grid cell's text should show: the argument's own colour when it names one, or the
