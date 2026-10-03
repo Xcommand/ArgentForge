@@ -590,7 +590,9 @@ void MenuConstructorDialog::showPreviewWindow()
       pick(std::clamp(at + step, 0, (int)preview_lines_.size() - 1)); }; previewBackground(); }
   preview_frame_->Show(true); updatePreviewWindow(); }
 
-void MenuConstructorDialog::putAway() {} 
+// Takes the window out of view when its entry panel goes away, so it never edits a
+// lump nobody can see. Where it stood is kept by wx, so it comes back to the same place
+void MenuConstructorDialog::putAway() { Show(false); }
 void MenuConstructorDialog::updatePreview() { if (preview_) preview_->Refresh(); }
 void MenuConstructorDialog::previewBackground()
 { auto* def = currentDefinition(); if (!def || def->statements.empty()) return;

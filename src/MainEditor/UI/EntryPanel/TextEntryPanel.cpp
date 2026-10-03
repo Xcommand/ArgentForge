@@ -711,7 +711,7 @@ void TextEntryPanel::panelHidden()
 
 	if (menu_constructor_ && menu_constructor_->IsShown())
 	{
-		menu_constructor_->Show(false);
+		menu_constructor_->putAway();
 		menu_with_panel_ = true;
 	}
 }
