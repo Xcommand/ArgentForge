@@ -388,8 +388,11 @@ Around the editor
   the exit question, Help->About, the crash dialog, the program's own log header, and the executable,
   which is `ArgentForge.exe`. What still says SLADE is in two groups: things that really are SLADE (the
   wiki the Help menu opens, the `SLADE (Light)` and `SLADE (Dark)` colour sets), and text that ends up
-  inside a mod's files, where a new name would be a claim about who made them. Your settings folder
-  stayed `SLADE3` on purpose, so an install of this opens with your own configuration rather than a fresh one.
+  inside a mod's files, where a new name would be a claim about who made them. Your settings now live in
+  a folder of their own (`ArgentForge`) rather than SLADE's `SLADE3`, so an install of this and an install
+  of SLADE stop writing over each other. Because that starts you off empty, a first run asks whether to
+  pull your old settings in from `SLADE3`, and the same import sits under `Settings > Extra Features` if
+  you say no and change your mind later.
 * The text editor's `Colour Scheme` menu has two more entries: `Argent (Light)` and `Argent (Dark)`, next
   to SLADE's own pair, which stay. Whichever scheme you pick takes the start page's theme with it, so the
   `web_dark_theme` switch under Advanced is a result rather than something to remember, and the switch
