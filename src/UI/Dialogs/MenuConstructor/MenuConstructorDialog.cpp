@@ -284,7 +284,8 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 }
 
 bool MenuConstructorDialog::loadText(string_view text)
-{ source_ = MenuSource{};
+{ KeepFocus focus;
+  source_ = MenuSource{};
   source_.setVocabulary(MenuVocabulary::instance().blockWords(), MenuVocabulary::instance().menuWords());
   source_.load(text);
   if (source_.definitions().empty()) return false;
@@ -297,12 +298,14 @@ void MenuConstructorDialog::adopt(string_view text)
   block_ = std::min(block_, fresh.definitions().size() - 1); source_ = std::move(fresh); }
 
 void MenuConstructorDialog::showBlock(size_t index)
-{ if (index >= source_.definitions().size() || index == block_) return;
+{ KeepFocus focus;
+  if (index >= source_.definitions().size() || index == block_) return;
   block_ = index; have_selection_ = false; selected_ = LinePath{};
   buildMenuList(); buildAddList(); buildTree(); }
 
 void MenuConstructorDialog::followCaret(size_t offset)
-{ auto& defs = source_.definitions(); if (defs.empty()) return;
+{ KeepFocus focus;
+  auto& defs = source_.definitions(); if (defs.empty()) return;
   for (size_t i = 0; i < defs.size(); i++) {
       if (offset < defs[i].begin || offset >= defs[i].end) continue;
       // Resolve the exact row the caret sits on, then bring the window to it. Only
@@ -320,7 +323,8 @@ void MenuConstructorDialog::followCaret(size_t offset)
       return; } }
 
 void MenuConstructorDialog::refreshFrom(string_view text)
-{ MenuSource fresh; fresh.setVocabulary(MenuVocabulary::instance().blockWords(), MenuVocabulary::instance().menuWords());
+{ KeepFocus focus;
+  MenuSource fresh; fresh.setVocabulary(MenuVocabulary::instance().blockWords(), MenuVocabulary::instance().menuWords());
   fresh.load(text); if (fresh.definitions().empty()) return;
   auto index = std::min(block_, fresh.definitions().size() - 1);
   if (fresh.definitions()[index].text() == blockText()) return;
