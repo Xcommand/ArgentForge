@@ -57,6 +57,7 @@ EXTERN_CVAR(String, iconset_general)
 EXTERN_CVAR(String, iconset_entry_list)
 EXTERN_CVAR(Bool, tabs_condensed)
 EXTERN_CVAR(Bool, web_dark_theme)
+EXTERN_CVAR(Int, startpage_recent_scale)
 EXTERN_CVAR(Int, elist_icon_size)
 EXTERN_CVAR(Int, elist_icon_padding)
 EXTERN_CVAR(Bool, elist_no_tree)
@@ -100,6 +101,7 @@ void InterfacePrefsPanel::init()
 	cb_file_browser_->SetValue(am_file_browser_tab);
 	cb_condensed_tabs_->SetValue(tabs_condensed);
 	cb_web_dark_theme_->SetValue(web_dark_theme);
+	spin_recent_size_->SetValue(startpage_recent_scale);
 	spin_elist_icon_pad_->SetValue(elist_icon_padding);
 
 	if (toolbar_size <= 16)
@@ -151,6 +153,7 @@ void InterfacePrefsPanel::applyPreferences()
 	am_file_browser_tab = cb_file_browser_->GetValue();
 	tabs_condensed      = cb_condensed_tabs_->GetValue();
 	web_dark_theme      = cb_web_dark_theme_->GetValue();
+	startpage_recent_scale = spin_recent_size_->GetValue();
 	elist_icon_padding  = spin_elist_icon_pad_->GetValue();
 
 	if (choice_toolbar_size_->GetSelection() == 0)
@@ -196,6 +199,9 @@ wxPanel* InterfacePrefsPanel::setupGeneralTab(wxWindow* stc_tabs)
 	choice_toolbar_size_    = new wxChoice(panel, -1, wxDefaultPosition, wxDefaultSize, sizes);
 	auto sets               = wxutil::arrayStringStd(icons::iconSets(icons::General));
 	choice_iconset_general_ = new wxChoice(panel, -1, wxDefaultPosition, wxDefaultSize, sets);
+	spin_recent_size_       = new wxSpinCtrl(panel, -1, wxEmptyString, wxDefaultPosition, wxSize(ui::scalePx(90), -1),
+	                                         wxSP_HORIZONTAL, 50, 200, startpage_recent_scale);
+	spin_recent_size_->SetToolTip(wxS("Size of the Recent Files rows on the Start page, as a percentage of the base font"));
 
 	// Layout
 	auto sizer = new wxBoxSizer(wxVERTICAL);
@@ -217,6 +223,9 @@ wxPanel* InterfacePrefsPanel::setupGeneralTab(wxWindow* stc_tabs)
 	choice_windows_darkmode_->Show(false);
 #endif
 	gb_sizer->Add(cb_web_dark_theme_, { row++, 0 }, { 1, 2 }, wxEXPAND);
+	gb_sizer->Add(
+		new wxStaticText(panel, -1, wxS("Recent Files font size (%):")), { row, 0 }, { 1, 1 }, wxALIGN_CENTRE_VERTICAL);
+	gb_sizer->Add(spin_recent_size_, { row++, 1 }, { 1, 1 }, wxEXPAND);
 	gb_sizer->Add(cb_file_browser_, { row++, 0 }, { 1, 2 }, wxEXPAND);
 	gb_sizer->Add(cb_list_monospace_, { row++, 0 }, { 1, 2 }, wxEXPAND);
 	gb_sizer->Add(cb_condensed_tabs_, { row++, 0 }, { 1, 2 }, wxEXPAND);
