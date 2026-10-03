@@ -56,6 +56,19 @@ bool findLine(const std::vector<MenuStatement>& statements, const MenuStatement*
 return false;
 }
 
+// The path of the deepest statement whose bytes hold [offset], so a caret in the
+// editor can pick the exact row the tree is showing. Statements with no range yet
+// (begin == end) fall out on their own
+bool pathAtOffset(std::vector<MenuStatement>& list, size_t offset, vector<size_t>& steps)
+{ for (size_t i = 0; i < list.size(); i++) {
+    auto& st = list[i];
+    if (offset < st.begin || offset >= st.end) continue;
+    steps.push_back(i);
+    if (!st.children.empty()) pathAtOffset(st.children, offset, steps);
+    return true; }
+  return false;
+}
+
 struct Param { string name; string type; bool optional = false; };
 
 class LineItem : public wxTreeItemData {
@@ -270,9 +283,17 @@ void MenuConstructorDialog::followCaret(size_t offset)
 { auto& defs = source_.definitions(); if (defs.empty()) return;
   for (size_t i = 0; i < defs.size(); i++) {
       if (offset < defs[i].begin || offset >= defs[i].end) continue;
-      if (i == block_) return;
-      block_ = i; have_selection_ = false; selected_ = LinePath{};
-      buildMenuList(); buildAddList(); buildTree(); return; } }
+      // Resolve the exact row the caret sits on, then bring the window to it. Only
+      // rebuild when the row actually moved, so a caret inside one line is quiet
+      LinePath line; vector<size_t> steps;
+      if (pathAtOffset(defs[i].statements, offset, steps) && !steps.empty()) line.steps = steps;
+      if (i != block_)
+      { block_ = i; selected_ = line; have_selection_ = !line.steps.empty();
+        buildMenuList(); buildAddList(); buildTree(); }
+      else if (!(line == selected_))
+      { selected_ = line; have_selection_ = !line.steps.empty();
+        selectPath(selected_); buildGrid(); showHelp(); }
+      return; } }
 
 void MenuConstructorDialog::refreshFrom(string_view text)
 { MenuSource fresh; fresh.setVocabulary(MenuVocabulary::instance().blockWords(), MenuVocabulary::instance().menuWords());
