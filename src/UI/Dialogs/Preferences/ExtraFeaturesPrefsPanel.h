@@ -27,6 +27,8 @@
 
 #include "PrefsPanelBase.h"
 
+class wxButton;
+
 namespace slade
 {
 class ExtraFeaturesPrefsPanel : public PrefsPanelBase
@@ -41,5 +43,11 @@ public:
 		return "Settings for what Argent Forge adds on top of the original SLADE. The image "
 			   "editor's brush and the actor constructor have pages of their own below.";
 	}
+
+private:
+	// One-time migration: pull SLADE's settings into our own folder (we no longer share it)
+	void importSladeSettings();
+
+	wxButton* button_import_ = nullptr;
 };
 } // namespace slade

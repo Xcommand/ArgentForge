@@ -502,6 +502,15 @@ bool SLADEWxApp::singleInstanceCheck()
 // -----------------------------------------------------------------------------
 bool SLADEWxApp::OnInit()
 {
+	// Set application name (for wx directory stuff) FIRST: it drives GetUserDataDir, so both the
+	// single-instance check below and initDirectories must see it. This keeps our settings out of
+	// SLADE's folder - Argent Forge gets %APPDATA%\ArgentForge.
+#ifdef __WINDOWS__
+	wxApp::SetAppName(wxS("ArgentForge"));
+#else
+	wxApp::SetAppName(wxS("argentforge"));
+#endif
+
 	// Check if an instance of SLADE is already running
 	if (!singleInstanceCheck())
 	{
@@ -518,13 +527,6 @@ bool SLADEWxApp::OnInit()
 
 	// Setup system options
 	wxSystemOptions::SetOption(wxS("mac.listctrl.always_use_generic"), 1);
-
-	// Set application name (for wx directory stuff)
-#ifdef __WINDOWS__
-	wxApp::SetAppName(wxS("SLADE3"));
-#else
-	wxApp::SetAppName(wxS("slade3"));
-#endif
 
 	// Handle exceptions using wxDebug stuff, but only in release mode
 #ifdef NDEBUG

@@ -111,7 +111,7 @@ bool TempFolderWizardPage::canGoNext()
 		testfilename = wxStandardPaths::Get()
 						   .GetTempDir()
 						   .Append(wxString::FromUTF8(sep))
-						   .Append(wxS("SLADE3"))
+						   .Append(wxS("ArgentForge"))
 						   .Append(wxString::FromUTF8(sep))
 						   .Append(wxS("test.txt"))
 						   .utf8_string();
