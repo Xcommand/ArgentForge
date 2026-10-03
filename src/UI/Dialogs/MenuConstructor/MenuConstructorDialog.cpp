@@ -23,6 +23,7 @@
 
 #include <wx/button.h>
 #include <wx/choice.h>
+#include <wx/display.h>
 #include <wx/listbox.h>
 #include <wx/msgdlg.h>
 #include <wx/panel.h>
@@ -444,6 +445,7 @@ void MenuConstructorDialog::buildGrid(const wxString& keep)
   showColourRow(shown);
   rebuilding_ = false;
   sizeGrid();
+  grid_args_->Refresh();   // repaint so the per-property colour set during the build shows at once
   // Keep an open preview in step with whatever line or block is now shown
   if (preview_)
       updatePreviewWindow(); }
@@ -766,14 +768,19 @@ void MenuConstructorDialog::onGridSelected(wxPropertyGridEvent& e)
 
 void MenuConstructorDialog::showPreviewWindow()
 { KeepFocus focus; if (!preview_) {
-    preview_frame_ = new wxFrame(nullptr, wxID_ANY, wxS("Menu preview"), wxDefaultPosition, {ui::scalePx(640), ui::scalePx(480)});
-    auto my_pos = GetScreenPosition(); auto my_size = GetSize();
-    // Put it to the left of the constructor, over the editor; fall back to the right
-    // if there is no room there
-    int pw = ui::scalePx(640);
-    int px = my_pos.x - pw - 20; int py = my_pos.y;
-    if (px < 0) px = my_pos.x + my_size.GetWidth() + 20;
-    preview_frame_->Move(px, py);
+    // A tool window that floats above the constructor and can't be dragged to a new shape: the
+    // picture it holds is a fixed-resolution screen, so reshaping it by hand would only slide the
+    // menu off where the engine puts it. Zoom (SHIFT+wheel) is what sizes it, and that keeps the aspect
+    preview_frame_ = new wxFrame(this, wxID_ANY, wxS("Menu preview"), wxDefaultPosition,
+        {ui::scalePx(640), ui::scalePx(480)},
+        wxCAPTION | wxCLOSE_BOX | wxSYSTEM_MENU | wxFRAME_FLOAT_ON_PARENT);
+    // Centre it on the screen the constructor is on, so it always opens where he is looking
+    // rather than off an edge he then has to hunt for
+    int di = wxDisplay::GetFromWindow(this); if (di == wxNOT_FOUND) di = 0;
+    wxRect area = wxDisplay(di).GetClientArea();
+    int fw = ui::scalePx(640), fh = ui::scalePx(480);
+    preview_frame_->SetSize(area.x + std::max(0, (area.width - fw) / 2),
+                            area.y + std::max(0, (area.height - fh) / 2), fw, fh);
     preview_ = new MenuPreview(preview_frame_);
     auto sizer = new wxBoxSizer(wxVERTICAL); sizer->Add(preview_, 1, wxEXPAND); preview_frame_->SetSizer(sizer);
     preview_frame_->ShowWithoutActivating();

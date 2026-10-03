@@ -77,6 +77,8 @@ private:
 	int       screen_w_ = 640, screen_h_ = 480;
 	int       scale_ = 1, vwidth_ = 640, vheight_ = 480;
 	int       content_top_ = 0;   // where the rows start on that screen, in its pixels
+	int       scroll_ = 0;        // first visible row when the menu is taller than the screen, so
+	                              // the list scrolls to keep the cursor in view the way the game does
 	int       zoom_ = 0;          // 0 = follow the setting
 	bool      problem_ = false;   // some line in here would stop the engine
 };

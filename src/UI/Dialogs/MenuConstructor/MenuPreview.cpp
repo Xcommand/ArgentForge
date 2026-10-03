@@ -212,28 +212,51 @@ void MenuPreview::onPaint(wxPaintEvent&)
 	// where the stacking happens. Cache it so rowAt picks the line the eye sees.
 	int lineheight = 17 * u;
 	int gutter     = 4 * u;
-	int visible    = 0;
-	for (auto& r : rows_)
-	{
-		if (r.broken)
-			continue;
-		visible++;
-		if (!r.centred)
-		{
-			int tw = 0, th = 0;
-			gc.GetTextExtent(r.label, &tw, &th);
-			gutter = std::max(gutter, tw + 4 * u);
-		}
-	}
-	int y = field.y + std::max(6 * u, (field.height - visible * lineheight) / 2);
-	laid_.assign(rows_.size(), wxPoint{});
+
+	// The rows the engine would actually draw, in order (broken lines are left out). Walk them once
+	// for the gutter and to find where the cursor sits in this drawn list
+	std::vector<int> order;
+	int              sel = -1;
 	for (size_t i = 0; i < rows_.size(); i++)
 	{
 		if (rows_[i].broken)
 			continue;
-		laid_[i] = { field.x + gutter, y };
-		y += lineheight;
+		if (rows_[i].selected)
+			sel = (int)order.size();
+		order.push_back((int)i);
+		if (!rows_[i].centred)
+		{
+			int tw = 0, th = 0;
+			gc.GetTextExtent(rows_[i].label, &tw, &th);
+			gutter = std::max(gutter, tw + 4 * u);
+		}
 	}
+	int visible = (int)order.size();
+	int fit     = lineheight > 0 ? std::max(1, field.height / lineheight) : visible;
+
+	// A menu that fits is centred on the screen like the game's short menus. One taller than the
+	// screen is a list that scrolls: keep the cursor row inside the window, top-aligned, so wheel
+	// and arrows walk to lines that would otherwise be off the bottom with no way to reach them
+	int first = 0;
+	if (visible > fit)
+	{
+		if (sel >= 0)
+		{
+			if (sel < scroll_)
+				scroll_ = sel;
+			else if (sel >= scroll_ + fit)
+				scroll_ = sel - fit + 1;
+		}
+		scroll_   = std::clamp(scroll_, 0, visible - fit);
+		first     = scroll_;
+	}
+	else
+		scroll_ = 0;
+
+	int y0 = field.y + (visible > fit ? 6 * u : std::max(6 * u, (field.height - visible * lineheight) / 2));
+	laid_.assign(rows_.size(), wxPoint{});
+	for (int k = 0; k < visible; k++)
+		laid_[order[k]] = { field.x + gutter, y0 + (k - first) * lineheight };
 
 	for (size_t i = 0; i < rows_.size(); i++)
 	{
