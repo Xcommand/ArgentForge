@@ -73,6 +73,8 @@ private:
 	// the line the eye sees, not whatever x/y the caller happened to leave in the row
 	std::vector<wxPoint> laid_;
 	wxBitmap  background_;
+	wxBitmap  bg_cache_;        // background_ scaled to the current field, so onPaint doesn't re-scale every repaint
+	int       bg_cache_w_ = -1, bg_cache_h_ = -1;
 	wxString  background_name_, note_;
 	int       screen_w_ = 640, screen_h_ = 480;
 	int       scale_ = 1, vwidth_ = 640, vheight_ = 480;

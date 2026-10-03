@@ -14,16 +14,24 @@
 #include "UI/Dialogs/MenuConstructor/NameListWindow.h"
 #include "General/CVar.h"
 #include "General/UI.h"
+#include "General/Misc.h"
+#include "General/ResourceManager.h"
+#include "Application/App.h"
 #include "Archive/Archive.h"
 #include "Archive/ArchiveEntry.h"
 #include "Archive/EntryType/EntryType.h"
+#include "Graphics/SImage/SImage.h"
+#include "Graphics/Palette/Palette.h"
+#include "Graphics/Palette/PaletteManager.h"
 #include "UI/Dialogs/ActorConstructor/DescriptionText.h"
 #include "UI/Controls/ColourBox.h"
 #include "Utility/StringUtils.h"
 
+#include <wx/bitmap.h>
 #include <wx/button.h>
 #include <wx/choice.h>
 #include <wx/display.h>
+#include <wx/image.h>
 #include <wx/listbox.h>
 #include <wx/msgdlg.h>
 #include <wx/panel.h>
@@ -849,6 +857,34 @@ std::vector<MenuPreview::Row> MenuConstructorDialog::buildPreviewRows()
       preview_lines_.push_back(&st);
       rows.push_back(std::move(r)); }
   return rows; }
+// The texture a block draws its menu over. The engine reads a `background "NAME"` directive in the
+// block body (menudef.cpp:1415), not a TITLEPIC. Empty when the block declares none
+string MenuConstructorDialog::blockBackground()
+{ auto* def = currentDefinition(); if (!def) return "";
+  for (auto& st : def->statements)
+      if (strutil::equalCI(st.word, "background") && !st.args.empty()) return unquote(st.args[0].value);
+  return ""; }
+
+// Resolve a menu background name the way the engine's GetMenuTexture does: a flat, then a patch in
+// the patches / graphics / textures namespaces, searched through this archive and the base resource.
+// Decoded onto the global palette. Empty if nothing by that name exists, so the preview stays flat
+wxBitmap MenuConstructorDialog::resolveMenuTexture(string_view name)
+{ if (!archive_ || name.empty()) return {};
+  auto& res = app::resources();
+  ArchiveEntry* e = res.getFlatEntry(name, archive_);
+  if (!e) e = res.getPatchEntry(name, "patches", archive_);
+  if (!e) e = res.getPatchEntry(name, "graphics", archive_);
+  if (!e) e = res.getPatchEntry(name, "textures", archive_);
+  if (!e) return {};
+  SImage img; if (!misc::loadImageFromEntry(&img, e) || !img.isValid()) return {};
+  auto* pal = app::paletteManager()->globalPalette();
+  wxImage wimg(img.width(), img.height());
+  if (auto* d = wimg.GetData())
+      for (int y = 0; y < img.height(); y++) for (int x = 0; x < img.width(); x++) {
+          ColRGBA c = img.pixelAt(x, y, pal); size_t o = ((size_t)y * img.width() + x) * 3;
+          d[o] = c.r; d[o + 1] = c.g; d[o + 2] = c.b; }
+  return wxBitmap(wimg); }
+
 void MenuConstructorDialog::previewBackground()
 { auto* def = currentDefinition(); if (!def || def->statements.empty()) return;
   int sw = 640, sh = 480, scale = 1, vw = 640, vh = 480;
@@ -863,7 +899,9 @@ void MenuConstructorDialog::previewBackground()
       preview_->setRows(rows, "");
       bool any = false; for (auto& r : rows) if (r.broken) { any = true; break; }
       preview_->markProblem(any);
-      preview_->setBackground({}, ""); }}
+      string bg = blockBackground();
+      preview_bg_name_ = bg;
+      preview_->setBackground(resolveMenuTexture(bg), bg); }}
 void MenuConstructorDialog::updatePreviewWindow()
 { auto* def = currentDefinition(); if (!def || !preview_) return;
   auto rows = buildPreviewRows();
@@ -872,7 +910,11 @@ void MenuConstructorDialog::updatePreviewWindow()
   for (size_t i = 0; i < rows.size() && i < preview_lines_.size(); i++)
   { rows[i].selected = preview_lines_[i] == sel; if (rows[i].broken) any = true; }
   preview_->setRows(rows, "");
-  preview_->markProblem(any); }
+  preview_->markProblem(any);
+  // The background only changes when a different block is shown, so re-decode it just then, not on
+  // every keystroke - decoding a texture each edit is exactly the lag we don't want
+  if (string bg = blockBackground(); bg != preview_bg_name_)
+  { preview_bg_name_ = bg; preview_->setBackground(resolveMenuTexture(bg), bg); } }
 // Points the window at the archive the text came from, so the name lists can carry the
 // cvars that mod declares itself, not just the engine's
 void MenuConstructorDialog::setArchive(Archive* archive)

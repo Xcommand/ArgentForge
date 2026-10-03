@@ -125,6 +125,8 @@ void MenuPreview::setBackground(const wxBitmap& picture, wxString name)
 {
 	background_      = picture;
 	background_name_ = std::move(name);
+	bg_cache_        = wxBitmap{};   // new source, so the scaled copy is stale
+	bg_cache_w_ = bg_cache_h_ = -1;
 	Refresh();
 }
 
@@ -193,8 +195,15 @@ void MenuPreview::onPaint(wxPaintEvent&)
 
 	if (background_.IsOk())
 	{
-		auto scaled = background_.ConvertToImage().Scale(field.width, field.height, wxIMAGE_QUALITY_NORMAL);
-		gc.DrawBitmap(wxBitmap{scaled}, field.x, field.y, false);
+		// Scale once per field size, not every repaint - a big backdrop scaled on each paint is a lag source
+		if (!bg_cache_.IsOk() || bg_cache_w_ != field.width || bg_cache_h_ != field.height)
+		{
+			auto scaled = background_.ConvertToImage().Scale(field.width, field.height, wxIMAGE_QUALITY_NORMAL);
+			bg_cache_ = wxBitmap{ scaled };
+			bg_cache_w_ = field.width;
+			bg_cache_h_ = field.height;
+		}
+		gc.DrawBitmap(bg_cache_, field.x, field.y, false);
 	}
 	else
 	{

@@ -160,6 +160,10 @@ private:
 	// The preview: what a menu block would look like on a screen, and what sits behind it
 	void updatePreview();
 	void previewBackground();
+	// The block's own `background "NAME"` directive (empty if it has none), and the texture it names
+	// resolved to a bitmap through this archive and the base resource
+	string     blockBackground();
+	wxBitmap   resolveMenuTexture(string_view name);
 	// The rows the preview shows for the block on screen: one per menu line, its text as the
 	// label and its colour argument as the ink. Fills preview_lines_ so a click maps back
 	std::vector<MenuPreview::Row> buildPreviewRows();
@@ -278,6 +282,7 @@ private:
 	MenuPreview*         preview_ = nullptr;
 	wxFrame*             preview_frame_ = nullptr;   // its own window, opened by the button
 	vector<const MenuStatement*> preview_lines_;   // what each drawn row came from, to pick it back
+	string preview_bg_name_;   // the background last resolved, so it re-decodes only on a block change
 	wxChoice*         choice_line_ = nullptr;
 	wxButton*         button_up_   = nullptr;
 	wxButton*         button_down_ = nullptr;
