@@ -386,7 +386,8 @@ void MenuConstructorDialog::sizeGrid()
 { int rh = grid_args_->GetCharHeight();
   if (rh <= 0) rh = 16;
   rh += 8;
-  grid_args_->SetMinSize({ -1, (grid_rows_ + 1) * rh + 8 });
+  grid_args_->SetMinSize(wxSize(-1, (grid_rows_ + 1) * rh + 8));
+  grid_args_->SetSplitterLeft();
   panel_right_->Layout(); }
 
 void MenuConstructorDialog::buildAddList()
