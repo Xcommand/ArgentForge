@@ -101,7 +101,7 @@ void executables::setGameExePath(string_view id, string_view path)
 }
 
 // -----------------------------------------------------------------------------
-// Writes all game executable paths as a string (for slade3.cfg)
+// Writes all game executable paths as a string (for the config file)
 // -----------------------------------------------------------------------------
 string executables::writePaths()
 {

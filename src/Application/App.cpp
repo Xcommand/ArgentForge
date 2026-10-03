@@ -242,9 +242,9 @@ bool initDirectories()
 // -----------------------------------------------------------------------------
 void readConfigFile()
 {
-	// Open SLADE.cfg
+	// Open our config file
 	Tokenizer tz;
-	if (!tz.openFile(path("slade3.cfg", Dir::User)))
+	if (!tz.openFile(path(config_file, Dir::User)))
 		return;
 
 	// Go through the file with the tokenizer
@@ -606,18 +606,20 @@ bool app::init(const vector<string>& args, double ui_scale)
 // -----------------------------------------------------------------------------
 // Saves the SLADE configuration file
 // -----------------------------------------------------------------------------
+const char* const app::config_file = "argentforge.cfg";
+
 void app::saveConfigFile()
 {
 	// ReSharper disable CppExpressionWithoutSideEffects
 
-	// Open SLADE.cfg for writing text
-	auto  cfg_path = app::path("slade3.cfg", app::Dir::User);
+	// Open our config file for writing text
+	auto  cfg_path = app::path(app::config_file, app::Dir::User);
 	SFile file(cfg_path, SFile::Mode::Write);
 
 	// Show error message if it didn't open correctly
 	if (!file.isOpen())
 	{
-		log::error("Failed to open slade3.cfg for writing");
+		log::error("Failed to open the configuration file for writing");
 		wxMessageBox(
 			WX_FMT(
 				"Failed to open the SLADE configuration file ({}) for writing, settings will not be saved!", cfg_path),

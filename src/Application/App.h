@@ -22,7 +22,11 @@ namespace app
 	ResourceManager& resources();
 
 	bool init(const vector<string>& args, double ui_scale = 1.);
-	void saveConfigFile();
+	// Our settings file, named after us now that we keep it in our own folder
+	extern const char* const config_file;
+	void                     saveConfigFile();
+	// Re-read config_file into the live config, e.g. after a settings import overwrote the file
+	void readConfigFile();
 	void exit(bool save_config);
 
 	// Version

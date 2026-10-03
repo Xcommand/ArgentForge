@@ -37,6 +37,7 @@
 #include "UI/WxUtils.h"
 #include <wx/button.h>
 #include <wx/dir.h>
+#include <wx/file.h>
 #include <wx/filename.h>
 #include <wx/msgdlg.h>
 #include <wx/stdpaths.h>
@@ -48,20 +49,36 @@ using namespace slade;
 namespace
 {
 // -----------------------------------------------------------------------------
-// Where a real (non-portable) SLADE keeps its settings. We no longer share it, but
-// this is the sibling folder under the same base, so it is what we import from
+// Where a real (non-portable) SLADE keeps its settings. We no longer share it, but this
+// is a sibling folder under the same AppData root, so it's what we import from. Deriving
+// it is fiddly: GetUserDataDir may or may not carry a trailing separator, and SLADE may
+// have lived under Roaming or Local. So force our own path to a dir, take its parent, and
+// also fall back to the AppData env vars - then pick whichever SLADE3 folder really exists
 // -----------------------------------------------------------------------------
 wxString sladeSettingsDir()
 {
-	wxFileName ours(wxStandardPaths::Get().GetUserDataDir());
-	wxString   base = ours.GetPathWithSep();
+	vector<wxFileName> bases;
 
-	for (const char* name : { "SLADE3", "slade3" })
-	{
-		wxFileName candidate(base + wxString::FromUTF8(name));
-		if (candidate.IsDir())
-			return candidate.GetFullPath();
-	}
+	// Our own folder's parent is where SLADE's used to sit; force a dir first so a trailing
+	// separator on GetUserDataDir doesn't make us strip the wrong component
+	wxFileName ours = wxFileName::DirName(wxStandardPaths::Get().GetUserDataDir());
+	ours.RemoveLastDir();
+	bases.push_back(ours);
+
+	wxString env;
+	if (wxGetEnv(wxS("APPDATA"), &env))
+		bases.push_back(wxFileName::DirName(env));
+	if (wxGetEnv(wxS("LOCALAPPDATA"), &env))
+		bases.push_back(wxFileName::DirName(env));
+
+	for (auto base : bases)
+		for (const char* name : { "SLADE3", "slade3" })
+		{
+			auto candidate = base;
+			candidate.AppendDir(wxString::FromUTF8(name));
+			if (candidate.IsDir())
+				return candidate.GetFullPath();
+		}
 
 	return wxEmptyString;
 }
@@ -177,8 +194,17 @@ void ExtraFeaturesPrefsPanel::importSladeSettings()
 		return;
 	}
 
+	// SLADE's config is named after SLADE; ours isn't, so the copied file has to take our name
+	// (dst ends in a separator, so these concatenate cleanly)
+	auto slade_cfg = dst + wxS("slade3.cfg");
+	if (wxFileExists(slade_cfg))
+		wxRenameFile(slade_cfg, dst + wxString::FromUTF8(app::config_file), true);
+
+	// Adopt the imported config now, so this session doesn't overwrite it on its next save
+	app::readConfigFile();
+
 	wxMessageBox(wxString::Format(
-					 wxS("Imported %d settings files from SLADE.\nRestart Argent Forge to load them."), copied),
+					 wxS("Imported %d settings files from SLADE.\nRestart Argent Forge to apply them fully."), copied),
 				 wxS("Import SLADE Settings"),
 				 wxICON_INFORMATION,
 				 this);
