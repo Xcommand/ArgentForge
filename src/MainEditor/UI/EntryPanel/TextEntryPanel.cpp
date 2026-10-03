@@ -135,7 +135,7 @@ TextEntryPanel::TextEntryPanel(wxWindow* parent) : EntryPanel(parent, "text")
 		"Menu Constructor",
 		"properties",
 		"Edit menus in this lump without typing them out",
-		false);
+		true);
 	toolbar_->addGroup(group_constructor);
 
 	// Add 'Text Language' choice to toolbar
