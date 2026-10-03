@@ -173,11 +173,6 @@ int MenuPreview::unit() const
 	return std::max(1, (int)std::lround((double)field.width / (double)screen_w_ * (double)scale_));
 }
 
-wxPoint MenuPreview::rowPixel(const Row& row, double k, const wxRect& field) const
-{
-	return {field.x + (int)std::lround(row.x * k), field.y + (int)std::lround(row.y * k)};
-}
-
 void MenuPreview::onPaint(wxPaintEvent&)
 {
 	wxAutoBufferedPaintDC dc{this};
@@ -190,9 +185,7 @@ void MenuPreview::onPaint(wxPaintEvent&)
 	if (field.width <= 0 || field.height <= 0)
 		return;
 
-	// Screen pixels, as the layout computed them, into window pixels
-	double k = (double)field.width / (double)screen_w_;
-	int    u = unit();
+	int u = unit();
 
 	if (background_.IsOk())
 	{

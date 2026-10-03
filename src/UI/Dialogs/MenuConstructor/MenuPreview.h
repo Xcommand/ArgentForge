@@ -66,8 +66,6 @@ private:
 	int    unit() const;
 	// The zoom in force: the wheel's, until the next window
 	int    zoom() const;
-	// Where a row's pixels land inside this panel
-	wxPoint rowPixel(const Row& row, double k, const wxRect& field) const;
 
 	std::vector<Row> rows_;
 	// Where each row actually landed, in this panel's pixels, resolved by onPaint from the
