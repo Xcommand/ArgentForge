@@ -686,7 +686,10 @@ static int copySettingsTree(const wxString& src, const wxString& dst)
 			if (name.Lower() != "temp")
 				copied += copySettingsTree(from, to);
 		}
-		else if (!name.Lower().EndsWith(".log") && wxCopyFile(from, to, true))
+		// Skip logs, and skip SLADE's active editor scheme (current.sss): importing it would drop
+		// the user into SLADE's colours instead of our dark default. Anyone who wants it switches
+		// the scheme themselves
+		else if (!name.Lower().EndsWith(".log") && name.Lower() != "current.sss" && wxCopyFile(from, to, true))
 			++copied;
 	}
 

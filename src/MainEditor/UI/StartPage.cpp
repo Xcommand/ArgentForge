@@ -50,6 +50,10 @@ using namespace slade;
 // -----------------------------------------------------------------------------
 CVAR(Bool, web_dark_theme, true, CVar::Flag::Save)
 
+// How big the Recent Files rows are, as a percentage of the base font. Default is SLADE's own size
+// (100); the shipped 0.85em "reads a path better a size down" is available by dropping this to 85
+CVAR(Int, startpage_recent_scale, 100, CVar::Flag::Save)
+
 
 // -----------------------------------------------------------------------------
 //
@@ -242,6 +246,13 @@ void SStartPage::load(bool new_tip)
 
 	// Get html as string
 	wxString html = wxString::FromAscii((const char*)(entry_base_html_->rawData()), entry_base_html_->size());
+
+	// The recent-files size setting rides in as a rule after the shipped one, so it wins. Clamped so
+	// a wild cvar value can't make the list unreadable
+	html.Replace(
+		wxS("</head>"),
+		wxString::Format(wxS("<style>.recentbox .link{font-size:%.2fem;}</head>"),
+		                 std::clamp((int)startpage_recent_scale, 50, 200) / 100.0));
 
 	// Read css
 	wxString css;
