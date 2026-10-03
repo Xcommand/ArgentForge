@@ -212,11 +212,12 @@ void MenuPreview::onPaint(wxPaintEvent&)
 	gc.SetFont(pixelFont(8 * u));
 
 	// Resolve the layout the way the engine does (optionmenu.zs CalcIndent, optionmenuitems.zs
-	// drawLabel): labels right-align at a gutter one widest-label wide plus four units, values
-	// sit fourteen units right of that gutter, centred lines sit in the middle, and each line
-	// steps down one font height. The callers hand rows with no position, so this is where the
-	// stacking actually happens. Cache it so rowAt picks the line the eye sees.
-	int lineheight = 8 * u + 2;
+	// drawLabel): labels right-align at a gutter one widest-label wide plus four units, values sit
+	// fourteen units right of that gutter, centred lines sit in the middle, and each line steps down
+	// by the menu's Linespacing (engine default 17, menudef.cpp:1629; the smallfont is only 8 tall,
+	// so rows sit about two font-heights apart). The callers hand rows with no position, so this is
+	// where the stacking happens. Cache it so rowAt picks the line the eye sees.
+	int lineheight = 17 * u;
 	int gutter     = 4 * u;
 	int visible    = 0;
 	for (auto& r : rows_)
