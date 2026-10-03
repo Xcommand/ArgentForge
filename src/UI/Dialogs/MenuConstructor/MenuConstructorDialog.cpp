@@ -808,6 +808,11 @@ void MenuConstructorDialog::showPreviewWindow()
                             area.y + std::max(0, (area.height - fh) / 2), fw, fh);
     preview_ = new MenuPreview(preview_frame_);
     auto sizer = new wxBoxSizer(wxVERTICAL); sizer->Add(preview_, 1, wxEXPAND); preview_frame_->SetSizer(sizer);
+    // Closing hides the window instead of destroying it. The dialog keeps calling
+    // updatePreviewWindow -> preview_->setRows after a menu pick, and a destroyed frame would leave
+    // that pointer dangling into freed memory (the crash on browsing menus after closing the preview).
+    // Hiding keeps preview_ valid and the next Preview button just shows it again, where it was.
+    preview_frame_->Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent& e) { e.Veto(); preview_frame_->Hide(); });
     preview_frame_->ShowWithoutActivating();
     auto pick = [this](int row) { if (row < 0 || row >= (int)preview_lines_.size() || !preview_lines_[row]) return;
       auto* def = currentDefinition(); if (def) { vector<size_t> steps;
