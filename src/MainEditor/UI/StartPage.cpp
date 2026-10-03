@@ -251,7 +251,7 @@ void SStartPage::load(bool new_tip)
 	// a wild cvar value can't make the list unreadable
 	html.Replace(
 		wxS("</head>"),
-		wxString::Format(wxS("<style>.recentbox .link{font-size:%.2fem;}</head>"),
+		wxString::Format(wxS("<style>.recentbox .link{font-size:%.2fem;}</style></head>"),
 		                 std::clamp((int)startpage_recent_scale, 50, 200) / 100.0));
 
 	// Read css
