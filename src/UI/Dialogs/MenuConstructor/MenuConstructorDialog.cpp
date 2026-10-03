@@ -11,6 +11,7 @@
 #include "UI/Dialogs/MenuConstructor/MenuConstructorDialog.h"
 #include "UI/Dialogs/MenuConstructor/MenuVocabulary.h"
 #include "UI/Dialogs/MenuConstructor/MenuPreview.h"
+#include "UI/Dialogs/MenuConstructor/NameListWindow.h"
 #include "General/CVar.h"
 #include "General/UI.h"
 #include "UI/Dialogs/ActorConstructor/DescriptionText.h"
@@ -25,6 +26,7 @@
 #include <wx/propgrid/propgrid.h>
 #include <wx/sizer.h>
 #include <wx/splitter.h>
+#include <wx/textctrl.h>
 
 #include <algorithm>
 #include <cctype>
@@ -345,6 +347,7 @@ void MenuConstructorDialog::buildGrid(const wxString& keep)
   if (selected.empty()) { if (auto* prop = grid_args_->GetSelectedProperty()) selected = prop->GetName(); }
   grid_args_->Clear();
   grid_rows_ = 0;
+  completions_.clear();
   auto* def = currentDefinition(); auto* st = currentStatement();
   if (def && st) {
       if (isValueTable(*def)) {
@@ -359,13 +362,19 @@ void MenuConstructorDialog::buildGrid(const wxString& keep)
               if (hint.empty()) hint = "as written";
               auto* prop = new wxStringProperty(wxString::FromUTF8(label), wxString("arg") + wxString::Format("%d",(int)i),
                                                 wxString::FromUTF8(unquote(st->args[i].value)));
-              prop->SetHelpString(wxString::FromUTF8(hint)); grid_args_->Append(prop); grid_rows_++; }
+              prop->SetHelpString(wxString::FromUTF8(hint)); grid_args_->Append(prop); grid_rows_++;
+              auto offers = offersFor(st->word, i < params.size() ? params[i].name : "", unquote(st->args[i].value));
+              if (!offers.names.empty()) { wxArrayString arr; for (auto& n : offers.names) arr.Add(wxString::FromUTF8(n));
+                  completions_[prop->GetName()] = arr; } }
           if (params.size() > st->args.size()) {
               auto& next = params[st->args.size()];
               string label = next.name.empty() ? fmt::format("argument {}", st->args.size() + 1) : next.name;
               auto* prop = new wxStringProperty(wxString::FromUTF8(label), "next", "");
               prop->SetHelpString(wxString::FromUTF8(fmt::format("{}, not yet in line", next.type)));
-              grid_args_->Append(prop); grid_rows_++; } } }
+              grid_args_->Append(prop); grid_rows_++;
+              auto offers = offersFor(st->word, next.name, "");
+              if (!offers.names.empty()) { wxArrayString arr; for (auto& n : offers.names) arr.Add(wxString::FromUTF8(n));
+                  completions_[prop->GetName()] = arr; } } } }
   if (!selected.empty()) { if (auto* prop = grid_args_->GetProperty(selected)) grid_args_->SelectProperty(prop, false); }
   rebuilding_ = false;
   sizeGrid(); }
@@ -560,7 +569,7 @@ void MenuConstructorDialog::onGridChanged(wxPropertyGridEvent& e)
   else return;
   if (!apply()) { buildTree(); return; } applyCaption(); showHelp(); }
 
-void MenuConstructorDialog::onGridSelected(wxPropertyGridEvent& e) { e.Skip(); showHelp(); }
+void MenuConstructorDialog::onGridSelected(wxPropertyGridEvent& e) { e.Skip(); showHelp(); CallAfter([this]{ watchNameField(); }); }
 
 void MenuConstructorDialog::showPreviewWindow()
 { KeepFocus focus; if (!preview_) {
@@ -704,7 +713,57 @@ void MenuConstructorDialog::commitHeader()
   if (word == "optionmenu") def->setProtected(check_protected_->IsChecked());
   buildMenuList(); apply(); }
 void MenuConstructorDialog::onHeaderCommitted(wxCommandEvent&) {} void MenuConstructorDialog::onHeaderFocusLost(wxFocusEvent&) {}
-void MenuConstructorDialog::watchNameField() {} void MenuConstructorDialog::showNames() {}
-void MenuConstructorDialog::hideNames() {} void MenuConstructorDialog::takeName(int) {}
+// Hooks the grid's live editor for the selected argument, so typing narrows the list
+void MenuConstructorDialog::watchNameField()
+{ auto* ed = grid_args_->GetEditorControl();
+  names_field_ = dynamic_cast<wxTextEntry*>(ed);
+  if (!names_field_) { hideNames(); return; }
+  if (ed != names_window_)
+  { names_window_ = ed;
+    names_window_->Bind(wxEVT_TEXT, [this](wxCommandEvent&){ showNames(); });
+    names_window_->Bind(wxEVT_KEY_DOWN, [this](wxKeyEvent& e){
+        if (e.GetKeyCode() == WXK_RETURN || e.GetKeyCode() == WXK_NUMPAD_ENTER) { hideNames(); e.Skip(); }
+        else if (e.GetKeyCode() == WXK_ESCAPE) hideNames();
+        else e.Skip(); }); }
+  showNames(); }
+
+// Builds the matching names for the word at the caret and floats them under the field
+void MenuConstructorDialog::showNames()
+{ auto* prop = grid_args_->GetSelectedProperty();
+  if (!names_field_ || !prop) { hideNames(); return; }
+  auto it = completions_.find(prop->GetName());
+  if (it == completions_.end() || it->second.empty()) { hideNames(); return; }
+
+  wxString text = names_field_->GetValue();
+  long caret = names_field_->GetInsertionPoint(); if (caret < 0) caret = (long)text.length();
+  auto namech = [](wxChar c){ return c == '_' || wxIsalnum(c); };
+  long from = caret, to = caret;
+  while (from > 0 && namech(text[from - 1])) from--;
+  while (to < (long)text.length() && namech(text[to])) to++;
+  names_from_ = from; names_to_ = to;
+  wxString prefix = text.Mid(from, to - from).Lower();
+
+  names_shown_.clear();
+  for (auto& n : it->second) if (prefix.IsEmpty() || n.Lower().StartsWith(prefix)) names_shown_.Add(n);
+  if (names_shown_.empty()) { hideNames(); return; }
+
+  if (!names_list_) { names_list_ = new NameListWindow(grid_args_); names_popup_ = names_list_;
+    names_list_->onPick = [this](int row){ takeName(row); }; }
+  names_list_->setNames(names_shown_);
+  auto pos = names_window_->GetScreenPosition(); auto sz = names_window_->GetSize();
+  names_popup_->Move(wxPoint(pos.x, pos.y + sz.GetHeight()));
+  names_popup_->Popup(); }
+
+void MenuConstructorDialog::hideNames()
+{ if (names_popup_) names_popup_->Dismiss(); }
+
+// Puts the picked name over the word the caret sits in, leaving the rest of the field
+void MenuConstructorDialog::takeName(int row)
+{ if (row < 0 || row >= (int)names_shown_.size() || !names_field_) return;
+  wxString text = names_field_->GetValue();
+  text = text.Left(names_from_) + names_shown_[row] + text.Mid(names_to_);
+  names_field_->SetValue(text);
+  names_field_->SetInsertionPoint(names_from_ + names_shown_[row].Length());
+  hideNames(); }
 void MenuConstructorDialog::commitArg(const wxString&, const wxString&) {} string MenuConstructorDialog::currentFamily() { return "optionmenu"; }
 MenuConstructorDialog::~MenuConstructorDialog() = default;
