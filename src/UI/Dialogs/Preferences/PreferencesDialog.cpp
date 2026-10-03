@@ -56,6 +56,7 @@
 #include "Map3DPrefsPanel.h"
 #include "MapDisplayPrefsPanel.h"
 #include "MapEditorPrefsPanel.h"
+#include "MenuConstructorPrefsPanel.h"
 #include "NodesPrefsPanel.h"
 #include "OpenGLPrefsPanel.h"
 #include "PNGPrefsPanel.h"
@@ -163,6 +164,7 @@ PreferencesDialog::PreferencesDialog(wxWindow* parent) : SDialog(parent, "Argent
 	addPrefsPage<ExtraFeaturesPrefsPanel>("Extra Features");
 	addPrefsPage<ImageEditorPrefsPanel>("Image Editor", true);
 	addPrefsPage<ActorConstructorPrefsPanel>("Actor Constructor", true);
+	addPrefsPage<MenuConstructorPrefsPanel>("Menu Constructor", true);
 
 	tree_prefs_->AddPage(setupAdvancedPanel(), wxS("Advanced"));
 

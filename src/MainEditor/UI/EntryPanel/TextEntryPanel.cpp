@@ -122,13 +122,19 @@ TextEntryPanel::TextEntryPanel(wxWindow* parent) : EntryPanel(parent, "text")
 
 	// Add 'Constructor' button next to the save/revert buttons. It's its own
 	// group because the Entry group is greyed out until the entry is modified
-	auto group_constructor = new SToolBarGroup(toolbar_, "Actor Constructor");
+	auto group_constructor = new SToolBarGroup(toolbar_, "Constructors");
 	group_constructor->addActionButton(
 		"ptxt_actorconstructor",
 		"Constructor",
 		"things",
 		"Edit the actor the cursor is in without typing the definition out",
 		true);
+	group_constructor->addActionButton(
+		"ptxt_menuconstructor",
+		"Menu Constructor",
+		"properties",
+		"Edit menus in this lump without typing them out",
+		false);
 	toolbar_->addGroup(group_constructor);
 
 	// Add 'Text Language' choice to toolbar
@@ -165,6 +171,7 @@ TextEntryPanel::TextEntryPanel(wxWindow* parent) : EntryPanel(parent, "text")
 	SAction::fromId("ptxt_find_replace")->addToMenu(menu_custom_);
 	SAction::fromId("ptxt_jump_to_line")->addToMenu(menu_custom_);
 	SAction::fromId("ptxt_actorconstructor")->addToMenu(menu_custom_);
+	SAction::fromId("ptxt_menuconstructor")->addToMenu(menu_custom_);
 
 	// 'Code Folding' submenu
 	auto menu_fold = new wxMenu();
@@ -397,6 +404,10 @@ bool TextEntryPanel::handleEntryPanelAction(string_view id)
 	else if (id == "ptxt_actorconstructor")
 		openActorConstructor();
 
+	// Menu Constructor
+	else if (id == "ptxt_menuconstructor")
+		openMenuConstructor();
+
 	// Find+Replace
 	else if (id == "ptxt_find_replace")
 		text_area_->showFindReplacePanel();
@@ -476,6 +487,8 @@ void TextEntryPanel::toolbarButtonClick(const string& action_id)
 {
 	if (action_id == "ptxt_actorconstructor")
 		openActorConstructor();
+	else if (action_id == "ptxt_menuconstructor")
+		openMenuConstructor();
 }
 
 // -----------------------------------------------------------------------------

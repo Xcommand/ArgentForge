@@ -321,6 +321,7 @@ void MainWindow::setupLayout()
 	SAction::fromId("main_runscript")->addToMenu(tools_menu);
 	tools_menu->AppendSeparator();
 	SAction::fromId("main_actorconstructor")->addToMenu(tools_menu);
+	SAction::fromId("main_menuconstructor")->addToMenu(tools_menu);
 	menu->Append(tools_menu, wxS("&Tools"));
 
 	// Help menu
@@ -672,7 +673,19 @@ bool MainWindow::handleAction(string_view id)
 		return true;
 	}
 
-	// Help->About
+	// Tools->Menu Constructor
+	if (id == "main_menuconstructor")
+	{
+		// Like the actor one it works on the text being looked at, and from there it goes
+		// finding (or offering to make) the archive's MENUDEF
+		if (!SActionHandler::doAction("ptxt_menuconstructor"))
+			wxMessageBox(wxS("The Menu Constructor edits a menu file open in a text panel."),
+			             wxS("Menu Constructor"),
+			             wxICON_INFORMATION,
+			             this);
+
+		return true;
+	}
 	if (id == "main_about")
 	{
 		wxAboutDialogInfo info;

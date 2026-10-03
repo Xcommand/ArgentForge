@@ -5,6 +5,7 @@
 namespace slade
 {
 class ActorConstructorDialog;
+class MenuConstructorDialog;
 class ActorDefinition;
 class ActorSource;
 struct NewActorSpec;
@@ -47,6 +48,30 @@ private:
 	// Opens the actor constructor for the definition the cursor is on
 	void openActorConstructor();
 
+	// Opens the menu constructor over the menus in this text
+	void openMenuConstructor();
+
+	// Writes the whole menu text the constructor made back over the editor, as one
+	// undo step
+	bool applyMenuText(string_view text);
+
+	// Moves the editor to the start of a block the constructor picked
+	void selectMenuBlock(size_t index);
+	void selectMenuLine(size_t offset);
+
+	// Points the menu constructor at the block the caret has moved into
+	void followMenuCaret();
+
+	// Makes the menu constructor read the text again after typing in the editor
+	void resyncMenuConstructor();
+
+	// Points the menu constructor at whatever lump just came into the panel
+	void updateMenuConstructor();
+
+	// True when the keyboard is in the menu constructor, whose window is separate but
+	// whose edits are edits to this text
+	bool menuConstructorHasKeyboard();
+
 	// Switches every text area to the colour scheme called [name], and moves the
 	// start page over to its theme with it
 	void applyColourScheme(string_view name);
@@ -57,6 +82,9 @@ private:
 
 	// Asks whether to write a new actor file instead, for a text with nothing in it
 	void offerNewActorFile();
+
+	// Goes looking for the archive's MENUDEF when this text has no menu block
+	void openMenuDefElsewhere();
 
 	// Reads the editor text into [source]. False if it isn't a language the
 	// constructor works with
@@ -117,9 +145,24 @@ private:
 	// The constructor, which stays up while the text is edited
 	ActorConstructorDialog* actor_constructor_ = nullptr;
 
+	// The menu constructor, same arrangement: one per panel, up alongside the text
+	MenuConstructorDialog* menu_constructor_ = nullptr;
+
+	// True while the panel is feeding text to the menu constructor, so the change
+	// the editor is about to announce doesn't bounce back as a reload
+	bool applying_menu_ = false;
+
+	// Set when the constructor's own write is what changed the text. The editor
+	// announces that change a moment later, and reloading the window then would
+	// destroy the field the user is typing in
+	bool menu_ignore_change_ = false;
+
 	// True while the constructor is out of view because this panel is, rather than
 	// because the user closed it
 	bool constructor_with_panel_ = false;
+
+	// The same, for the menu window
+	bool menu_with_panel_ = false;
 
 	// The name the definition being edited had when the constructor opened it
 	string actor_being_edited_;

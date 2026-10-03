@@ -36,6 +36,8 @@
 #include "App.h"
 #include <wx/datetime.h>
 #include "Archive/ArchiveDir.h"
+#include "UI/Dialogs/MenuConstructor/MenuDef.h"
+#include "UI/Dialogs/MenuConstructor/MenuVocabulary.h"
 #include "Archive/ArchiveManager.h"
 #include "Archive/Formats/ZipArchive.h"
 #include "ArchiveManagerPanel.h"
@@ -1010,6 +1012,111 @@ static EntryType* actorEntryType(ActorFormat format)
 // the definition, the lump that pulls the mod's scripts together gets its
 // '#include', and the constructor opens on the actor to fill in the rest
 // -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// The archive's MENUDEF lump. The engine reads that one name and nothing else
+// (menudef.cpp:1627), so there's no question to ask about what to call it
+// -----------------------------------------------------------------------------
+static ArchiveEntry* findMenuDefEntry(Archive& archive)
+{
+	// The archive hands over its whole tree as a list, which is the same walk the entry
+	// tree does internally and saves this file from knowing about directories
+	vector<ArchiveEntry*> entries;
+	archive.putEntryTreeAsList(entries);
+
+	for (auto* one : entries)
+		if (one && strutil::equalCI(one->nameNoExt(), "menudef"))
+			return one;
+
+	return nullptr;
+}
+
+bool ArchivePanel::newMenuDefFile(ArchiveEntry* into)
+{
+	auto archive = archive_.lock();
+	if (!archive)
+		return false;
+
+	if (archive->isReadOnly())
+	{
+		wxMessageBox(
+			wxS("This archive is read only, so there's nowhere to write a new file."),
+			wxS("Menu Constructor"),
+			wxICON_INFORMATION,
+			this);
+		return false;
+	}
+
+	// The lump goes beside the file being looked at, since that's where his mod keeps
+	// its scripts, and keeps the name the engine looks for
+	string path = "MENUDEF.txt";
+	auto*  dir  = archive->rootDir().get();
+	if (into && !into->path(true).empty())
+	{
+		auto dp = into->path(true);
+		while (!dp.empty() && dp.front() == '/')
+			dp.erase(0, 1);
+		if (auto slash = dp.find_last_of('/'); slash != string::npos)
+		{
+			dir  = archive->dirAtPath(dp.substr(0, slash));
+			path = dp.substr(0, slash) + "/MENUDEF.txt";
+		}
+	}
+
+	// Bytes that already hold a block are a menu: opening it is the whole job. Bytes that
+	// hold none (a comment header, an empty lump) get the starting block added to what's
+	// there, because offering a second MENUDEF beside the one the engine reads is how the
+	// Menu button used to loop at this file
+	string before;
+	if (auto* exists = archive->entryAtPath(path))
+	{
+		MenuSource check;
+		check.setVocabulary(MenuVocabulary::instance().blockWords(), MenuVocabulary::instance().menuWords());
+		auto&       d = exists->data();
+		before        = string((const char*)d.data(), d.size());
+		check.load(before);
+		if (!check.definitions().empty())
+		{
+			openEntry(exists);
+			return true;
+		}
+	}
+
+	// One block to start on, so the constructor has something to show. Nearly every mod
+	// hangs its settings off the game menu, which is what this line does
+	MenuSource source;
+	source.setVocabulary(MenuVocabulary::instance().blockWords(), MenuVocabulary::instance().menuWords());
+	source.load(before);
+	source.appendDefinition("AddOptionMenu", "\"OptionsMenu\"");
+	auto text = source.serialize();
+
+	undo_manager_->beginRecord("New Menu File");
+
+	shared_ptr<ArchiveEntry> entry;
+	if (auto* exists = archive->entryAtPath(path))
+	{
+		undo_manager_->recordUndoStep(std::make_unique<EntryDataUS>(exists));
+		exists->importMem(text.data(), text.size());
+		exists->setType(EntryType::fromId("text"));
+		entry = exists->getShared();
+	}
+	else
+	{
+		entry = std::make_shared<ArchiveEntry>("MENUDEF.txt");
+		entry->importMem(text.data(), text.size());
+		entry->setType(EntryType::fromId("text"));
+
+		if (!archive->addEntry(entry, 0xFFFFFFFF, dir))
+		{
+			undo_manager_->endRecord(false);
+			return false;
+		}
+	}
+
+	undo_manager_->endRecord(true);
+	openEntry(entry.get());
+	return true;
+}
+
 bool ArchivePanel::newActorFile(ArchiveEntry* into)
 {
 	// Check the archive is still open

@@ -30,4 +30,15 @@ cl /nologo /std:c++20 /utf-8 /EHsc /MT /FS ^
    "%ROOT%\out\build\win-x64-release\src\external\external.lib" ^
    /link /LIBPATH:"%ROOT%\vcpkg_installed\x64-windows-static\lib"
 
+cl /nologo /std:c++20 /utf-8 /EHsc /MT /FS ^
+   /DSFML_STATIC /D__WXMSW__ /DwxUSE_GUI=1 ^
+   /I"%ROOT%\src" /I"%ROOT%\src\.." /I"%ROOT%\src\.\Application" ^
+   /I"%ROOT%\thirdparty\fmt\include" /I"%ROOT%\thirdparty\dumb" ^
+   /Fe"%BIN%\menudef_roundtrip.exe" ^
+   "%ROOT%\scripts\harness\menudef_roundtrip.cpp" ^
+   "%ROOT%\scripts\harness\strutil_stubs.cpp" ^
+   "%ROOT%\src\UI\Dialogs\MenuConstructor\MenuDef.cpp" ^
+   "%ROOT%\out\build\win-x64-release\src\external\external.lib" ^
+   /link /LIBPATH:"%ROOT%\vcpkg_installed\x64-windows-static\lib"
+
 popd

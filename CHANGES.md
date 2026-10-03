@@ -164,6 +164,122 @@ they are labelled as coming from the source, and the `notes` block of `actor_act
 part written by hand, and the only part a regeneration leaves alone - is where what an action is for
 gets said.
 
+Menu Constructor
+----------------
+
+A modeless dialog for editing a mod's menus, the ones a MENUDEF lump describes, on the text that is
+open instead of by typing widget lines out. Its lists are generated from the engine's own source and
+from a pile of real mod files by the scripts in `scripts/gen`, so what the window offers is what the
+parser reads rather than what someone remembered from a wiki.
+
+* Opens from the text editor's `Menus` toolbar button, from its right-click menu, or from
+  `Tools > Menu Constructor...`. The title says which file the window is a copy of, because several
+  archives are open at once and the lump is called MENUDEF in all of them. It doesn't take your focus,
+  so the text stays yours while it is open, and it comes back where you left it, as long as a screen
+  still has that spot.
+* `Menus` doesn't need a menu file to be open already: it looks through the archive for the lump the
+  engine reads and opens that. An archive with none gets an offer to make one beside the file you were
+  looking at, an empty MENUDEF counts as an empty page rather than an error, and a lump that already has
+  a block in it is extended instead of a second MENUDEF being made beside it.
+* Left: every block the lump declares, with `New`, `Delete` and `^`/`v` under the list. A branch
+  written whole on one line, `IfGame(Doom){ Option "a", "b", "OnOff" }`, closes there the way the
+  engine reads it, so the menus that come after it stay in the list instead of being swallowed by
+  the branch. `New` offers the
+  block kinds the engine still parses and says what each is for; the name field only appears for kinds
+  that read a name, and for `AddOptionMenu`/`AddListMenu` it is a list of the menus the game and this
+  file already declare, because an `add` line points at one rather than starting a new one.
+  `Protected` only appears for the one header that has it, and a name that already exists in
+  the file is met with which of the engine's outcomes you are walking into.
+* Middle: the lines of the chosen block, with `ifgame` and `else` branches shown as they nest and
+  editable inside them: a value changed on a line of a branch reaches the file, and the branch header
+  goes back the way the mod wrote it. A conditional is a line you can add rather than type: `Line`
+  offers `IfGame`, `IfNotGame` and `IfOption`, and `else` shows up once the body has a condition for
+  it to belong to. Which of those a body offers is what its own parser reads, taken from the same
+  table the rest of the window works from, so an `OptionMenuSettings` body asks for no `IfOption`
+  rather than handing you a line the engine stops on. What the branch checks is a pick list, not a
+  guess, because the engine compares the word with the game it started as against a set fixed at five
+  (Doom, Heretic, Hexen, Strife, Chex) that no mod can extend, and `ifoption` has eight names of its
+  own. Click a line and the editor jumps to it; move the caret in the editor and that line lights up
+  here. The two directions of the same bargain.
+* Right: the arguments of the selected line, each named and typed out of the widget class' own `Init()`.
+  So `label` is a String, `cr` is a colour range, `center` is an int, and a widget you add arrives with as
+  many arguments as its class requires, each one a placeholder of the right shape. A half-built menu is
+  still a file the engine reads. The arguments the line never wrote are no different: an unwritten `child`,
+  `values`, `graycheck` or `patch` opens with the same list of names as one already on the line, because
+  the moment you are choosing that name is now, not after you have typed a wrong one and the engine tells
+  you. The engine's own spelling is what counts here, not a tidy one: `FlagOption` declares that argument
+  `greycheck` with an e while every other widget says `graycheck`, and both get the cvar list.
+  A `patch` argument (`PatchItem`, `StaticPatch`, `ImageItem`) offers the
+  pictures the archive itself holds, since those are the ones a mod's own menu draws; names from the
+  game's graphics or another mod can still be typed, the list is only what is in this file. A label works
+  the same way: `label`, `label2`, `text` and `prompt` roll down the labels the archive's own LANGUAGE lump
+  defines, shown as `$NAME` because that is how a menu line points at one. Plain text belongs in those
+  fields twice as often as a key does, so the list narrows what you are typing instead of replacing it.
+* Colour is two unrelated things and the window keeps them apart. An argument the class declares `Color`
+  (the two colours of a player display) gets the same picker the image editor uses, and writes quoted
+  `#RRGGBB`: quoted because the menu scanner makes a bare `#` its own token, which is how an unquoted hex
+  quietly shifts every later argument off its class. A text colour is an int naming a range out of the
+  game's TEXTCOLO, so those fields get a list of range names instead of a free number, and choosing a
+  colour on the picker writes the nearest name. Either way the field says the colour in words and paints
+  those words in it: the `cr` row fills with the name the picker chose, drawn in that colour, so a line
+  you set down and walked away from still tells you what colour it is without standing on it.
+* A value table (`OptionValue`, `OptionString`) is the other thing a menu is made of, and it gets the
+  same treatment: inside such a block the `Widget` roll-down holds one word, `value`, and the `Line`
+  roll-down is put away, because a table body holds no service lines at all. The key of a new row is
+  numbered on its own from the row above it, and the fields a row can hold are listed from the table's
+  own shape - the value or name, the text the menu shows, and the tooltip the engine draws for that
+  choice. A file that wrote two of them still shows an empty third rather than hiding it, so the tooltip
+  is something you fill in here instead of a line you have to go and type in the text afterwards.
+* `Preview` opens the menu as the engine would draw it, in its own 640x480 window that takes neither
+  the keyboard nor the foreground: labels right-aligned to the gutter `OptionMenu` works out from its
+  widest one, one row per `Linespacing`, over the archive's own `TITLEPIC` when the file has one and
+  over flat black when it doesn't. The scale isn't guessed. uZDoom takes it from the resolution in two
+  steps where the second overwrites the first, which is why 1920x1080 draws the same 960x540 field
+  twice as tall as 960x540 does, why an ultrawide gets more empty room instead of bigger letters, and
+  why nothing at all is done for a screen turned sideways. `Settings > Extra Features > Menu
+  Constructor` chooses which of those screens to imitate and how big to draw it; `Shift` plus the wheel
+  over the window moves that last number without saving it, and the window grows to fit. The plain wheel
+  and the up and down arrows do what they do in the game: they walk the menu, one line at a time, and the
+  line they land on is selected in the list and in the text as well. A line the engine would stop on isn't
+  drawn at all, and the window puts a red edge and a `!` on itself until that line is fixed, so what is on
+  screen is a menu that would really appear. Click a row there and this window selects that line; move
+  the caret in the text and a box appears around the same row there. Closing it is the cross, nothing else.
+
+* Actor Constructor: choosing an actor from the dropdown now scrolls to the definition in the editor
+  but never takes the keyboard away, so typing or clicking elsewhere isn't interrupted (removed the
+  `SetSelection` call that was stealing focus).
+* What the mod declares for itself is read out of the archive when the window points at it: its CVARINFO
+  names, its own TEXTCOLO ranges, its LANGUAGE labels, and the widget classes it writes in its own ZScript,
+  whose `Init()` becomes that line's fields and whose names appear in the `Widget` list beside the engine's.
+  The log says what it read and how much of the archive it looked at, so an
+  empty list is a fact about the archive and not a silent nothing.
+* A change the window cannot write is never quiet. If the text in the editor is not the text the window
+  was given, the write is refused, the window re-reads the file, and it says so in a box rather than
+  letting a field you set go back on its own.
+* `Widget` and `Line` are two roll-downs, because a `Slider` and a `Title` are different kinds of thing and
+  one combined list buried `Title` where nobody could find it. Words the parser reads and then throws away
+  are labelled as such, so you don't spend time on a number that goes nowhere. The `Line` list is the words
+  this body's parser reads, minus the two kinds the window can't write without asking you to finish the
+  sentence: `size` wants either two numbers or one of two words and the parser tells which by reading the
+  next token, and a `Tooltip` belongs to the widget line above it, so it appears only when you are standing
+  on such a line. Both are still read and edited in a file that wrote them. The log says how many words of
+  each kind the block offered. The `Widget` list also holds
+  the classes the archive declares in its own ZScript: a mod's `Slider_PBVP` is read by the same parser as
+  an engine widget, its fields come from that class' `Init()`, and typing the line out by hand to get one
+  into a new menu is the typing this window is meant to remove. The log says how many words came from the
+  engine's palette and how many from the archive.
+* The note along the bottom is where the explaining happens: what the selected widget is for, what a
+  service line wants after it, what type a field takes, and why a control is asleep. It also says what a
+  name you are typing collides with: a second block answering to a menu name another block has is not a
+  second menu, and which one the game keeps is decided by the file. That note appears while you type,
+  not after the rename is written. It stays on screen
+  while you read it instead of vanishing with the mouse, and if a value isn't something the engine reads,
+  it says so there rather than refusing to write it, since a mod can name a colour range the engine's own
+  list doesn't have.
+* Nothing is tidied on the way out. Lines you didn't touch come back exactly as the file had them, mixed
+  CRLF and LF, indentation, comments and the shapes the window has no row for included; the bytes that
+  change are the ones in the line you edited.
+
 Graphics editor
 ---------------
 

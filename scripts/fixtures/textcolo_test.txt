@@ -1,0 +1,44 @@
+// A mod's own TEXTCOLO lump, in the shapes the engine's reader takes. One name per range,
+// quoted aliases allowed, the colour line written as the two ends of a gradient, and the
+// Console: and Flat: blocks after it holding the same colours for other outputs.
+
+PenFuchsia
+{
+	#FF00FF  #FF00FF
+Console:
+	#FF00FF  #FF00FF  0 255
+}
+
+PenLime "Neon lime"
+{
+	#006400  #00FF00
+}
+
+Split
+{
+	#102030
+}
+
+Untranslated
+{
+}
+
+// The engine requires this one to stay undefined, so a name with no colour is legal
+PenNamedOnly
+{
+	// nothing written here, only a comment
+}
+
+PenDim
+{
+	#000000  #0A0000
+Flat:
+	#050000
+}
+
+// A quoted hex is a string, not a declaration. This is the shape a menu file has, and the
+// reader must not turn it into a colour
+Decoy
+{
+	"Text"  "#FF0000"
+}

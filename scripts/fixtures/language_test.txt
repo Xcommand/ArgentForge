@@ -1,0 +1,25 @@
+// A LANGUAGE lump written in the shapes the engine's own reader takes
+// (stringtable.cpp:669-691, and wadsrc/static/language.def for the real thing): a block
+// header, then a label, an '=', one or more quoted runs and a ';' to close.
+
+[default]
+
+MUSIC_E1M1 = "e1m1";
+MENU_SAVE = "Save Game";
+PB_TIER1 = "Tier 1";
+SPACED   =   "spaces around the equals still read";
+INSIDE = "the text holds = and ; inside it";
+$ifgame(Strife) STRIFE_ONLY = "this game only";
+
+// A value may be several quoted runs, which the engine joins into one string
+PB_TIER2 = "Tier "
+	"Two";
+
+// Not a definition: no '=' after the label
+TAG "text with no equals";
+
+// A comment is not a definition either: FAKE = "no";
+/* Neither is one inside a block comment: BLOCKED = "no"; */
+
+DUP = "first";
+dup = "the same label spelled differently is one label";

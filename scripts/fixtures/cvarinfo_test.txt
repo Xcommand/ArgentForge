@@ -1,0 +1,18 @@
+// The shapes a CVARINFO lump really takes, written the way the engine's own reader wants
+// them (d_main.cpp:1902-1990). The gate reads this file and asks what names come out.
+
+server int decal_mode = 1, "Accumulate soot";
+server int mod_max_penetrations = 20;
+user float hud_slope = 0.5;
+server bool cl_gore = true, "Blood and guts";
+user color crosshaircolor = "FF0000";
+server string dm_respawn_mode = "normal";
+user noarchive int win_x = 0;
+user latch int r_glversion = 0;
+server nosave int debug_only = 0;
+server handlerClass(Handler) int my_custom = 0;
+
+// A comment that holds the word int and a name, and must not be read as a cvar
+// int not_a_cvar = 5;
+
+server float spread_factor = 1.0, "How far";

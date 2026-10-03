@@ -137,15 +137,18 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	split_inner_->SetMinimumPaneSize(90);
 	split_inner_->SetSashGravity(1.0);
 
-	// LEFT SIDE: menus listbox only
+	// LEFT SIDE: menus listbox + tree lines
 	panel_menus_ = new wxPanel(split_outer_);
 	list_menus_ = new wxListBox(panel_menus_, wxID_ANY, wxDefaultPosition, wxDefaultSize, 0, nullptr, wxLB_SINGLE);
-	
-	auto menus_sizer = new wxBoxSizer(wxVERTICAL);
-	menus_sizer->Add(list_menus_, 1, wxEXPAND);
+	tree_lines_ = new wxTreeCtrl(panel_menus_, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+	                               wxTR_DEFAULT_STYLE | wxTR_HIDE_ROOT | wxBORDER_SUNKEN);
+	tree_lines_->AddRoot(wxEmptyString);
+	auto menus_sizer = new wxBoxSizer(wxHORIZONTAL);
+	menus_sizer->Add(list_menus_, 0, wxEXPAND | wxRIGHT, ui::pad());
+	menus_sizer->Add(tree_lines_, 1, wxEXPAND);
 	panel_menus_->SetSizer(menus_sizer);
 
-	// RIGHT SIDE: block header, tree lines, and arguments  
+	// RIGHT SIDE: block header, arguments, help, buttons
 	panel_right_ = new wxPanel(split_outer_);
 	
 	// Block header line (kind, name, protected checkbox) - for OptionMenu
@@ -158,12 +161,7 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	header_hbox->Add(text_menu_name_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, ui::pad());
 	header_hbox->Add(check_protected_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, ui::pad());
 	
-	// Tree control for lines - THIS is the actual tree_lines_ member
-	tree_lines_ = new wxTreeCtrl(panel_right_, wxID_ANY, wxDefaultPosition, wxDefaultSize,
-	                               wxTR_DEFAULT_STYLE | wxTR_HIDE_ROOT | wxBORDER_SUNKEN);
-	tree_lines_->AddRoot(wxEmptyString);
-	
-	// Arguments area below tree
+	// Arguments area
 	grid_args_ = new wxPropertyGrid(panel_right_, wxID_ANY, wxDefaultPosition, wxDefaultSize,
 	                                wxPG_SPLITTER_AUTO_CENTER | wxPG_TOOLTIPS);
 	help_ = new DescriptionText(panel_right_);
@@ -173,19 +171,22 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	button_up_ = new wxButton(panel_right_, wxID_ANY, "^", wxDefaultPosition, wxSize(28, -1));
 	button_down_ = new wxButton(panel_right_, wxID_ANY, "v", wxDefaultPosition, wxSize(28, -1));
 
-	// Build right side layout: header at top, tree in middle, args at bottom
-	auto right_vbox = new wxBoxSizer(wxVERTICAL);
-	right_vbox->Add(header_hbox, 0, wxEXPAND | wxBOTTOM, ui::pad());
-	right_vbox->Add(tree_lines_, 1, wxEXPAND);
-	right_vbox->Add(grid_args_, 0, wxEXPAND);
-	right_vbox->Add(help_, 0, wxEXPAND | wxTOP, ui::pad());
+	// Build args sizer
+	auto args_vbox = new wxBoxSizer(wxVERTICAL);
+	args_vbox->Add(header_hbox, 0, wxEXPAND);
+	args_vbox->Add(grid_args_, 1, wxEXPAND);
+	args_vbox->Add(help_, 0, wxEXPAND | wxTOP, ui::pad());
 	auto row_buttons = new wxBoxSizer(wxHORIZONTAL);
 	row_buttons->Add(choice_add_, 0, wxRIGHT, ui::pad());
 	row_buttons->AddStretchSpacer();
 	row_buttons->Add(button_up_, 0, wxRIGHT, 2);
 	row_buttons->Add(button_down_, 0);
-	right_vbox->Add(row_buttons, 0, wxEXPAND | wxTOP, ui::pad());
-	panel_right_->SetSizer(right_vbox);
+	args_vbox->Add(row_buttons, 0, wxEXPAND | wxTOP, ui::pad());
+	panel_right_->SetSizer(args_vbox);
+
+	// Create panel for split_inner_ bottom part
+	wxPanel* panel_args_bottom = new wxPanel(split_inner_);
+	panel_args_bottom->SetSizer(args_vbox);
 
 	split_outer_->SplitVertically(panel_menus_, panel_right_, menucon_sash_menus);
 
@@ -491,8 +492,47 @@ void MenuConstructorDialog::showPreviewWindow()
       pick(std::clamp(at + step, 0, (int)preview_lines_.size() - 1)); }; previewBackground(); }
   preview_frame_->Show(true); updatePreviewWindow(); }
 
-void MenuConstructorDialog::putAway() {} void MenuConstructorDialog::updatePreview() {}
-void MenuConstructorDialog::previewBackground() {} void MenuConstructorDialog::updatePreviewWindow() {}
+void MenuConstructorDialog::putAway() {} 
+void MenuConstructorDialog::updatePreview() { if (preview_) preview_->Refresh(); }
+void MenuConstructorDialog::previewBackground()
+{ auto* def = currentDefinition(); if (!def || def->statements.empty()) return;
+  int sw = 640, sh = 480, scale = 1, vw = 640, vh = 480;
+  string screen = strutil::trim((string)menucon_preview_screen);
+  auto pos = screen.find('x');
+  if (pos != string::npos) {
+      try { sw = std::stoi(screen.substr(0, pos)); vh = std::stoi(screen.substr(pos + 1)); } catch (...) {}
+      vw = sw; vh = sh; }
+  vector<MenuPreview::Row> rows;
+  for (auto& st : def->statements) {
+      if (st.kind == MenuStatement::Kind::Blank || st.kind == MenuStatement::Kind::Comment) continue;
+      MenuPreview::Row r;
+      r.label = wxString::FromUTF8(st.word);
+      if (!st.args.empty()) r.value = wxString::FromUTF8(unquote(st.args[0].value));
+      r.x = 0; r.y = 0; r.centred = false; r.selected = false; r.broken = false;
+      r.colour = *wxWHITE;
+      rows.push_back(std::move(r)); }
+  if (preview_) {
+      preview_->setField(sw, sh, scale, vw, vh);
+      preview_->setRows(rows, "");
+      preview_->markProblem(false);
+      preview_->setBackground({}, ""); }}
+void MenuConstructorDialog::updatePreviewWindow()
+{ auto* def = currentDefinition(); if (!def || !preview_) return;
+  vector<MenuPreview::Row> rows;
+  bool found = false;
+  for (size_t i = 0; i < preview_lines_.size(); i++)
+      if (preview_lines_[i] == currentStatement()) {
+          found = true; break; }
+  for (auto& st : def->statements) {
+      if (st.kind == MenuStatement::Kind::Blank || st.kind == MenuStatement::Kind::Comment) continue;
+      MenuPreview::Row r;
+      r.label = wxString::FromUTF8(st.word);
+      if (!st.args.empty()) r.value = wxString::FromUTF8(unquote(st.args[0].value));
+      r.x = 0; r.y = 0; r.centred = false; r.selected = found && &st == currentStatement(); r.broken = false;
+      r.colour = *wxWHITE;
+      rows.push_back(std::move(r)); }
+  preview_->setRows(rows, "");
+  preview_->fitToZoom();}
 void MenuConstructorDialog::setArchive(Archive*) {} void MenuConstructorDialog::saveGeometry() {}
 void MenuConstructorDialog::onBlockAdd(wxCommandEvent&) {} void MenuConstructorDialog::onBlockDelete(wxCommandEvent&) {}
 void MenuConstructorDialog::onBlockMove(wxCommandEvent&) {} void MenuConstructorDialog::onAddLineChosen(wxCommandEvent&) {}

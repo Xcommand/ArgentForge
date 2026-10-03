@@ -352,13 +352,22 @@ public:
 
 	void onBtnPostReport(wxCommandEvent& e)
 	{
-		auto url_base = app::repoUrl() + "/issues/new?labels=crash+bug&template=crash.yml";
-		auto version  = global::sc_rev.empty() ? app::version().toString()
-											   : app::version().toString() + " " + global::sc_rev;
+		// GitHub answers a request line of a few thousand characters with "Whoa there!",
+		// and a stack trace is longer than that on its own. So the report goes to the
+		// clipboard and the browser gets only the short address of the form, which is
+		// what the crash template expects to be pasted into anyway
+		if (wxTheClipboard->Open())
+		{
+			wxTheClipboard->SetData(new wxTextDataObject(wxString::FromUTF8(trace_)));
+			wxTheClipboard->Flush();
+			wxTheClipboard->Close();
+		}
 
-		wxURL url(wxString::FromUTF8(fmt::format("{}&version={}&crashinfo={}", url_base, version, trace_)));
+		wxLaunchDefaultBrowser(
+			wxString::FromUTF8(fmt::format("{}/issues/new?labels=bug&template=crash.yml", app::repoUrl())));
 
-		wxLaunchDefaultBrowser(url.BuildURI());
+		wxMessageBox(wxS("The report is on the clipboard, paste it into the form that just opened"),
+		             wxS("Crash report"));
 	}
 
 	void onBtnExit(wxCommandEvent& e) { EndModal(wxID_OK); }

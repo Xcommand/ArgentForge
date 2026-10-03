@@ -40,6 +40,9 @@ public:
 	// Writes a new actor into a file of its own. [into] is an empty file that's
 	// already on screen, which the dialog then offers as the path
 	bool newActorFile(ArchiveEntry* into = nullptr);
+	// Creates the archive's MENUDEF lump with one empty block in it, or fills the one
+	// that's already there if it's still empty, and opens it
+	bool newMenuDefFile(ArchiveEntry* into = nullptr);
 	bool registerActorScript(ArchiveEntry* entry, ActorFormat format, string_view actor);
 
 	// The editor number the archive's MAPINFO gives [class_name], for a ZScript class

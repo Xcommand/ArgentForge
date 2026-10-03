@@ -264,6 +264,7 @@ private:
 	MenuPreview*         preview_ = nullptr;
 	wxFrame*             preview_frame_ = nullptr;   // its own window, opened by the button
 	vector<const MenuStatement*> preview_lines_;   // what each drawn row came from, to pick it back
+	vector<MenuPreview::Row> preview_rows_;        // current rows for preview display
 	wxChoice*         choice_line_ = nullptr;
 	wxButton*         button_up_   = nullptr;
 	wxButton*         button_down_ = nullptr;
