@@ -685,11 +685,17 @@ std::vector<MenuPreview::Row> MenuConstructorDialog::buildPreviewRows()
   for (auto& st : def->statements) {
       if (st.kind == MenuStatement::Kind::Blank || st.kind == MenuStatement::Kind::Comment) continue;
       if (!vt && std::find(pal.begin(), pal.end(), st.word) == pal.end()) continue;
+      auto params = signatureParams(vocab.signature("optionmenu", st.word));
       MenuPreview::Row r;
-      r.label = st.args.empty() ? wxString::FromUTF8(st.word) : wxString::FromUTF8(unquote(st.args[0].value));
+      // The line's text is its first string argument. That isn't always args[0]: a StaticText
+      // leads with its x and y, so taking args[0] would show a coordinate instead of the label
+      string text;
+      for (size_t a = 0; a < params.size() && a < st.args.size(); a++)
+          if (strutil::equalCI(params[a].type, "String")) { text = unquote(st.args[a].value); break; }
+      if (text.empty() && !st.args.empty()) text = unquote(st.args[0].value);
+      r.label = wxString::FromUTF8(text.empty() ? st.word : text);
       r.value = ""; r.selected = false; r.broken = false; r.colour = *wxWHITE;
       r.centred = strutil::lower(st.word).find("centered") != string::npos;
-      auto params = signatureParams(vocab.signature("optionmenu", st.word));
       for (size_t a = 0; a < params.size() && a < st.args.size(); a++)
           if (strutil::equalCI(params[a].type, "Color")) { auto c = argColour(unquote(st.args[a].value), true);
               if (c.IsOk()) r.colour = c; break; }
