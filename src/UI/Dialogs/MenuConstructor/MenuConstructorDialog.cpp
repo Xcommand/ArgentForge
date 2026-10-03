@@ -368,6 +368,33 @@ void MenuConstructorDialog::buildAddList()
   else choice_add_->Enable(false);
   choice_add_->SetSelection(0); }
 
+// The names a field of this argument name has to offer, and what to say about it.
+// The engine reads these arguments as a name to look up, so spelling them by hand is
+// exactly what this window is meant to take away. The lists come from the shipped
+// vocabulary (the cvars and menus and value tables the engine declares) plus whatever
+// this archive adds; the popup that shows them is wired to this.
+MenuConstructorDialog::ArgOffers MenuConstructorDialog::offersFor(string_view word, const string& pname, const string& now)
+{ const auto& vocab = MenuVocabulary::instance();
+  ArgOffers offers;
+  if (strutil::equalCI(pname, "command"))
+  { offers.names = vocab.cvars(); offers.what = "the console variable this row changes"; offers.cvars = true; }
+  else if (strutil::equalCI(pname, "graycheck") || strutil::equalCI(pname, "greycheck") || strutil::equalCI(pname, "labelcvar"))
+  { offers.names = vocab.cvars(); offers.what = "the variable that grays this row out"; offers.cvars = true; }
+  else if (strutil::equalCI(pname, "values"))
+  { offers.names = vocab.engineTables(); offers.what = "the OptionValue/OptionString block that lists the choices"; }
+  else if (strutil::equalCI(pname, "child"))
+  { offers.names = vocab.engineMenus(); offers.what = "the menu this row opens"; }
+  else if (strutil::equalCI(pname, "graycheckMode"))
+  { offers.names = { "Gray", "Hide", "Off" }; offers.what = "how the row looks when the check is true"; offers.closed = true; }
+  else if (strutil::equalCI(pname, "patch"))
+  { offers.names = patchNames(); offers.what = "the picture this row draws"; }
+  return offers; }
+
+// The patch names this archive holds. Filled by readArchivePatches once the window is
+// pointed at an archive; empty until then, so the roll-down just offers nothing extra.
+vector<string> MenuConstructorDialog::patchNames() const
+{ return mod_patches_; }
+
 string MenuConstructorDialog::caption(const MenuStatement& st, bool value_table) const
 { if (st.kind == MenuStatement::Kind::If || st.kind == MenuStatement::Kind::Else) {
       string games; for (auto& a : st.args) { if (!games.empty()) games += ", "; games += unquote(a.value); }
