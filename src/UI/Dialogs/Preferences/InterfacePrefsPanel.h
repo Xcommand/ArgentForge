@@ -23,7 +23,6 @@ private:
 	wxCheckBox* cb_file_browser_         = nullptr;
 	wxCheckBox* cb_condensed_tabs_       = nullptr;
 	wxCheckBox* cb_web_dark_theme_       = nullptr;
-	wxSpinCtrl* spin_recent_size_        = nullptr;
 	wxChoice*   choice_toolbar_size_     = nullptr;
 	wxChoice*   choice_tab_style_        = nullptr;
 	wxChoice*   choice_iconset_general_  = nullptr;
