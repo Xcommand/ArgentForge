@@ -232,8 +232,9 @@ parser reads rather than what someone remembered from a wiki.
   is something you fill in here instead of a line you have to go and type in the text afterwards.
 * `Preview` opens the menu as the engine would draw it, in its own 640x480 window that takes neither
   the keyboard nor the foreground: labels right-aligned to the gutter `OptionMenu` works out from its
-  widest one, one row per `Linespacing`, over the archive's own `TITLEPIC` when the file has one and
-  over flat black when it doesn't. The scale isn't guessed. uZDoom takes it from the resolution in two
+  widest one, one row per `Linespacing`, over the texture the block's own `background` directive names
+  (read out of the mod or the base resource, the way the engine resolves it) and over flat black when
+  the block declares none. The scale isn't guessed. uZDoom takes it from the resolution in two
   steps where the second overwrites the first, which is why 1920x1080 draws the same 960x540 field
   twice as tall as 960x540 does, why an ultrawide gets more empty room instead of bigger letters, and
   why nothing at all is done for a screen turned sideways. `Settings > Extra Features > Menu
