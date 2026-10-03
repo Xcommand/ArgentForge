@@ -623,9 +623,16 @@ void StyleSet::initCurrent()
 		}
 	}
 
-	// Unable to load from userdir, just load first styleset (should be default)
+	// No saved scheme yet (first run, or right after an import that brought none): start on a dark
+	// set so the editor matches the dark window chrome and dark start page, instead of the light
+	// built-in default that style_sets[0] happens to be
 	if (!style_sets.empty())
-		ss_current->copySet(style_sets[0].get());
+	{
+		StyleSet* first_dark = nullptr;
+		for (auto& s : style_sets)
+			if (s->isDark()) { first_dark = s.get(); break; }
+		ss_current->copySet(first_dark ? first_dark : style_sets[0].get());
+	}
 }
 
 // -----------------------------------------------------------------------------
