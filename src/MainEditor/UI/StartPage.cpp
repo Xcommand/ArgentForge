@@ -48,7 +48,7 @@ using namespace slade;
 // Variables
 //
 // -----------------------------------------------------------------------------
-CVAR(Bool, web_dark_theme, false, CVar::Flag::Save)
+CVAR(Bool, web_dark_theme, true, CVar::Flag::Save)
 
 
 // -----------------------------------------------------------------------------
