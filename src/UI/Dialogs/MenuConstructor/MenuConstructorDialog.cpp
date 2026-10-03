@@ -768,10 +768,13 @@ std::vector<MenuPreview::Row> MenuConstructorDialog::buildPreviewRows()
   auto* def = currentDefinition(); if (!def) return rows;
   const auto& vocab = MenuVocabulary::instance();
   bool vt = isValueTable(*def);
-  auto& pal = vocab.palette("optionmenu");
   for (auto& st : def->statements) {
       if (st.kind == MenuStatement::Kind::Blank || st.kind == MenuStatement::Kind::Comment) continue;
-      if (!vt && std::find(pal.begin(), pal.end(), st.word) == pal.end()) continue;
+      // Show every widget line, including the ones a mod declares in its own ZScript. The
+      // parser tags any body word that isn't a known directive as a widget, so filtering by
+      // the engine's palette here was dropping the mod's own lines (NashGoreOption and the
+      // rest) out of the preview while the tree still listed them
+      if (!vt && st.kind != MenuStatement::Kind::Widget) continue;
       auto params = signatureParams(vocab.signature("optionmenu", st.word));
       MenuPreview::Row r;
       // The line's text is its first string argument. That isn't always args[0]: a StaticText
