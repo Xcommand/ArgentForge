@@ -410,17 +410,26 @@ MenuConstructorDialog::ArgOffers MenuConstructorDialog::offersFor(string_view wo
 { const auto& vocab = MenuVocabulary::instance();
   ArgOffers offers;
   if (strutil::equalCI(pname, "command"))
-  { offers.names = cvarNames(); offers.what = "the console variable this row changes"; offers.cvars = true; }
+  { offers.names = cvarNames();
+    offers.what = "the console variable this row changes";
+    offers.cvars = true; }
   else if (strutil::equalCI(pname, "graycheck") || strutil::equalCI(pname, "greycheck") || strutil::equalCI(pname, "labelcvar"))
-  { offers.names = cvarNames(); offers.what = "the variable that grays this row out"; offers.cvars = true; }
+  { offers.names = cvarNames();
+    offers.what = "the variable that grays this row out";
+    offers.cvars = true; }
   else if (strutil::equalCI(pname, "values"))
-  { offers.names = vocab.engineTables(); offers.what = "the OptionValue/OptionString block that lists the choices"; }
+  { offers.names = vocab.engineTables();
+    offers.what = "the OptionValue/OptionString block that lists the choices"; }
   else if (strutil::equalCI(pname, "child"))
-  { offers.names = vocab.engineMenus(); offers.what = "the menu this row opens"; }
+  { offers.names = vocab.engineMenus();
+    offers.what = "the menu this row opens"; }
   else if (strutil::equalCI(pname, "graycheckMode"))
-  { offers.names = { "Gray", "Hide", "Off" }; offers.what = "how the row looks when the check is true"; offers.closed = true; }
+  { offers.names = { "Gray", "Hide", "Off" };
+    offers.what = "how the row looks when the check is true";
+    offers.closed = true; }
   else if (strutil::equalCI(pname, "patch"))
-  { offers.names = patchNames(); offers.what = "the picture this row draws"; }
+  { offers.names = patchNames();
+    offers.what = "the picture this row draws"; }
   return offers; }
 
 // The patch names this archive holds. Filled by readArchivePatches once the window is
