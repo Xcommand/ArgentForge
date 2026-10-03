@@ -1138,17 +1138,59 @@ bool TextEntryPanel::menuConstructorHasKeyboard()
 }
 
 // -----------------------------------------------------------------------------
-// Says what a text with no menu block in it is: not a dead end but the place a
-// MENUDEF would start. Finding or making one is the next step
+// Called when the Menu button is pressed on a text with no menu block in it. The
+// engine reads menus only from a lump named MENUDEF, so this goes looking for one in
+// the archive and offers to open it, or to make one if the archive has none
 // -----------------------------------------------------------------------------
 void TextEntryPanel::openMenuDefElsewhere()
 {
-	wxMessageBox(
-		wxS("There are no menu definitions in this text.\n\n"
-		    "A MENUDEF lump is where a menu starts."),
-		wxS("Menu Constructor"),
-		wxICON_INFORMATION,
-		this);
+	auto entry = entry_.lock();
+	if (!entry)
+		return;
+
+	Archive* menudef_owner = entry->parent();
+	auto*      panel       = maineditor::currentArchivePanel();
+	auto*      menudef     = menudef_owner ? menudef_owner->entryAtPath("MENUDEF") : nullptr;
+
+	// Another lump holds the menus: offer to open it
+	if (menudef && menudef != entry.get() && panel)
+	{
+		if (wxMessageBox(
+			    wxS("This text has no menu definitions, but the archive has a MENUDEF lump.\n\n"
+			        "Open it in the menu constructor?"),
+			    wxS("Menu Constructor"),
+			    wxYES_NO | wxICON_QUESTION,
+			    this)
+		    == wxYES)
+			panel->openEntryAsText(menudef);
+		return;
+	}
+
+	// This lump is the MENUDEF and it's simply empty
+	if (menudef && menudef == entry.get())
+	{
+		wxMessageBox(
+			wxS("This MENUDEF has no menus in it yet.\n\nUse New to add the first block."),
+			wxS("Menu Constructor"),
+			wxOK | wxICON_INFORMATION,
+			this);
+		return;
+	}
+
+	// No MENUDEF anywhere: offer to create one
+	if (menudef_owner && !menudef_owner->isReadOnly() && panel
+	    && wxMessageBox(
+		       wxS("There are no menu definitions here and the archive has no MENUDEF lump.\n\n"
+		           "Create one?"),
+		       wxS("Menu Constructor"),
+		       wxYES_NO | wxICON_QUESTION,
+		       this)
+		       == wxYES)
+	{
+		auto created = menudef_owner->addNewEntry("MENUDEF", "");
+		if (created)
+			panel->openEntryAsText(created.get());
+	}
 }
 
 // -----------------------------------------------------------------------------
