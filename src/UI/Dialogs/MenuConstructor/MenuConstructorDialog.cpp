@@ -126,8 +126,9 @@ string unquote(string_view value)
 
 string quoteAs(const string& was, const string& now)
 { if (now.size() >= 2 && now.front() == '"' && now.back() == '"') return now;
+  // A LANGUAGE reference ($KEY) has to be quoted, or the menu scanner splits the $ off it
   bool quoted = was.size() >= 2 && was.front() == '"' && was.back() == '"';
-  if (quoted || now.find_first_of(" ,\t") != string::npos) return "\"" + now + "\""; return now; }
+  if (quoted || !now.empty() && now.front() == '$' || now.find_first_of(" ,\t") != string::npos) return "\"" + now + "\""; return now; }
 
 wxTreeItemId findItem(wxTreeCtrl* tree, const wxTreeItemId& parent, const vector<size_t>& steps)
 { wxTreeItemIdValue cookie;
@@ -490,6 +491,13 @@ MenuConstructorDialog::ArgOffers MenuConstructorDialog::offersFor(string_view wo
   else if (strutil::equalCI(pname, "patch"))
   { offers.names = patchNames();
     offers.what = "the picture this row draws"; }
+  // A label/text/prompt/label2 can hold a LANGUAGE reference. Those fields take plain text far
+  // more often than a key, so only offer the keys once he has typed the leading $
+  else if (!now.empty() && now[0] == '$' &&
+           (strutil::equalCI(pname, "label") || strutil::equalCI(pname, "text") ||
+            strutil::equalCI(pname, "prompt") || strutil::equalCI(pname, "label2")))
+  { offers.names = mod_language_;
+    offers.what = "the LANGUAGE string this text points at"; }
   return offers; }
 
 // The patch names this archive holds. Filled by readArchivePatches once the window is
@@ -505,6 +513,39 @@ void MenuConstructorDialog::readArchivePatches()
   for (unsigned i = 0; i < archive_->numEntries(); i++) { auto* e = archive_->entryAt(i);
     if (!e || !e->type() || !e->type()->extraProps().contains("image")) continue;
     mod_patches_.push_back(e->name()); } }
+
+// The LANGUAGE keys this archive declares, so a label/text/prompt can point at one as $KEY. The
+// engine reads every lump named LANGUAGE; a definition is "NAME = "text";" (the name is the
+// identifier just before the =), a leading $ifgame guard or a [lang] header isn't part of it, and
+// a compiled (binary) lump - a null byte in the first 512 - is one the engine skips, so we do too
+void MenuConstructorDialog::readArchiveLanguage()
+{ mod_language_.clear();
+  if (!archive_) return;
+  for (unsigned i = 0; i < archive_->numEntries(); i++) { auto* e = archive_->entryAt(i);
+    if (!e) continue;
+    string nm = strutil::lower(e->name());
+    if (nm.size() < 8 || nm.compare(0, 8, "language") != 0 || (nm.size() > 8 && nm[8] != '.')) continue;
+    const auto& mc = e->data();
+    string raw((const char*)mc.data(), mc.size());
+    if (raw.substr(0, std::min<size_t>(raw.size(), 512)).find('\0') != string::npos) continue;
+    string text;
+    for (size_t p = 0; p < raw.size(); p++) {
+      if (raw[p] == '/' && p + 1 < raw.size() && raw[p + 1] == '/') { while (p < raw.size() && raw[p] != '\n') p++; continue; }
+      if (raw[p] == '/' && p + 1 < raw.size() && raw[p + 1] == '*') { p += 2; while (p + 1 < raw.size() && !(raw[p] == '*' && raw[p + 1] == '/')) p++; p++; continue; }
+      text += raw[p]; }
+    size_t start = 0;
+    while (start < text.size()) {
+      auto semi = text.find(';', start); if (semi == string::npos) semi = text.size();
+      auto stmt = text.substr(start, semi - start); start = semi + 1;
+      auto eq = stmt.find('='); if (eq == string::npos) continue;
+      auto left = strutil::rtrim(stmt.substr(0, eq));
+      size_t j = left.size(); while (j > 0 && (isalnum((unsigned char)left[j - 1]) || left[j - 1] == '_')) j--;
+      if (j == left.size()) continue;
+      string name = left.substr(j);
+      if (isdigit((unsigned char)name[0])) continue;
+      string key = "$" + name;
+      if (std::find(mod_language_.begin(), mod_language_.end(), key) == mod_language_.end())
+          mod_language_.push_back(key); } } }
 
 string MenuConstructorDialog::caption(const MenuStatement& st, bool value_table) const
 { if (st.kind == MenuStatement::Kind::If || st.kind == MenuStatement::Kind::Else) {
@@ -748,7 +789,8 @@ void MenuConstructorDialog::setArchive(Archive* archive)
   archive_ = archive;
   readArchiveCvars();
   readArchiveRanges();
-  readArchivePatches(); }
+  readArchivePatches();
+  readArchiveLanguage(); }
 
 // Reads the cvar names out of any CVARINFO lump in the archive. A declaration is
 // "[flags] <type> <name> ...", so the identifier right after a type word is a cvar;
@@ -902,7 +944,7 @@ void MenuConstructorDialog::showNames()
 
   wxString text = names_field_->GetValue();
   long caret = names_field_->GetInsertionPoint(); if (caret < 0) caret = (long)text.length();
-  auto namech = [](wxChar c){ return c == '_' || wxIsalnum(c); };
+  auto namech = [](wxChar c){ return c == '_' || c == '$' || wxIsalnum(c); };
   long from = caret, to = caret;
   while (from > 0 && namech(text[from - 1])) from--;
   while (to < (long)text.length() && namech(text[to])) to++;
