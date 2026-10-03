@@ -361,7 +361,7 @@ void MenuConstructorDialog::addBranch(wxTreeItemId parent, std::vector<MenuState
 // The colour a line's first colour argument names. Invalid when there is none, or the value
 // isn't a range the window can read
 wxColour MenuConstructorDialog::rowTint(const MenuStatement& st)
-{ auto params = signatureParams(MenuVocabulary::instance().signature("optionmenu", st.word));
+{ auto params = signatureParams(signatureFor(st.word));
   for (size_t a = 0; a < params.size() && a < st.args.size(); a++)
   {
       bool colour = strutil::equalCI(params[a].type, "Color");
@@ -402,7 +402,7 @@ void MenuConstructorDialog::buildGrid(const wxString& keep)
           grid_args_->Append(new wxStringProperty("tooltip", "tooltip",
               wxString::FromUTF8(st->args.size() > 1 ? unquote(st->args[1].value) : ""))); grid_rows_++;
       } else if (st->editable()) {
-          auto params = signatureParams(MenuVocabulary::instance().signature("optionmenu", st->word));
+          auto params = signatureParams(signatureFor(st->word));
           for (size_t i = 0; i < st->args.size(); i++) {
               string label = i < params.size() && !params[i].name.empty() ? params[i].name : fmt::format("argument {}", i + 1);
               bool colour = i < params.size() && strutil::equalCI(params[i].type, "Color");
@@ -464,7 +464,8 @@ void MenuConstructorDialog::buildAddList()
   auto* def = currentDefinition();
   if (def && isValueTable(*def)) { choice_add_->Append("value"); choice_add_->Enable(true); }
   else if (!def || isOptionMenu(*def))
-      { for (auto& word : MenuVocabulary::instance().palette("optionmenu")) choice_add_->Append(wxString::FromUTF8(word)); choice_add_->Enable(true); }
+      { for (auto& word : MenuVocabulary::instance().palette("optionmenu")) choice_add_->Append(wxString::FromUTF8(word));
+        for (auto& word : modWidgetWords()) choice_add_->Append(wxString::FromUTF8(word)); choice_add_->Enable(true); }
   else choice_add_->Enable(false);
   choice_add_->SetSelection(0); }
 
@@ -552,6 +553,35 @@ void MenuConstructorDialog::readArchiveLanguage()
       string key = "$" + name;
       if (std::find(mod_language_.begin(), mod_language_.end(), key) == mod_language_.end())
           mod_language_.push_back(key); } } }
+
+// The widget classes this archive declares in its own ZScript. The engine builds the class name
+// out of the word in a menu line (OptionMenuItem<word>, ListMenuItem<word>) and reads that class'
+// Init() for its arguments, so a mod's widget is as describable as an engine one and its fields can
+// be named rather than left as bare text. parseModWidgets only keeps classes that really look like
+// menu widgets, so scanning every text lump is safe: a map or a sound gives it nothing to find.
+// ZScript hides under many spellings (.zs, .zsc, .zc, even .txt), so this walks by content rather
+// than by name or extension, skipping anything with a null byte (a compiled lump the engine skips too)
+void MenuConstructorDialog::readArchiveWidgets()
+{ mod_sigs_.clear(); mod_words_.clear();
+  if (!archive_) return;
+  for (unsigned i = 0; i < archive_->numEntries(); i++) { auto* e = archive_->entryAt(i);
+    if (!e) continue; const auto& mc = e->data();
+    if (mc.size() == 0 || mc.size() > (2u << 20)) continue;
+    string raw((const char*)mc.data(), mc.size());
+    if (raw.substr(0, std::min<size_t>(raw.size(), 512)).find('\0') != string::npos) continue;
+    for (auto& s : parseModWidgets(raw)) { mod_sigs_[s.word] = s.signature; mod_words_[s.word] = s.family; } } }
+
+// How a line's arguments go: the archive's own widget class if it declared one, else the engine's
+// table. The window is only ever editing an OptionMenu body, so 'optionmenu' is the family here
+string MenuConstructorDialog::signatureFor(string_view word)
+{ auto m = mod_sigs_.find(string(word)); if (m != mod_sigs_.end()) return m->second;
+  return string(MenuVocabulary::instance().signature("optionmenu", word)); }
+
+// The words this archive declares as optionmenu widgets, for the add list beside the engine's
+vector<string> MenuConstructorDialog::modWidgetWords()
+{ vector<string> out;
+  for (auto& [w, fam] : mod_words_) if (fam == "optionmenu") out.push_back(w);
+  std::sort(out.begin(), out.end()); return out; }
 
 string MenuConstructorDialog::caption(const MenuStatement& st, bool value_table) const
 { if (st.kind == MenuStatement::Kind::If || st.kind == MenuStatement::Kind::Else) {
@@ -647,7 +677,7 @@ void MenuConstructorDialog::insertLine(const string& word)
       if (digits) next = std::stoi(prev.word) + 1; }
     st.word = std::to_string(next); st.args.push_back({"","\"\""}); }
   else { st.word = word;
-    auto params = signatureParams(MenuVocabulary::instance().signature("optionmenu", word));
+    auto params = signatureParams(signatureFor(word));
     size_t required = params.size(); for (size_t i = 0; i < params.size(); i++) { if (params[i].optional) { required = i; break; } }
     for (size_t i = 0; i < required; i++) st.args.push_back({params[i].name, placeholderFor(params[i], i)}); }
   if (!list->empty()) { auto& n = (*list)[std::min(at, list->size() - 1)]; st.indent = n.indent.empty() ? "\t" : n.indent;
@@ -698,8 +728,9 @@ void MenuConstructorDialog::onAddChosen(wxCommandEvent&)
 { auto at = choice_add_->GetSelection(); choice_add_->SetSelection(0); if (at <= 0) return;
   auto* def = currentDefinition(); if (!def) return;
   if (isValueTable(*def)) { insertLine(""); return; }
-  auto& palette = MenuVocabulary::instance().palette("optionmenu");
-  if ((size_t)at > palette.size()) return; insertLine(palette[(size_t)at - 1]); }
+  // Take the word straight off the list, so an engine widget and one this mod declared in its
+  // own ZScript both add the same way; the list is palette words then the mod's, in order
+  insertLine(strutil::trim((string)choice_add_->GetString(at))); }
 
 void MenuConstructorDialog::onDelete(wxCommandEvent&) { deleteLine(); }
 void MenuConstructorDialog::onMove(wxCommandEvent& e) { moveLine(e.GetEventObject() == (wxObject*)button_up_ ? -1 : 1); }
@@ -766,7 +797,6 @@ void MenuConstructorDialog::updatePreview() { if (preview_) preview_->Refresh();
 std::vector<MenuPreview::Row> MenuConstructorDialog::buildPreviewRows()
 { std::vector<MenuPreview::Row> rows; preview_lines_.clear();
   auto* def = currentDefinition(); if (!def) return rows;
-  const auto& vocab = MenuVocabulary::instance();
   bool vt = isValueTable(*def);
   for (auto& st : def->statements) {
       if (st.kind == MenuStatement::Kind::Blank || st.kind == MenuStatement::Kind::Comment) continue;
@@ -775,7 +805,7 @@ std::vector<MenuPreview::Row> MenuConstructorDialog::buildPreviewRows()
       // the engine's palette here was dropping the mod's own lines (NashGoreOption and the
       // rest) out of the preview while the tree still listed them
       if (!vt && st.kind != MenuStatement::Kind::Widget) continue;
-      auto params = signatureParams(vocab.signature("optionmenu", st.word));
+      auto params = signatureParams(signatureFor(st.word));
       MenuPreview::Row r;
       // The line's text is its first string argument. That isn't always args[0]: a StaticText
       // leads with its x and y, so taking args[0] would show a coordinate instead of the label
@@ -827,7 +857,8 @@ void MenuConstructorDialog::setArchive(Archive* archive)
   readArchiveCvars();
   readArchiveRanges();
   readArchivePatches();
-  readArchiveLanguage(); }
+  readArchiveLanguage();
+  readArchiveWidgets(); }
 
 // Reads the cvar names out of any CVARINFO lump in the archive. A declaration is
 // "[flags] <type> <name> ...", so the identifier right after a type word is a cvar;
