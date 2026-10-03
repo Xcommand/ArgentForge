@@ -400,6 +400,10 @@ void MenuConstructorDialog::buildGrid(const wxString& keep)
       if (isValueTable(*def)) {
           grid_args_->Append(new wxStringProperty("value", "value", wxString::FromUTF8(st->word))); grid_rows_++;
           if (!st->args.empty()) { grid_args_->Append(new wxStringProperty("text", "text", wxString::FromUTF8(unquote(st->args[0].value)))); grid_rows_++; }
+          // The tooltip is the third field a value row can hold. Show it even when the file wrote
+          // only two, so it's filled in here rather than a line to go and type in the text later
+          grid_args_->Append(new wxStringProperty("tooltip", "tooltip",
+              wxString::FromUTF8(st->args.size() > 1 ? unquote(st->args[1].value) : ""))); grid_rows_++;
       } else if (st->editable()) {
           auto params = signatureParams(MenuVocabulary::instance().signature("optionmenu", st->word));
           for (size_t i = 0; i < st->args.size(); i++) {
@@ -694,6 +698,12 @@ void MenuConstructorDialog::onGridChanged(wxPropertyGridEvent& e)
   if (data == "value") { if (typed.empty() || typed == st->word) { buildGrid(wxString::FromUTF8(data)); return; }
     st->word = typed; st->edited = true; }
   else if (data == "text") { if (st->args.empty() || typed.empty() || !st->setArg(0, quoteAs(st->args[0].value, typed))) { buildGrid(wxString::FromUTF8(data)); return; } }
+  else if (data == "tooltip") {
+      // The third value field. Edit it if the row already has one; add it if the row has a text
+      // but no tooltip yet; refuse if there's no text to sit behind
+      if (st->args.size() > 1) { if (typed.empty() || !st->setArg(1, quoteAs(st->args[1].value, typed))) { buildGrid(wxString::FromUTF8(data)); return; } }
+      else if (st->args.size() == 1) { if (typed.empty()) { buildGrid(wxString::FromUTF8(data)); return; } st->appendArg("", quoteAs("\"\"", typed)); }
+      else { buildGrid(wxString::FromUTF8(data)); return; } }
   else if (data.rfind("arg", 0) == 0) {
       size_t index = 0; try { index = (size_t)std::stoul(string(data.substr(3))); } catch (...) { return; }
       if (index >= st->args.size() || typed.empty() || !st->setArg(index, quoteAs(st->args[index].value, typed))) { buildGrid(wxString::FromUTF8(data)); return; } }
