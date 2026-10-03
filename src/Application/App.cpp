@@ -113,6 +113,9 @@ ResourceManager resource_manager;
 CVAR(Int, temp_location, 0, CVar::Flag::Save)
 CVAR(String, temp_location_custom, "", CVar::Flag::Save)
 CVAR(Bool, setup_wizard_run, false, CVar::Flag::Save)
+// Asked once, on the first run, whether to pull in a previous SLADE's settings. Set once he
+// answers either way, so a skip doesn't nag on every later start
+CVAR(Bool, settings_prompt_done, false, CVar::Flag::Save)
 CVAR(Int, win_darkmode, 1, CVar::Flag::Save)
 
 
@@ -575,6 +578,25 @@ bool app::init(const vector<string>& args, double ui_scale)
 	init_ok = true;
 	log::info("Argent Forge Initialisation OK");
 
+	// Before the first-run wizard, offer to pull in a previous SLADE's settings. The base resource
+	// and other files only load at startup, so importing means restarting to actually use them
+	if (!setup_wizard_run && !settings_prompt_done && !app::sladeSettingsDir().empty())
+	{
+		settings_prompt_done = true;
+		wxMessageDialog prompt(maineditor::windowWx(),
+		                       "If you used SLADE before, you can import your settings into Argent "
+		                       "Forge, or start clean.",
+		                       "Import SLADE Settings", wxYES_NO | wxICON_QUESTION);
+		prompt.SetYesNoLabels("Import SLADE Settings", "Start clean");
+		if (prompt.ShowModal() == wxID_YES && app::importSladeSettings() > 0)
+		{
+			// Keep the flag and the imported config so the relaunch boots from them and doesn't ask again
+			saveConfigFile();
+			restart();
+			return false;
+		}
+	}
+
 	// Show Setup Wizard if needed
 	if (!setup_wizard_run)
 	{
@@ -606,6 +628,118 @@ bool app::init(const vector<string>& args, double ui_scale)
 // -----------------------------------------------------------------------------
 // Saves the SLADE configuration file
 // -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// Where a previous (non-portable) SLADE keeps its settings. Our own folder is a
+// sibling of it under the same AppData root, so take our dir's parent, and also
+// fall back to the AppData env vars, then pick whichever SLADE3 folder exists
+// -----------------------------------------------------------------------------
+static wxString findSladeSettingsDir()
+{
+	vector<wxFileName> bases;
+
+	// Force a dir first so a trailing separator on GetUserDataDir doesn't strip the wrong part
+	wxFileName ours = wxFileName::DirName(wxStandardPaths::Get().GetUserDataDir());
+	ours.RemoveLastDir();
+	bases.push_back(ours);
+
+	wxString env;
+	if (wxGetEnv(wxS("APPDATA"), &env))
+		bases.push_back(wxFileName::DirName(env));
+	if (wxGetEnv(wxS("LOCALAPPDATA"), &env))
+		bases.push_back(wxFileName::DirName(env));
+
+	for (auto base : bases)
+		for (const char* name : { "SLADE3", "slade3" })
+		{
+			auto candidate = base;
+			candidate.AppendDir(wxString::FromUTF8(name));
+			if (candidate.IsDir())
+				return candidate.GetFullPath();
+		}
+
+	return wxEmptyString;
+}
+
+// Copies every file under [src] into [dst], creating folders and overwriting. The cache dir and
+// log files are left behind - per-run noise, not settings. Returns how many files landed
+static int copySettingsTree(const wxString& src, const wxString& dst)
+{
+	if (!wxDirExists(src))
+		return 0;
+
+	wxFileName::Mkdir(dst, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL);
+
+	int      copied = 0;
+	wxDir    dir(src);
+	wxString name;
+	for (bool more = dir.GetFirst(&name, wxEmptyString, wxDIR_FILES | wxDIR_DIRS); more; more = dir.GetNext(&name))
+	{
+		wxFileName fromf(wxFileName::DirName(src));
+		fromf.AppendDir(name);
+		wxFileName tof(wxFileName::DirName(dst));
+		tof.AppendDir(name);
+		wxString from = fromf.GetFullPath();
+		wxString to   = tof.GetFullPath();
+
+		if (wxDirExists(from))
+		{
+			if (name.Lower() != "temp")
+				copied += copySettingsTree(from, to);
+		}
+		else if (!name.Lower().EndsWith(".log") && wxCopyFile(from, to, true))
+			++copied;
+	}
+
+	return copied;
+}
+
+string app::sladeSettingsDir()
+{
+	return findSladeSettingsDir().utf8_string();
+}
+
+int app::importSladeSettings()
+{
+	auto src = findSladeSettingsDir();
+	if (src.IsEmpty())
+		return 0;
+
+	auto dst = wxString::FromUTF8(app::path("", app::Dir::User));
+
+	// Never import onto ourselves (compare as absolute dirs, so a trailing separator or ".."
+	// doesn't fool us)
+	auto normDir = [](wxString p)
+	{
+		wxFileName f = wxFileName::DirName(p);
+		f.MakeAbsolute();
+		return f.GetFullPath().Lower();
+	};
+	if (normDir(dst) == normDir(src))
+		return 0;
+
+	auto copied = copySettingsTree(src, dst);
+	if (copied == 0)
+		return 0;
+
+	// SLADE's config is named after SLADE; ours isn't, so the copied file takes our name
+	auto slade_cfg = dst + wxS("slade3.cfg");
+	if (wxFileExists(slade_cfg))
+		wxRenameFile(slade_cfg, dst + wxString::FromUTF8(app::config_file), true);
+
+	// Adopt it now so a later save this session doesn't undo the import
+	app::readConfigFile();
+	return copied;
+}
+
+void app::restart()
+{
+	auto exe = wxStandardPaths::Get().GetExecutablePath();
+
+	// A detached helper waits for this process to let go of the single-instance lock, then starts
+	// a fresh copy that boots from the settings we just imported
+	wxExecute(wxString::Format("cmd /c timeout /t 2 >nul & start \"\" \"%s\"", exe), wxEXEC_ASYNC);
+}
+
 const char* const app::config_file = "argentforge.cfg";
 
 void app::saveConfigFile()

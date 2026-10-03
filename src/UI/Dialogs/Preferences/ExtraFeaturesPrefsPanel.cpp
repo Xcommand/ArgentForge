@@ -34,6 +34,7 @@
 #include "ExtraFeaturesPrefsPanel.h"
 #include "Application/App.h"
 #include "General/UI.h"
+#include "UI/Dialogs/Preferences/PreferencesDialog.h"
 #include "UI/WxUtils.h"
 #include <wx/button.h>
 #include <wx/dir.h>
@@ -44,81 +45,6 @@
 
 
 using namespace slade;
-
-
-namespace
-{
-// -----------------------------------------------------------------------------
-// Where a real (non-portable) SLADE keeps its settings. We no longer share it, but this
-// is a sibling folder under the same AppData root, so it's what we import from. Deriving
-// it is fiddly: GetUserDataDir may or may not carry a trailing separator, and SLADE may
-// have lived under Roaming or Local. So force our own path to a dir, take its parent, and
-// also fall back to the AppData env vars - then pick whichever SLADE3 folder really exists
-// -----------------------------------------------------------------------------
-wxString sladeSettingsDir()
-{
-	vector<wxFileName> bases;
-
-	// Our own folder's parent is where SLADE's used to sit; force a dir first so a trailing
-	// separator on GetUserDataDir doesn't make us strip the wrong component
-	wxFileName ours = wxFileName::DirName(wxStandardPaths::Get().GetUserDataDir());
-	ours.RemoveLastDir();
-	bases.push_back(ours);
-
-	wxString env;
-	if (wxGetEnv(wxS("APPDATA"), &env))
-		bases.push_back(wxFileName::DirName(env));
-	if (wxGetEnv(wxS("LOCALAPPDATA"), &env))
-		bases.push_back(wxFileName::DirName(env));
-
-	for (auto base : bases)
-		for (const char* name : { "SLADE3", "slade3" })
-		{
-			auto candidate = base;
-			candidate.AppendDir(wxString::FromUTF8(name));
-			if (candidate.IsDir())
-				return candidate.GetFullPath();
-		}
-
-	return wxEmptyString;
-}
-
-// -----------------------------------------------------------------------------
-// Copies every file under [src] into [dst], creating folders and overwriting as it
-// goes. The cache dir and the log files are left behind - they're per-run noise, not
-// settings. Returns how many files actually landed
-// -----------------------------------------------------------------------------
-int copySettingsTree(const wxString& src, const wxString& dst)
-{
-	if (!wxDirExists(src))
-		return 0;
-
-	wxFileName::Mkdir(dst, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL);
-
-	int    copied = 0;
-	wxDir  dir(src);
-	wxString name;
-	for (bool more = dir.GetFirst(&name, wxEmptyString, wxDIR_FILES | wxDIR_DIRS); more; more = dir.GetNext(&name))
-	{
-		wxFileName fromf(wxFileName::DirName(src));
-		fromf.AppendDir(name);
-		wxFileName tof(wxFileName::DirName(dst));
-		tof.AppendDir(name);
-		wxString from = fromf.GetFullPath();
-		wxString to   = tof.GetFullPath();
-
-		if (wxDirExists(from))
-		{
-			if (name.Lower() != "temp")
-				copied += copySettingsTree(from, to);
-		}
-		else if (!name.Lower().EndsWith(".log") && wxCopyFile(from, to, true))
-			++copied;
-	}
-
-	return copied;
-}
-} // namespace
 
 
 // -----------------------------------------------------------------------------
@@ -158,7 +84,7 @@ ExtraFeaturesPrefsPanel::ExtraFeaturesPrefsPanel(wxWindow* parent) : PrefsPanelB
 // -----------------------------------------------------------------------------
 void ExtraFeaturesPrefsPanel::importSladeSettings()
 {
-	auto src = sladeSettingsDir();
+	auto src = wxString::FromUTF8(app::sladeSettingsDir());
 	if (src.IsEmpty())
 	{
 		wxMessageBox(wxS("Couldn't find a SLADE settings folder to import from."), wxS("Import SLADE Settings"),
@@ -167,41 +93,27 @@ void ExtraFeaturesPrefsPanel::importSladeSettings()
 	}
 
 	auto dst = wxString::FromUTF8(app::path("", app::Dir::User));
-
-	// Compare the two as absolute directories, so a trailing separator or ".." doesn't fool us
-	auto normDir = [](wxString p)
-	{
-		wxFileName f = wxFileName::DirName(p);
-		f.MakeAbsolute();
-		return f.GetFullPath().Lower();
-	};
-	if (normDir(dst) == normDir(src))
-	{
-		wxMessageBox(wxS("Argent Forge is already using that folder."), wxS("Import SLADE Settings"), wxICON_INFORMATION,
-					 this);
-		return;
-	}
-
 	auto message = wxS("This copies your settings from\n") + src + wxS("\ninto Argent Forge's own folder\n") + dst
 	             + wxS("\n\nAnything already there is overwritten. Continue?");
 	if (wxMessageBox(message, wxS("Import SLADE Settings"), wxYES_NO | wxICON_QUESTION, this) != wxYES)
 		return;
 
-	auto copied = copySettingsTree(src, dst);
+	// The copy, the config rename and the live reload all live in app:: now
+	auto copied = app::importSladeSettings();
 	if (copied == 0)
 	{
 		wxMessageBox(wxS("Nothing was imported."), wxS("Import SLADE Settings"), wxICON_INFORMATION, this);
 		return;
 	}
 
-	// SLADE's config is named after SLADE; ours isn't, so the copied file has to take our name
-	// (dst ends in a separator, so these concatenate cleanly)
-	auto slade_cfg = dst + wxS("slade3.cfg");
-	if (wxFileExists(slade_cfg))
-		wxRenameFile(slade_cfg, dst + wxString::FromUTF8(app::config_file), true);
-
-	// Adopt the imported config now, so this session doesn't overwrite it on its next save
-	app::readConfigFile();
+	// Reload the open settings controls from the imported config, so pressing OK or Apply
+	// afterwards writes those values back rather than the defaults the controls still showed
+	for (auto* w = (wxWindow*)this; w; w = w->GetParent())
+		if (auto* dlg = dynamic_cast<PreferencesDialog*>(w))
+		{
+			dlg->initPages();
+			break;
+		}
 
 	wxMessageBox(wxString::Format(
 					 wxS("Imported %d settings files from SLADE.\nRestart Argent Forge to apply them fully."), copied),

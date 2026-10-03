@@ -29,6 +29,15 @@ namespace app
 	void readConfigFile();
 	void exit(bool save_config);
 
+	// A previous (non-portable) SLADE's settings folder, or empty if there isn't one to import
+	string sladeSettingsDir();
+	// Copy SLADE's settings into ours (minus temp and logs), rename its config to ours, and reload
+	// it. Returns how many files landed, or 0 if there was nothing to import
+	int importSladeSettings();
+	// Relaunch a fresh copy of the app (after a detached delay so this process can let go of the
+	// single-instance lock), so it boots from settings we just imported
+	void restart();
+
 	// Version
 	struct Version
 	{
