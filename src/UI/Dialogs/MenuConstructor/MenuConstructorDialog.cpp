@@ -291,12 +291,14 @@ void MenuConstructorDialog::followCaret(size_t offset)
       // rebuild when the row actually moved, so a caret inside one line is quiet
       LinePath line; vector<size_t> steps;
       if (pathAtOffset(defs[i].statements, offset, steps) && !steps.empty()) line.steps = steps;
+      moving_from_editor_ = true;
       if (i != block_)
       { block_ = i; selected_ = line; have_selection_ = !line.steps.empty();
         buildMenuList(); buildAddList(); buildTree(); }
       else if (!(line == selected_))
       { selected_ = line; have_selection_ = !line.steps.empty();
         selectPath(selected_); buildGrid(); showHelp(); }
+      moving_from_editor_ = false;
       return; } }
 
 void MenuConstructorDialog::refreshFrom(string_view text)
@@ -551,7 +553,10 @@ void MenuConstructorDialog::onLineChosen(wxTreeEvent&)
 { if (rebuilding_) return;
   auto* data = tree_lines_->GetSelection().IsOk() ? static_cast<LineItem*>(tree_lines_->GetItemData(tree_lines_->GetSelection())) : nullptr;
   if (data) { selected_.steps = data->steps(); have_selection_ = true; } else { have_selection_ = false; selected_ = LinePath{}; }
-  buildGrid(); showHelp(); }
+  buildGrid(); showHelp();
+  // Bring the editor to the row he picked in the tree, unless this selection is only
+  // following the caret that is already in the editor
+  if (line_ && have_selection_ && !moving_from_editor_) { if (auto* st = currentStatement()) line_(st->begin); } }
 
 void MenuConstructorDialog::onLineKey(wxKeyEvent& e)
 { if ((e.GetModifiers() & wxMOD_SHIFT) && (e.GetKeyCode() == WXK_UP || e.GetKeyCode() == WXK_DOWN)) { moveLine(e.GetKeyCode() == WXK_UP ? -1 : 1); return; }

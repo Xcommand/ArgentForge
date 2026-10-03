@@ -232,6 +232,8 @@ private:
 	wxStaticText* label_kind_      = nullptr;
 	wxTextCtrl*   text_menu_name_  = nullptr;
 	wxCheckBox*   check_protected_ = nullptr;
+	// The caption over the line tree, naming the block whose lines it shows
+	wxStaticText* label_tree_title_ = nullptr;
 	bool          updating_header_ = false;
 
 	// What the last header edit has to say for itself, shown in the note until he moves to
@@ -307,6 +309,9 @@ private:
 	LinePath      selected_;
 	bool          have_selection_ = false;
 	bool          rebuilding_     = false;
+	// Set while the tree selection is moving because the editor caret moved, so the
+	// window doesn't shove the editor back and re-centre it under him
+	bool          moving_from_editor_ = false;
 
 	// Which of the lines' arguments the engine reads as a colour, and the picker that
 	// appears under the grid for one of them. The field still takes the text he types, so

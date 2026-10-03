@@ -1063,7 +1063,9 @@ void TextEntryPanel::selectMenuLine(size_t offset)
 		return;
 
 	text_area_->SetSelection(offset, offset);
-	text_area_->ScrollToLine(lineAtOffset(menu_constructor_->sourceText(), offset));
+	// Keep the picked row in the middle of the editor so a long file never leaves it
+	// off at the top or bottom; at the very start or end centreLine clamps on its own
+	centreLine(lineAtOffset(menu_constructor_->sourceText(), offset));
 }
 
 // -----------------------------------------------------------------------------
