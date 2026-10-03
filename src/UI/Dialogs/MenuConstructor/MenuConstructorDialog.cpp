@@ -171,6 +171,7 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	choice_add_ = new wxChoice(panel_right_, wxID_ANY, wxDefaultPosition, wxSize(140, -1));
 	button_up_ = new wxButton(panel_right_, wxID_ANY, "^", wxDefaultPosition, wxSize(28, -1));
 	button_down_ = new wxButton(panel_right_, wxID_ANY, "v", wxDefaultPosition, wxSize(28, -1));
+	auto* button_preview = new wxButton(panel_right_, wxID_ANY, wxS("Preview"), wxDefaultPosition, wxDefaultSize);
 
 	auto right_vbox = new wxBoxSizer(wxVERTICAL);
 	right_vbox->Add(header_hbox, 0, wxEXPAND);
@@ -182,6 +183,7 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	row_buttons->AddStretchSpacer();
 	row_buttons->Add(button_up_, 0, wxRIGHT, 2);
 	row_buttons->Add(button_down_, 0);
+	row_buttons->Add(button_preview, 0, wxLEFT, ui::pad());
 	right_vbox->Add(row_buttons, 0, wxEXPAND | wxTOP, ui::pad());
 	panel_right_->SetSizer(right_vbox);
 
@@ -199,6 +201,7 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	choice_add_->Bind(wxEVT_CHOICE, &MenuConstructorDialog::onAddChosen, this);
 	button_up_->Bind(wxEVT_BUTTON, &MenuConstructorDialog::onMove, this);
 	button_down_->Bind(wxEVT_BUTTON, &MenuConstructorDialog::onMove, this);
+	button_preview->Bind(wxEVT_BUTTON, [this](wxCommandEvent&){ showPreviewWindow(); });
 	grid_args_->Bind(wxEVT_PG_CHANGED, &MenuConstructorDialog::onGridChanged, this);
 	grid_args_->Bind(wxEVT_PG_SELECTED, &MenuConstructorDialog::onGridSelected, this);
 	grid_args_->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent& e){grid_args_->SetFocus(); e.Skip();});
