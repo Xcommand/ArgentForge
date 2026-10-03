@@ -129,7 +129,7 @@ const dialog   = fs.readFileSync("src/UI/Dialogs/MenuConstructor/MenuConstructor
 const atOffer  = dialog.findIndex((l) => l.includes("vocab.blockFamily(word)"));
 const atStart  = dialog.reduce((best, l, i) => (i < (atOffer < 0 ? 1e9 : atOffer) && l.includes("for (auto word : {") ? i : best), -1);
 const offered  = new Set(
-	(atStart < 0 ? "" : dialog.slice(atStart, atOffer + 1).join(" ").match(/"([A-Za-z][A-Za-z0-9_]*)"/g) || [])
+	(atStart < 0 ? [] : (dialog.slice(atStart, atOffer + 1).join(" ").match(/"([A-Za-z][A-Za-z0-9_]*)"/g) || []))
 		.map((w) => w.slice(1, -1).toLowerCase()));
 if (atStart < 0 || atOffer < 0)
 	holes.push("the new-block dialog no longer filters its kinds by the resource, so nothing ties the two lists together");
