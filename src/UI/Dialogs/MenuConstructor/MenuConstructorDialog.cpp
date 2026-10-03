@@ -405,9 +405,7 @@ void MenuConstructorDialog::buildGrid(const wxString& keep)
                                                 wxString::FromUTF8(unquote(st->args[i].value)));
               prop->SetHelpString(wxString::FromUTF8(hint)); grid_args_->Append(prop); grid_rows_++;
               bool colour = i < params.size() && strutil::equalCI(params[i].type, "Color");
-              if (colour) { colour_args_.push_back((int)i);
-                  wxArrayString arr; for (auto& n : rangeNames()) arr.Add(wxString::FromUTF8(n));
-                  completions_[prop->GetName()] = arr; }
+              if (colour) colour_args_.push_back((int)i); // the picker is the input; no range-name list here
               else { auto offers = offersFor(st->word, i < params.size() ? params[i].name : "", unquote(st->args[i].value));
                   if (!offers.names.empty()) { wxArrayString arr; for (auto& n : offers.names) arr.Add(wxString::FromUTF8(n));
                       completions_[prop->GetName()] = arr; } } }
@@ -1042,16 +1040,13 @@ void MenuConstructorDialog::paintLiveEditor(const wxColour& col)
 
 void MenuConstructorDialog::flushColour() { colour_wait_ = false; pickColour(); }
 
-// Turns the box's colour back into the nearest range name and writes it into the argument. The
-// engine reads the name, not a number, so this is the whole point of the picker
+// Turns the box's colour into text and writes it into the argument. A `Color` argument is read by
+// V_GetColor, which takes "#RRGGBB" (quoted, because the menu scanner makes a bare # its own token)
+// or an X11 name - but NOT a TEXTCOLO range name, so the nearest-range-name trick would write a
+// value the engine can't read here. The hex keeps the colour exact, which a name can't
 void MenuConstructorDialog::pickColour()
 { if (colour_arg_ < 0) return;
   auto c = colour_box_->colour();
-  string best; int bestd = 1 << 30;
-  for (auto& n : rangeNames()) { auto hex = rangeColourFor(n); uint8_t r, g, b;
-      if (hex.empty() || !parseHex(hex, r, g, b)) continue;
-      int dr = (int)r - c.r, dg = (int)g - c.g, db = (int)b - c.b, d = dr * dr + dg * dg + db * db;
-      if (d < bestd) { bestd = d; best = n; } }
-  if (best.empty()) return;
-  commitArg(wxString::Format("arg%d", colour_arg_), wxString::FromUTF8(best)); }
+  commitArg(wxString::Format("arg%d", colour_arg_),
+            wxString::Format("\"#%02X%02X%02X\"", c.r, c.g, c.b)); }
 MenuConstructorDialog::~MenuConstructorDialog() = default;
