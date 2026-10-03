@@ -37,6 +37,9 @@ CVAR(Int, menucon_height, 580, CVar::Flag::Save)
 CVAR(Int, menucon_sash_menus, 220, CVar::Flag::Save)
 CVAR(Int, menucon_sash_lines, 380, CVar::Flag::Save)
 
+// Defined in MenuPreview.cpp; the preview reads the screen it imitates from here
+EXTERN_CVAR(String, menucon_preview_screen)
+
 namespace
 {
 class KeepFocus {

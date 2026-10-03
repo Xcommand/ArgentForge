@@ -44,6 +44,7 @@
 #include "UI/Dialogs/ActorConstructor/ActorConstructor.h"
 #include "UI/Dialogs/ActorConstructor/ActorConstructorDialog.h"
 #include "UI/Dialogs/ActorConstructor/ActorVocabulary.h"
+#include "UI/Dialogs/MenuConstructor/MenuConstructorDialog.h"
 #include "UI/Dialogs/Preferences/EditingPrefsPanel.h"
 #include "UI/Dialogs/Preferences/PreferencesDialog.h"
 #include "Utility/StringUtils.h"
@@ -273,6 +274,7 @@ bool TextEntryPanel::loadEntry(ArchiveEntry* entry)
 	// Point an open constructor at the new text
 	loading_entry_ = false;
 	updateActorConstructor();
+	updateMenuConstructor();
 
 	return true;
 }
@@ -700,11 +702,17 @@ void TextEntryPanel::resyncActorConstructor()
 // -----------------------------------------------------------------------------
 void TextEntryPanel::panelHidden()
 {
-	if (!actor_constructor_ || !actor_constructor_->IsShown())
-		return;
+	if (actor_constructor_ && actor_constructor_->IsShown())
+	{
+		actor_constructor_->putAway();
+		constructor_with_panel_ = true;
+	}
 
-	actor_constructor_->putAway();
-	constructor_with_panel_ = true;
+	if (menu_constructor_ && menu_constructor_->IsShown())
+	{
+		menu_constructor_->Show(false);
+		menu_with_panel_ = true;
+	}
 }
 
 // -----------------------------------------------------------------------------
@@ -712,15 +720,24 @@ void TextEntryPanel::panelHidden()
 // -----------------------------------------------------------------------------
 void TextEntryPanel::panelShown()
 {
-	if (!constructor_with_panel_ || !actor_constructor_)
-		return;
+	if (constructor_with_panel_ && actor_constructor_)
+	{
+		constructor_with_panel_ = false;
+		actor_constructor_->ShowWithoutActivating();
+		actor_constructor_->Raise();
 
-	constructor_with_panel_ = false;
-	actor_constructor_->ShowWithoutActivating();
-	actor_constructor_->Raise();
+		// The text could have changed while the panel was away
+		updateActorConstructor();
+	}
 
-	// The text could have changed while the panel was away
-	updateActorConstructor();
+	if (menu_with_panel_ && menu_constructor_)
+	{
+		menu_with_panel_ = false;
+		menu_constructor_->ShowWithoutActivating();
+		menu_constructor_->Raise();
+
+		updateMenuConstructor();
+	}
 }
 
 // -----------------------------------------------------------------------------
@@ -903,6 +920,226 @@ void TextEntryPanel::openActorConstructor()
 	actor_constructor_->Show(true);
 	actor_constructor_->Raise();
 	actor_constructor_->SetFocus();
+}
+
+// -----------------------------------------------------------------------------
+// Opens the menu constructor over the menus in this text. One window per panel,
+// reused for whichever lump is asked for; every edit it makes is written back to
+// the text as it happens, so the editor's undo is the only undo there is
+// -----------------------------------------------------------------------------
+void TextEntryPanel::openMenuConstructor()
+{
+	MemChunk mc;
+	text_area_->getRawText(mc);
+	string text((const char*)mc.data(), mc.size());
+
+	if (!menu_constructor_)
+	{
+		menu_constructor_ = new MenuConstructorDialog(this);
+		menu_constructor_->setApplyFunction(
+			[this](string_view new_text)
+			{
+				return applyMenuText(new_text);
+			});
+		menu_constructor_->setSelectFunction(
+			[this](size_t index)
+			{
+				selectMenuBlock(index);
+			});
+		menu_constructor_->setLineFunction(
+			[this](size_t offset)
+			{
+				selectMenuLine(offset);
+			});
+		menu_constructor_->setUndoFunctions(
+			[this]()
+			{
+				if (!text_area_)
+					return false;
+				text_area_->Undo();
+				return true;
+			},
+			[this]()
+			{
+				if (!text_area_)
+					return false;
+				text_area_->Redo();
+				return true;
+			});
+
+		// Coming back to the window is the last chance before one of its controls
+		// writes, so its copy gets made fresh again here
+		menu_constructor_->Bind(
+			wxEVT_ACTIVATE,
+			[this](wxActivateEvent& e)
+			{
+				if (e.GetActive())
+					resyncMenuConstructor();
+				e.Skip();
+			});
+	}
+
+	if (auto entry = entry_.lock())
+		menu_constructor_->setArchive(entry->parent());
+
+	// A text with no block in it isn't a menu file: that's where a MENUDEF starts
+	if (!menu_constructor_->loadText(text))
+	{
+		openMenuDefElsewhere();
+		return;
+	}
+
+	menu_constructor_->followCaret((size_t)text_area_->GetCurrentPos());
+
+	menu_constructor_->Show(true);
+	menu_constructor_->Raise();
+	menu_constructor_->SetFocus();
+}
+
+// -----------------------------------------------------------------------------
+// Writes the whole menu text the constructor made back over the editor, as one
+// undo step. Refuses, and re-reads the window, when the editor moved under it
+// -----------------------------------------------------------------------------
+bool TextEntryPanel::applyMenuText(string_view text)
+{
+	if (loading_entry_)
+		return false;
+
+	MemChunk mc;
+	text_area_->getRawText(mc);
+	string current((const char*)mc.data(), mc.size());
+
+	// The window holds a copy of the whole text, so it may only go over text that
+	// still matches what it was copied from; anything typed in the editor since
+	// would come back out with the rewrite
+	if (menu_constructor_ && current != string(menu_constructor_->sourceText()))
+	{
+		menu_constructor_->refreshFrom(current);
+		return false;
+	}
+
+	text_area_->BeginUndoAction();
+	text_area_->SetTargetStart(0);
+	text_area_->SetTargetEnd(text_area_->GetLength());
+	text_area_->ReplaceTarget(wxutil::strFromView(text));
+	text_area_->EndUndoAction();
+
+	setModified();
+	return true;
+}
+
+// -----------------------------------------------------------------------------
+// Moves the editor to the start of a block the constructor picked, without taking
+// the keyboard off the window
+// -----------------------------------------------------------------------------
+void TextEntryPanel::selectMenuBlock(size_t index)
+{
+	if (!menu_constructor_)
+		return;
+
+	auto& defs = menu_constructor_->source().definitions();
+	if (index >= defs.size())
+		return;
+
+	selectMenuLine(defs[index].begin);
+}
+
+// -----------------------------------------------------------------------------
+// Moves the editor to a byte offset the constructor names, again leaving focus on
+// the window so a click in it isn't interrupted by the trip
+// -----------------------------------------------------------------------------
+void TextEntryPanel::selectMenuLine(size_t offset)
+{
+	if (!menu_constructor_)
+		return;
+
+	text_area_->SetSelection(offset, offset);
+	text_area_->ScrollToLine(lineAtOffset(menu_constructor_->sourceText(), offset));
+}
+
+// -----------------------------------------------------------------------------
+// Points the menu constructor at the block the caret has moved into while he types
+// in the editor
+// -----------------------------------------------------------------------------
+void TextEntryPanel::followMenuCaret()
+{
+	if (!menu_constructor_ || !menu_constructor_->IsShown())
+		return;
+
+	menu_constructor_->followCaret((size_t)text_area_->GetCurrentPos());
+}
+
+// -----------------------------------------------------------------------------
+// Gives the window the text it holds a copy of again, for when that text was
+// edited in the editor while the window stayed open
+// -----------------------------------------------------------------------------
+void TextEntryPanel::resyncMenuConstructor()
+{
+	if (loading_entry_ || !menu_constructor_ || !menu_constructor_->IsShown())
+		return;
+
+	MemChunk mc;
+	text_area_->getRawText(mc);
+	string current((const char*)mc.data(), mc.size());
+
+	if (current == string(menu_constructor_->sourceText()))
+		return;
+
+	menu_constructor_->refreshFrom(current);
+}
+
+// -----------------------------------------------------------------------------
+// Brings the window round to the text now loaded. A lump with no menu block in it
+// closes the window rather than leaving it showing another file
+// -----------------------------------------------------------------------------
+void TextEntryPanel::updateMenuConstructor()
+{
+	if (!menu_constructor_ || !menu_constructor_->IsShown())
+		return;
+
+	MemChunk mc;
+	text_area_->getRawText(mc);
+	string current((const char*)mc.data(), mc.size());
+
+	if (!menu_constructor_->loadText(current))
+	{
+		menu_constructor_->Show(false);
+		return;
+	}
+
+	menu_constructor_->followCaret((size_t)text_area_->GetCurrentPos());
+}
+
+// -----------------------------------------------------------------------------
+// True when the keyboard is in the menu constructor: its window is separate but
+// its edits are edits to this text, so the editor's Ctrl+Z has to reach it
+// -----------------------------------------------------------------------------
+bool TextEntryPanel::menuConstructorHasKeyboard()
+{
+	if (!menu_constructor_ || !menu_constructor_->IsShown())
+		return false;
+
+	// The keyboard is in the window when the focused control is the dialog itself
+	// or one of its children, which a walk up the parent chain answers
+	for (auto* w = wxWindow::FindFocus(); w; w = w->GetParent())
+		if (w == menu_constructor_)
+			return true;
+
+	return false;
+}
+
+// -----------------------------------------------------------------------------
+// Says what a text with no menu block in it is: not a dead end but the place a
+// MENUDEF would start. Finding or making one is the next step
+// -----------------------------------------------------------------------------
+void TextEntryPanel::openMenuDefElsewhere()
+{
+	wxMessageBox(
+		wxS("There are no menu definitions in this text.\n\n"
+		    "A MENUDEF lump is where a menu starts."),
+		wxS("Menu Constructor"),
+		wxICON_INFORMATION,
+		this);
 }
 
 // -----------------------------------------------------------------------------
@@ -1290,7 +1527,10 @@ void TextEntryPanel::onUpdateUI(wxStyledTextEvent& e)
 	// Follow the caret only while nothing was written: typing moves it too, and the
 	// window jumping to another actor mid-word would be worse than not following
 	if (!(e.GetUpdated() & wxSTC_UPDATE_CONTENT))
+	{
 		followEditorCaret();
+		followMenuCaret();
+	}
 
 	e.Skip();
 }
