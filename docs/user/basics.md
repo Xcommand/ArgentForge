@@ -83,6 +83,12 @@ They get their own pages later; these are the ones you'll bump into in the first
 * Open a DECORATE or ZScript lump and the toolbar has a **Constructor** button. It opens a floating
   window that edits the actor's flags, properties and states for you, follows the text cursor, and
   writes the code while you click. Most of DECORATE never has to be typed.
+* Open a MENUDEF lump and the toolbar has a **Menu Constructor** button. It opens a floating window that
+  builds the menu for you: pick a widget from the ones the engine knows, fill its named arguments from
+  lists of the cvars, submenus, value tables, colours and LANGUAGE labels the game and this mod declare,
+  and it writes the MENUDEF while you click and follows the text cursor the same way. A `Preview` button
+  draws the menu the way the game would, so you can see what you're building. Menus mostly never have to
+  be typed out.
 * In the picture editor, Q and W pick the brush and the eraser, ALT with the wheel sets opacity, and
   ALT with the right button dragged over the picture sets size sideways and feather up and down. The
   numbers show themselves while you do it. SHIFT with the left button draws a straight line from the
@@ -95,7 +101,8 @@ They get their own pages later; these are the ones you'll bump into in the first
 ## Settings
 
 `Edit > Preferences...` opens **Argent Forge Settings**. The left side is a tree of pages. The ones
-this fork adds live under their own branch, **Extra Features**: **Image Editor** and **Actor
-Constructor**. Keys are rebound under **Keyboard Shortcuts**, colours under **Colours & Theme**.
+this fork adds live under their own branch, **Extra Features**: **Image Editor**, **Actor
+Constructor** and **Menu Constructor**. Keys are rebound under **Keyboard Shortcuts**, colours under
+**Colours & Theme**.
 
 Next: [Making an actor](actor.md).

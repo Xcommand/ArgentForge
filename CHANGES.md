@@ -172,12 +172,12 @@ open instead of by typing widget lines out. Its lists are generated from the eng
 from a pile of real mod files by the scripts in `scripts/gen`, so what the window offers is what the
 parser reads rather than what someone remembered from a wiki.
 
-* Opens from the text editor's `Menus` toolbar button, from its right-click menu, or from
+* Opens from the text editor's `Menu Constructor` toolbar button, from its right-click menu, or from
   `Tools > Menu Constructor...`. The title says which file the window is a copy of, because several
   archives are open at once and the lump is called MENUDEF in all of them. It doesn't take your focus,
   so the text stays yours while it is open, and it comes back where you left it, as long as a screen
   still has that spot.
-* `Menus` doesn't need a menu file to be open already: it looks through the archive for the lump the
+* `Menu Constructor` doesn't need a menu file to be open already: it looks through the archive for the lump the
   engine reads and opens that. An archive with none gets an offer to make one beside the file you were
   looking at, an empty MENUDEF counts as an empty page rather than an error, and a lump that already has
   a block in it is extended instead of a second MENUDEF being made beside it.
