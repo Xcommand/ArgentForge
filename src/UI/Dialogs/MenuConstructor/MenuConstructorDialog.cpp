@@ -138,7 +138,7 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	                                    wxSP_3DSASH | wxSP_LIVE_UPDATE);
 	split_outer_->SetMinimumPaneSize(120);
 
-	// LEFT: the block list, with the block operations under it
+	// LEFT: the block list, with the block operations along its bottom
 	panel_menus_ = new wxPanel(split_outer_);
 	list_menus_ = new wxListBox(panel_menus_, wxID_ANY, wxDefaultPosition, wxDefaultSize, 0, nullptr, wxLB_SINGLE);
 	button_new_block_ = new wxButton(panel_menus_, wxID_ANY, wxS("New"));
@@ -159,13 +159,15 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	// RIGHT: header, the tree of lines, the arguments under it, then help and buttons
 	panel_right_ = new wxPanel(split_outer_);
 
-	// Block header line (kind, name, protected checkbox) - for OptionMenu
+	// Block header line: the kind, a "Name:" label, the name box and protected
 	auto header_hbox = new wxBoxSizer(wxHORIZONTAL);
 	label_kind_ = new wxStaticText(panel_right_, wxID_ANY, wxS(""));
+	auto* label_name = new wxStaticText(panel_right_, wxID_ANY, wxS("Name:"));
 	text_menu_name_ = new wxTextCtrl(panel_right_, wxID_ANY, wxEmptyString, wxDefaultPosition, wxSize(200, -1));
 	check_protected_ = new wxCheckBox(panel_right_, wxID_ANY, wxS("protected"));
 	updating_header_ = false;
 	header_hbox->Add(label_kind_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, ui::pad());
+	header_hbox->Add(label_name, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 4);
 	header_hbox->Add(text_menu_name_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, ui::pad());
 	header_hbox->Add(check_protected_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, ui::pad());
 
@@ -177,26 +179,31 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	// The arguments, under the tree; its height is set to fit every row
 	grid_args_ = new wxPropertyGrid(panel_right_, wxID_ANY, wxDefaultPosition, wxDefaultSize,
 	                                wxPG_SPLITTER_AUTO_CENTER | wxPG_TOOLTIPS);
-	help_ = new DescriptionText(panel_right_);
-	help_->SetMinSize({-1, help_->GetCharHeight() * 2});
 
+	// The bottom row: the widget to add, the line kind, delete, reorder, preview
 	choice_add_ = new wxChoice(panel_right_, wxID_ANY, wxDefaultPosition, wxSize(140, -1));
+	choice_line_ = new wxChoice(panel_right_, wxID_ANY, wxDefaultPosition, wxSize(140, -1));
+	auto* button_del_line = new wxButton(panel_right_, wxID_ANY, wxS("Delete"));
 	button_up_ = new wxButton(panel_right_, wxID_ANY, "^", wxDefaultPosition, wxSize(28, -1));
 	button_down_ = new wxButton(panel_right_, wxID_ANY, "v", wxDefaultPosition, wxSize(28, -1));
 	auto* button_preview = new wxButton(panel_right_, wxID_ANY, wxS("Preview"), wxDefaultPosition, wxDefaultSize);
+	help_ = new DescriptionText(panel_right_);
+	help_->SetMinSize({-1, help_->GetCharHeight() * 2});
 
 	auto right_vbox = new wxBoxSizer(wxVERTICAL);
 	right_vbox->Add(header_hbox, 0, wxEXPAND);
 	right_vbox->Add(tree_lines_, 1, wxEXPAND | wxTOP, ui::pad());
 	right_vbox->Add(grid_args_, 0, wxEXPAND | wxTOP, ui::pad());
-	right_vbox->Add(help_, 0, wxEXPAND | wxTOP, ui::pad());
 	auto row_buttons = new wxBoxSizer(wxHORIZONTAL);
 	row_buttons->Add(choice_add_, 0, wxRIGHT, ui::pad());
+	row_buttons->Add(choice_line_, 0, wxRIGHT, ui::pad());
 	row_buttons->AddStretchSpacer();
+	row_buttons->Add(button_del_line, 0, wxRIGHT, ui::pad());
 	row_buttons->Add(button_up_, 0, wxRIGHT, 2);
-	row_buttons->Add(button_down_, 0);
-	row_buttons->Add(button_preview, 0, wxLEFT, ui::pad());
+	row_buttons->Add(button_down_, 0, wxRIGHT, ui::pad());
+	row_buttons->Add(button_preview, 0);
 	right_vbox->Add(row_buttons, 0, wxEXPAND | wxTOP, ui::pad());
+	right_vbox->Add(help_, 0, wxEXPAND | wxTOP, ui::pad());
 	panel_right_->SetSizer(right_vbox);
 
 	split_outer_->SplitVertically(panel_menus_, panel_right_, menucon_sash_menus);
@@ -220,6 +227,8 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	block_down_->Bind(wxEVT_BUTTON, &MenuConstructorDialog::onBlockMove, this);
 	text_menu_name_->Bind(wxEVT_KILL_FOCUS, [this](wxFocusEvent& e){ commitHeader(); e.Skip(); });
 	check_protected_->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent&){ commitHeader(); });
+	button_del_line->Bind(wxEVT_BUTTON, &MenuConstructorDialog::onDelete, this);
+	choice_line_->Bind(wxEVT_CHOICE, &MenuConstructorDialog::onAddLineChosen, this);
 	grid_args_->Bind(wxEVT_PG_CHANGED, &MenuConstructorDialog::onGridChanged, this);
 	grid_args_->Bind(wxEVT_PG_SELECTED, &MenuConstructorDialog::onGridSelected, this);
 	grid_args_->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent& e){grid_args_->SetFocus(); e.Skip();});
