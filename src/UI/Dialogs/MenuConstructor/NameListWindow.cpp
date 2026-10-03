@@ -103,3 +103,19 @@ void NameListWindow::onMouseDown(wxMouseEvent& e)
 		onPick(row);
 	Dismiss();
 }
+
+void NameListWindow::selectNext()
+{
+	if (names_.IsEmpty())
+		return;
+	hover_ = hover_ < 0 ? 0 : (hover_ + 1) % (int)names_.size();
+	Refresh();
+}
+
+void NameListWindow::selectPrev()
+{
+	if (names_.IsEmpty())
+		return;
+	hover_ = hover_ <= 0 ? (int)names_.size() - 1 : hover_ - 1;
+	Refresh();
+}

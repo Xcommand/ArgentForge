@@ -21,6 +21,12 @@ public:
 	// Called with the row he clicked, or -1 if it went away on its own
 	std::function<void(int)> onPick;
 
+	// Move the highlight down/up, wrapping, so Tab walks the list without the field
+	// losing focus; current() is the row Enter should insert, or -1 for none
+	void selectNext();
+	void selectPrev();
+	int  current() const { return hover_; }
+
 	int rowHeight() const { return row_h_; }
 
 protected:

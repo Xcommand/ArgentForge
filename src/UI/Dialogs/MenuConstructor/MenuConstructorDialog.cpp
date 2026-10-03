@@ -197,9 +197,8 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	grid_args_ = new wxPropertyGrid(panel_right_, wxID_ANY, wxDefaultPosition, wxDefaultSize,
 	                                wxPG_SPLITTER_AUTO_CENTER | wxPG_TOOLTIPS);
 
-	// The bottom row: the widget to add, the line kind, delete, reorder, preview
+	// The bottom row: the widget to add, delete, reorder, preview
 	choice_add_ = new wxChoice(panel_right_, wxID_ANY, wxDefaultPosition, wxSize(140, -1));
-	choice_line_ = new wxChoice(panel_right_, wxID_ANY, wxDefaultPosition, wxSize(140, -1));
 	auto* button_del_line = new wxButton(panel_right_, wxID_ANY, wxS("Delete"));
 	button_up_ = new wxButton(panel_right_, wxID_ANY, "^", wxDefaultPosition, wxSize(28, -1));
 	button_down_ = new wxButton(panel_right_, wxID_ANY, "v", wxDefaultPosition, wxSize(28, -1));
@@ -213,7 +212,6 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	right_vbox->Add(grid_args_, 0, wxEXPAND | wxTOP, ui::pad());
 	auto row_buttons = new wxBoxSizer(wxHORIZONTAL);
 	row_buttons->Add(choice_add_, 0, wxRIGHT, ui::pad());
-	row_buttons->Add(choice_line_, 0, wxRIGHT, ui::pad());
 	row_buttons->AddStretchSpacer();
 	row_buttons->Add(button_del_line, 0, wxRIGHT, ui::pad());
 	row_buttons->Add(button_up_, 0, wxRIGHT, 2);
@@ -245,7 +243,6 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	text_menu_name_->Bind(wxEVT_KILL_FOCUS, [this](wxFocusEvent& e){ commitHeader(); e.Skip(); });
 	check_protected_->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent&){ commitHeader(); });
 	button_del_line->Bind(wxEVT_BUTTON, &MenuConstructorDialog::onDelete, this);
-	choice_line_->Bind(wxEVT_CHOICE, &MenuConstructorDialog::onAddLineChosen, this);
 	grid_args_->Bind(wxEVT_PG_CHANGED, &MenuConstructorDialog::onGridChanged, this);
 	grid_args_->Bind(wxEVT_PG_SELECTED, &MenuConstructorDialog::onGridSelected, this);
 	grid_args_->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent& e){grid_args_->SetFocus(); e.Skip();});
@@ -590,7 +587,12 @@ void MenuConstructorDialog::showPreviewWindow()
 { KeepFocus focus; if (!preview_) {
     preview_frame_ = new wxFrame(nullptr, wxID_ANY, wxS("Menu preview"), wxDefaultPosition, {ui::scalePx(640), ui::scalePx(480)});
     auto my_pos = GetScreenPosition(); auto my_size = GetSize();
-    int px = my_pos.x + my_size.GetWidth() + 20; int py = my_pos.y; preview_frame_->Move(px, py);
+    // Put it to the left of the constructor, over the editor; fall back to the right
+    // if there is no room there
+    int pw = ui::scalePx(640);
+    int px = my_pos.x - pw - 20; int py = my_pos.y;
+    if (px < 0) px = my_pos.x + my_size.GetWidth() + 20;
+    preview_frame_->Move(px, py);
     preview_ = new MenuPreview(preview_frame_);
     auto sizer = new wxBoxSizer(wxVERTICAL); sizer->Add(preview_, 1, wxEXPAND); preview_frame_->SetSizer(sizer);
     preview_frame_->ShowWithoutActivating();
@@ -600,7 +602,7 @@ void MenuConstructorDialog::showPreviewWindow()
     preview_->onPick = pick; preview_->onCursor = [this, pick](int step) { if (preview_lines_.empty()) return; auto* sel = currentStatement(); int at = -1;
       for (size_t i = 0; i < preview_lines_.size(); i++) if (preview_lines_[i] == sel) { at = (int)i; break; }
       pick(std::clamp(at + step, 0, (int)preview_lines_.size() - 1)); }; previewBackground(); }
-  preview_frame_->Show(true); updatePreviewWindow(); }
+  preview_frame_->ShowWithoutActivating(); preview_frame_->Raise(); updatePreviewWindow(); }
 
 // Takes the window out of view when its entry panel goes away, so it never edits a
 // lump nobody can see. Where it stood is kept by wx, so it comes back to the same place
@@ -786,9 +788,13 @@ void MenuConstructorDialog::watchNameField()
   { names_window_ = ed;
     names_window_->Bind(wxEVT_TEXT, [this](wxCommandEvent&){ showNames(); });
     names_window_->Bind(wxEVT_KEY_DOWN, [this](wxKeyEvent& e){
-        if (e.GetKeyCode() == WXK_RETURN || e.GetKeyCode() == WXK_NUMPAD_ENTER) { hideNames(); e.Skip(); }
-        else if (e.GetKeyCode() == WXK_ESCAPE) hideNames();
-        else e.Skip(); }); }
+        bool up = names_popup_ && names_popup_->IsShown();
+        if (up && e.GetKeyCode() == WXK_TAB)
+        { e.ShiftDown() ? names_list_->selectPrev() : names_list_->selectNext(); return; }
+        if (up && (e.GetKeyCode() == WXK_RETURN || e.GetKeyCode() == WXK_NUMPAD_ENTER))
+        { int sel = names_list_->current(); if (sel >= 0) takeName(sel); else hideNames(); e.Skip(); return; }
+        if (up && e.GetKeyCode() == WXK_ESCAPE) { hideNames(); return; }
+        e.Skip(); }); }
   showNames(); }
 
 // Builds the matching names for the word at the caret and floats them under the field
