@@ -84,10 +84,11 @@ void MenuPreview::setField(int screenWidth, int screenHeight, int scale, int vir
 
 void MenuPreview::fitToZoom()
 {
-	wxWindow* top = this;
-	while (auto* parent = top->GetParent())
-		top = parent;
-	if (!top->IsTopLevel())
+	// The frame that holds this panel, not the outermost ancestor. The preview frame floats on the
+	// constructor (so it has a parent window), and walking GetParent() to the top would climb past
+	// the frame into the constructor and the main window and resize THAT instead of the preview
+	wxWindow* top = GetTopLevelParent();
+	if (!top || !top->IsTopLevel())
 		return;
 
 	double w = (double)screen_w_ * zoom() / 100.0, h = (double)screen_h_ * zoom() / 100.0;
