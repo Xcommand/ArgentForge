@@ -14,6 +14,8 @@
 #include "UI/Dialogs/MenuConstructor/NameListWindow.h"
 #include "General/CVar.h"
 #include "General/UI.h"
+#include "Archive/Archive.h"
+#include "Archive/ArchiveEntry.h"
 #include "UI/Dialogs/ActorConstructor/DescriptionText.h"
 #include "Utility/StringUtils.h"
 
@@ -408,9 +410,9 @@ MenuConstructorDialog::ArgOffers MenuConstructorDialog::offersFor(string_view wo
 { const auto& vocab = MenuVocabulary::instance();
   ArgOffers offers;
   if (strutil::equalCI(pname, "command"))
-  { offers.names = vocab.cvars(); offers.what = "the console variable this row changes"; offers.cvars = true; }
+  { offers.names = cvarNames(); offers.what = "the console variable this row changes"; offers.cvars = true; }
   else if (strutil::equalCI(pname, "graycheck") || strutil::equalCI(pname, "greycheck") || strutil::equalCI(pname, "labelcvar"))
-  { offers.names = vocab.cvars(); offers.what = "the variable that grays this row out"; offers.cvars = true; }
+  { offers.names = cvarNames(); offers.what = "the variable that grays this row out"; offers.cvars = true; }
   else if (strutil::equalCI(pname, "values"))
   { offers.names = vocab.engineTables(); offers.what = "the OptionValue/OptionString block that lists the choices"; }
   else if (strutil::equalCI(pname, "child"))
@@ -629,7 +631,54 @@ void MenuConstructorDialog::updatePreviewWindow()
       rows.push_back(std::move(r)); }
   preview_->setRows(rows, "");
   preview_->fitToZoom();}
-void MenuConstructorDialog::setArchive(Archive*) {} void MenuConstructorDialog::saveGeometry() {}
+// Points the window at the archive the text came from, so the name lists can carry the
+// cvars that mod declares itself, not just the engine's
+void MenuConstructorDialog::setArchive(Archive* archive)
+{ if (archive_ == archive) return;
+  archive_ = archive;
+  readArchiveCvars(); }
+
+// Reads the cvar names out of any CVARINFO lump in the archive. A declaration is
+// "[flags] <type> <name> ...", so the identifier right after a type word is a cvar;
+// comments and quoted strings are taken out first so they can't be mistaken for one
+void MenuConstructorDialog::readArchiveCvars()
+{ mod_cvars_.clear();
+  if (!archive_) return;
+  static const vector<string> types = { "bit", "bool", "color", "float", "int", "string", "actor" };
+  for (unsigned i = 0; i < archive_->numEntries(); i++)
+  { auto* e = archive_->entryAt(i);
+    if (!e || !strutil::equalCI(e->name(), "CVARINFO")) continue;
+    const auto& mc = e->data();
+    string raw((const char*)mc.data(), mc.size());
+    string text;
+    for (size_t p = 0; p < raw.size(); p++)
+    { if (raw[p] == '/' && p + 1 < raw.size() && raw[p + 1] == '/')
+        { while (p < raw.size() && raw[p] != '\n') p++; continue; }
+      if (raw[p] == '/' && p + 1 < raw.size() && raw[p + 1] == '*')
+        { p += 2; while (p + 1 < raw.size() && !(raw[p] == '*' && raw[p + 1] == '/')) p++; p++; continue; }
+      if (raw[p] == '"' || raw[p] == '\'')
+        { char q = raw[p]; p++; while (p < raw.size() && raw[p] != q) { if (raw[p] == '\\') p++; p++; } continue; }
+      text += raw[p]; }
+    auto ident = [&](size_t& p, string& out)
+      { if (p >= text.size() || (!isalpha((unsigned char)text[p]) && text[p] != '_')) return false;
+        size_t s = p; while (p < text.size() && (isalnum((unsigned char)text[p]) || text[p] == '_')) p++;
+        out = text.substr(s, p - s); return true; };
+    for (size_t p = 0; p < text.size();)
+    { string tok; if (!ident(p, tok)) { p++; continue; }
+      string low = strutil::lower(tok);
+      bool is_type = false; for (auto& t : types) if (t == low) { is_type = true; break; }
+      if (is_type)
+      { size_t q = p; while (q < text.size() && !isalpha((unsigned char)text[q]) && text[q] != '_') q++;
+        string name; p = q; if (ident(p, name) && !name.empty()) mod_cvars_[name] = ""; } } } }
+
+// The names a command/graycheck field can point at: the engine's, then whatever this
+// archive's CVARINFO added
+vector<string> MenuConstructorDialog::cvarNames() const
+{ auto names = MenuVocabulary::instance().cvars();
+  for (auto& [name, label] : mod_cvars_)
+      if (std::find(names.begin(), names.end(), name) == names.end()) names.push_back(name);
+  return names; }
+void MenuConstructorDialog::saveGeometry() {}
 void MenuConstructorDialog::onBlockAdd(wxCommandEvent&)
 { const auto& vocab = MenuVocabulary::instance();
   // The kinds offered, filtered by what the resource declares, so the dialog can't
