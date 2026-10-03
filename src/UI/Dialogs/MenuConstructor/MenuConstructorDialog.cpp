@@ -422,7 +422,10 @@ void MenuConstructorDialog::buildGrid(const wxString& keep)
           for (int c : colour_args_) if (c == (int)idx) { shown = (int)idx; break; } } }
   showColourRow(shown);
   rebuilding_ = false;
-  sizeGrid(); }
+  sizeGrid();
+  // Keep an open preview in step with whatever line or block is now shown
+  if (preview_)
+      updatePreviewWindow(); }
 
 // Gives the argument area the height its rows need so they all show without a
 // scrollbar, and lets the tree above it take whatever room is left. The row height
