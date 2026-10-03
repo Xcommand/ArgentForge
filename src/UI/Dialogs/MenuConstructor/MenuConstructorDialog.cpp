@@ -249,6 +249,9 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	grid_args_->Bind(wxEVT_PG_CHANGED, &MenuConstructorDialog::onGridChanged, this);
 	grid_args_->Bind(wxEVT_PG_SELECTED, &MenuConstructorDialog::onGridSelected, this);
 	grid_args_->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent& e){grid_args_->SetFocus(); e.Skip();});
+	// A key on the grid can start editing a cell; grab the editor just after so the
+	// name list shows from the first letter, not only after a select
+	grid_args_->Bind(wxEVT_KEY_DOWN, [this](wxKeyEvent& e){ CallAfter([this]{ watchNameField(); }); e.Skip(); });
 	panel_right_->Bind(wxEVT_SIZE, [this](wxSizeEvent&){showHelp();});
 
 	Bind(wxEVT_CHAR_HOOK, [this](wxKeyEvent& e) {
