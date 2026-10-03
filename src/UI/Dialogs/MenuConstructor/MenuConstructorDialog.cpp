@@ -218,6 +218,8 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	button_del_block_->Bind(wxEVT_BUTTON, &MenuConstructorDialog::onBlockDelete, this);
 	block_up_->Bind(wxEVT_BUTTON, &MenuConstructorDialog::onBlockMove, this);
 	block_down_->Bind(wxEVT_BUTTON, &MenuConstructorDialog::onBlockMove, this);
+	text_menu_name_->Bind(wxEVT_KILL_FOCUS, [this](wxFocusEvent& e){ commitHeader(); e.Skip(); });
+	check_protected_->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent&){ commitHeader(); });
 	grid_args_->Bind(wxEVT_PG_CHANGED, &MenuConstructorDialog::onGridChanged, this);
 	grid_args_->Bind(wxEVT_PG_SELECTED, &MenuConstructorDialog::onGridSelected, this);
 	grid_args_->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent& e){grid_args_->SetFocus(); e.Skip();});
@@ -284,7 +286,7 @@ void MenuConstructorDialog::buildTree()
   auto root = tree_lines_->AddRoot(wxEmptyString);
   if (auto* def = currentDefinition()) { vector<size_t> steps; addBranch(root, def->statements, steps, isValueTable(*def)); }
   selectPath(selected_); tree_lines_->Thaw(); rebuilding_ = false;
-  buildGrid(); showHelp(); }
+  updateHeader(); buildGrid(); showHelp(); }
 
 void MenuConstructorDialog::addBranch(wxTreeItemId parent, std::vector<MenuStatement>& list, vector<size_t>& steps, bool value_table)
 { for (size_t i = 0; i < list.size(); i++) {
@@ -612,8 +614,38 @@ void MenuConstructorDialog::onBlockMove(wxCommandEvent& e)
   buildMenuList(); buildTree(); apply(); }
 
 void MenuConstructorDialog::onAddLineChosen(wxCommandEvent&) {}
-void MenuConstructorDialog::onNameTyped(wxCommandEvent&) {} void MenuConstructorDialog::updateHeader() {}
-void MenuConstructorDialog::updateNameNote() {} void MenuConstructorDialog::commitHeader() {}
+void MenuConstructorDialog::onNameTyped(wxCommandEvent&) {}
+void MenuConstructorDialog::updateNameNote() {}
+
+// Shows the block on screen in the header: its kind, its name and whether it is
+// protected. The name box is dead for the kinds that carry no name, and protected
+// only means anything on an OptionMenu
+void MenuConstructorDialog::updateHeader()
+{ updating_header_ = true;
+  auto* def = currentDefinition();
+  if (!def) { label_kind_->SetLabel(wxEmptyString); text_menu_name_->SetValue(wxEmptyString);
+    check_protected_->SetValue(false); text_menu_name_->Enable(false); check_protected_->Enable(false);
+    updating_header_ = false; return; }
+  label_kind_->SetLabel(wxString::FromUTF8(def->keyword));
+  string word = strutil::lower(def->keyword);
+  bool nameless = word == "defaultlistmenu" || word == "defaultoptionmenu" || word == "optionmenusettings";
+  text_menu_name_->SetValue(nameless ? wxEmptyString : wxString::FromUTF8(def->nameText()));
+  text_menu_name_->Enable(!nameless);
+  bool protectable = word == "optionmenu";
+  check_protected_->SetValue(protectable && def->isProtected());
+  check_protected_->Enable(protectable);
+  updating_header_ = false; }
+
+// Writes whatever the header holds back over the block, as one edit
+void MenuConstructorDialog::commitHeader()
+{ if (updating_header_) return;
+  auto* def = currentDefinition(); if (!def) return;
+  string word = strutil::lower(def->keyword);
+  bool nameless = word == "defaultlistmenu" || word == "defaultoptionmenu" || word == "optionmenusettings";
+  if (!nameless)
+  { string nm = strutil::trim(text_menu_name_->GetValue().utf8_string()); def->setName("\"" + nm + "\""); }
+  if (word == "optionmenu") def->setProtected(check_protected_->IsChecked());
+  buildMenuList(); apply(); }
 void MenuConstructorDialog::onHeaderCommitted(wxCommandEvent&) {} void MenuConstructorDialog::onHeaderFocusLost(wxFocusEvent&) {}
 void MenuConstructorDialog::watchNameField() {} void MenuConstructorDialog::showNames() {}
 void MenuConstructorDialog::hideNames() {} void MenuConstructorDialog::takeName(int) {}
