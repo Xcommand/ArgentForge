@@ -824,7 +824,7 @@ void MenuConstructorDialog::showPreviewWindow()
 
 // Takes the window out of view when its entry panel goes away, so it never edits a
 // lump nobody can see. Where it stood is kept by wx, so it comes back to the same place
-void MenuConstructorDialog::putAway() { Show(false); }
+void MenuConstructorDialog::putAway() { if (preview_frame_) preview_frame_->Hide(); Show(false); }
 void MenuConstructorDialog::updatePreview() { if (preview_) preview_->Refresh(); }
 
 // One preview row per menu line of the block on screen. A line's text argument is what the
