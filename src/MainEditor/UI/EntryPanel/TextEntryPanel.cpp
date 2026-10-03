@@ -36,6 +36,7 @@
 #include "MainEditor/EntryOperations.h"
 #include "MainEditor/MainEditor.h"
 #include "MainEditor/UI/ArchivePanel.h"
+#include "Archive/Archive.h"
 #include "MainEditor/UI/MainWindow.h"
 #include "MainEditor/UI/StartPage.h"
 #include "TextEditor/TextLanguage.h"
@@ -980,7 +981,15 @@ void TextEntryPanel::openMenuConstructor()
 	}
 
 	if (auto entry = entry_.lock())
+	{
 		menu_constructor_->setArchive(entry->parent());
+
+		// Name the window after the lump it's editing, the way the actor constructor does
+		string title = "Menu Constructor - " + entry->name();
+		if (auto* arch = entry->parent())
+			title += " in " + arch->filename(false);
+		menu_constructor_->SetTitle(wxString::FromUTF8(title));
+	}
 
 	// A text with no block in it isn't a menu file: that's where a MENUDEF starts
 	if (!menu_constructor_->loadText(text))
