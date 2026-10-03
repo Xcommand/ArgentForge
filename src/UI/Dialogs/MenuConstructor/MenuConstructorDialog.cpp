@@ -131,33 +131,21 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	SetSize(wxSize(menucon_width, menucon_height));
 	if (menucon_x >= 0 && menucon_y >= 0) SetPosition(wxPoint(menucon_x, menucon_y));
 
-	// Outer splitter: menus list on left, everything else on right
+	// Left | right: the block list beside one column that stacks the line tree over
+	// the arguments, so the args sit under the lines rather than in a third column
 	split_outer_ = new wxSplitterWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
 	                                    wxSP_3DSASH | wxSP_LIVE_UPDATE);
-	split_inner_ = new wxSplitterWindow(split_outer_, wxID_ANY, wxDefaultPosition, wxDefaultSize,
-	                                    wxSP_3DSASH | wxSP_LIVE_UPDATE);
 	split_outer_->SetMinimumPaneSize(120);
-	split_inner_->SetMinimumPaneSize(90);
-	split_inner_->SetSashGravity(1.0);
 
-	// LEFT: the block list, alone in the outer splitter's left pane
+	// LEFT: the block list
 	panel_menus_ = new wxPanel(split_outer_);
 	list_menus_ = new wxListBox(panel_menus_, wxID_ANY, wxDefaultPosition, wxDefaultSize, 0, nullptr, wxLB_SINGLE);
 	auto menus_sizer = new wxBoxSizer(wxVERTICAL);
 	menus_sizer->Add(list_menus_, 1, wxEXPAND);
 	panel_menus_->SetSizer(menus_sizer);
 
-	// MIDDLE: the tree of lines, its own column so it isn't crushed beside the list
-	auto panel_tree = new wxPanel(split_inner_);
-	tree_lines_ = new wxTreeCtrl(panel_tree, wxID_ANY, wxDefaultPosition, wxDefaultSize,
-	                               wxTR_DEFAULT_STYLE | wxTR_HIDE_ROOT | wxBORDER_SUNKEN);
-	tree_lines_->AddRoot(wxEmptyString);
-	auto tree_sizer = new wxBoxSizer(wxVERTICAL);
-	tree_sizer->Add(tree_lines_, 1, wxEXPAND);
-	panel_tree->SetSizer(tree_sizer);
-
-	// RIGHT: block header, arguments, help, buttons
-	panel_right_ = new wxPanel(split_inner_);
+	// RIGHT: header, the tree of lines, the arguments under it, then help and buttons
+	panel_right_ = new wxPanel(split_outer_);
 
 	// Block header line (kind, name, protected checkbox) - for OptionMenu
 	auto header_hbox = new wxBoxSizer(wxHORIZONTAL);
@@ -169,7 +157,12 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	header_hbox->Add(text_menu_name_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, ui::pad());
 	header_hbox->Add(check_protected_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, ui::pad());
 
-	// Arguments area
+	// The tree of lines, the top of the right column
+	tree_lines_ = new wxTreeCtrl(panel_right_, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+	                               wxTR_DEFAULT_STYLE | wxTR_HIDE_ROOT | wxBORDER_SUNKEN);
+	tree_lines_->AddRoot(wxEmptyString);
+
+	// The arguments, under the tree; its height is set to fit every row
 	grid_args_ = new wxPropertyGrid(panel_right_, wxID_ANY, wxDefaultPosition, wxDefaultSize,
 	                                wxPG_SPLITTER_AUTO_CENTER | wxPG_TOOLTIPS);
 	help_ = new DescriptionText(panel_right_);
@@ -179,22 +172,20 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	button_up_ = new wxButton(panel_right_, wxID_ANY, "^", wxDefaultPosition, wxSize(28, -1));
 	button_down_ = new wxButton(panel_right_, wxID_ANY, "v", wxDefaultPosition, wxSize(28, -1));
 
-	// Build args sizer
-	auto args_vbox = new wxBoxSizer(wxVERTICAL);
-	args_vbox->Add(header_hbox, 0, wxEXPAND);
-	args_vbox->Add(grid_args_, 1, wxEXPAND);
-	args_vbox->Add(help_, 0, wxEXPAND | wxTOP, ui::pad());
+	auto right_vbox = new wxBoxSizer(wxVERTICAL);
+	right_vbox->Add(header_hbox, 0, wxEXPAND);
+	right_vbox->Add(tree_lines_, 1, wxEXPAND | wxTOP, ui::pad());
+	right_vbox->Add(grid_args_, 0, wxEXPAND | wxTOP, ui::pad());
+	right_vbox->Add(help_, 0, wxEXPAND | wxTOP, ui::pad());
 	auto row_buttons = new wxBoxSizer(wxHORIZONTAL);
 	row_buttons->Add(choice_add_, 0, wxRIGHT, ui::pad());
 	row_buttons->AddStretchSpacer();
 	row_buttons->Add(button_up_, 0, wxRIGHT, 2);
 	row_buttons->Add(button_down_, 0);
-	args_vbox->Add(row_buttons, 0, wxEXPAND | wxTOP, ui::pad());
-	panel_right_->SetSizer(args_vbox);
+	right_vbox->Add(row_buttons, 0, wxEXPAND | wxTOP, ui::pad());
+	panel_right_->SetSizer(right_vbox);
 
-	// list | (tree | args): the tree gets a real column instead of a sliver
-	split_inner_->SplitVertically(panel_tree, panel_right_, menucon_sash_lines);
-	split_outer_->SplitVertically(panel_menus_, split_inner_, menucon_sash_menus);
+	split_outer_->SplitVertically(panel_menus_, panel_right_, menucon_sash_menus);
 
 	auto frame = new wxBoxSizer(wxHORIZONTAL);
 	frame->Add(split_outer_, 1, wxEXPAND);
@@ -223,8 +214,7 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent& e) {
 		menucon_width = GetSize().x; menucon_height = GetSize().y;
 		menucon_x = GetPosition().x; menucon_y = GetPosition().y;
-		if (split_outer_->IsSplit()) { menucon_sash_menus = split_outer_->GetSashPosition();
-		  menucon_sash_lines = split_inner_->GetSashPosition(); }
+		if (split_outer_->IsSplit()) menucon_sash_menus = split_outer_->GetSashPosition();
 		e.Skip(); });
 }
 
@@ -303,11 +293,12 @@ void MenuConstructorDialog::buildGrid(const wxString& keep)
   wxString selected = keep;
   if (selected.empty()) { if (auto* prop = grid_args_->GetSelectedProperty()) selected = prop->GetName(); }
   grid_args_->Clear();
+  grid_rows_ = 0;
   auto* def = currentDefinition(); auto* st = currentStatement();
   if (def && st) {
       if (isValueTable(*def)) {
-          grid_args_->Append(new wxStringProperty("value", "value", wxString::FromUTF8(st->word)));
-          if (!st->args.empty()) grid_args_->Append(new wxStringProperty("text", "text", wxString::FromUTF8(unquote(st->args[0].value))));
+          grid_args_->Append(new wxStringProperty("value", "value", wxString::FromUTF8(st->word))); grid_rows_++;
+          if (!st->args.empty()) { grid_args_->Append(new wxStringProperty("text", "text", wxString::FromUTF8(unquote(st->args[0].value)))); grid_rows_++; }
       } else if (st->editable()) {
           auto params = signatureParams(MenuVocabulary::instance().signature("optionmenu", st->word));
           for (size_t i = 0; i < st->args.size(); i++) {
@@ -317,15 +308,26 @@ void MenuConstructorDialog::buildGrid(const wxString& keep)
               if (hint.empty()) hint = "as written";
               auto* prop = new wxStringProperty(wxString::FromUTF8(label), wxString("arg") + wxString::Format("%d",(int)i),
                                                 wxString::FromUTF8(unquote(st->args[i].value)));
-              prop->SetHelpString(wxString::FromUTF8(hint)); grid_args_->Append(prop); }
+              prop->SetHelpString(wxString::FromUTF8(hint)); grid_args_->Append(prop); grid_rows_++; }
           if (params.size() > st->args.size()) {
               auto& next = params[st->args.size()];
               string label = next.name.empty() ? fmt::format("argument {}", st->args.size() + 1) : next.name;
               auto* prop = new wxStringProperty(wxString::FromUTF8(label), "next", "");
               prop->SetHelpString(wxString::FromUTF8(fmt::format("{}, not yet in line", next.type)));
-              grid_args_->Append(prop); } } }
+              grid_args_->Append(prop); grid_rows_++; } } }
   if (!selected.empty()) { if (auto* prop = grid_args_->GetProperty(selected)) grid_args_->SelectProperty(prop, false); }
-  rebuilding_ = false; }
+  rebuilding_ = false;
+  sizeGrid(); }
+
+// Gives the argument area the height its rows need so they all show without a
+// scrollbar, and lets the tree above it take whatever room is left. The row height
+// comes from the grid's own font, plus a header row
+void MenuConstructorDialog::sizeGrid()
+{ int rh = grid_args_->GetCharHeight();
+  if (rh <= 0) rh = 16;
+  rh += 8;
+  grid_args_->SetMinSize({ -1, (grid_rows_ + 1) * rh + 8 });
+  panel_right_->Layout(); }
 
 void MenuConstructorDialog::buildAddList()
 { choice_add_->Clear(); choice_add_->Append(wxEmptyString);
