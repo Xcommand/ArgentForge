@@ -408,15 +408,16 @@ void MenuConstructorDialog::buildGrid(const wxString& keep)
           auto params = signatureParams(MenuVocabulary::instance().signature("optionmenu", st->word));
           for (size_t i = 0; i < st->args.size(); i++) {
               string label = i < params.size() && !params[i].name.empty() ? params[i].name : fmt::format("argument {}", i + 1);
-              string hint = i < params.size() ? params[i].type : "";
+              bool colour = i < params.size() && strutil::equalCI(params[i].type, "Color");
+              bool range = !colour && i < params.size()
+                        && (strutil::equalCI(params[i].name, "cr") || strutil::equalCI(params[i].name, "color"));
+              // Say what a colour argument is in words, not just its raw type word
+              string hint = colour ? "colour" : range ? "text colour range" : (i < params.size() ? params[i].type : "");
               if (i < params.size() && params[i].optional) hint += ", optional";
               if (hint.empty()) hint = "as written";
               auto* prop = new wxStringProperty(wxString::FromUTF8(label), wxString("arg") + wxString::Format("%d",(int)i),
                                                 wxString::FromUTF8(unquote(st->args[i].value)));
               prop->SetHelpString(wxString::FromUTF8(hint)); grid_args_->Append(prop); grid_rows_++;
-              bool colour = i < params.size() && strutil::equalCI(params[i].type, "Color");
-              bool range = !colour && i < params.size()
-                        && (strutil::equalCI(params[i].name, "cr") || strutil::equalCI(params[i].name, "color"));
               if (colour) colour_args_.push_back((int)i); // V_GetColor: the picker writes #RRGGBB
               else if (range) { range_args_.push_back((int)i); // V_FindFontColor: a TEXTCOLO range name
                   wxArrayString arr; for (auto& n : rangeNames()) arr.Add(wxString::FromUTF8(n));
