@@ -35,6 +35,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstring>
 
 using namespace slade;
 
@@ -569,10 +570,14 @@ void MenuConstructorDialog::readArchiveWidgets()
 { mod_sigs_.clear(); mod_words_.clear();
   if (!archive_) return;
   for (unsigned i = 0; i < archive_->numEntries(); i++) { auto* e = archive_->entryAt(i);
-    if (!e) continue; const auto& mc = e->data();
-    if (mc.size() == 0 || mc.size() > (2u << 20)) continue;
-    string raw((const char*)mc.data(), mc.size());
-    if (raw.substr(0, std::min<size_t>(raw.size(), 512)).find('\0') != string::npos) continue;
+    if (!e) continue; const auto& mc = e->data(); size_t n = mc.size();
+    if (n == 0 || n > (2u << 20)) continue;
+    const char* p = (const char*)mc.data();
+    // Reject a compiled/binary lump off its first bytes before copying it: an archive is mostly
+    // pictures and sounds, and copying each one just to find a null byte is the work that would
+    // make opening the window crawl on a big mod
+    if (memchr(p, 0, std::min<size_t>(n, 512))) continue;
+    string raw(p, n);
     for (auto& s : parseModWidgets(raw)) { mod_sigs_[s.word] = s.signature; mod_words_[s.word] = s.family; } } }
 
 // How a line's arguments go: the archive's own widget class if it declared one, else the engine's
