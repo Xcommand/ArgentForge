@@ -355,9 +355,6 @@ void MenuConstructorDialog::addBranch(wxTreeItemId parent, std::vector<MenuState
       if (st.kind == MenuStatement::Kind::Blank || st.kind == MenuStatement::Kind::Comment) continue;
       steps.push_back(i);
       auto item = tree_lines_->AppendItem(parent, wxString::FromUTF8(caption(st, value_table)), -1, -1, new LineItem{steps});
-      // Tint the row with the colour its first colour argument names, so a colour reads as itself
-      auto col = rowTint(st);
-      if (col.IsOk()) tree_lines_->SetItemTextColour(item, col);
       if (!st.children.empty()) { addBranch(item, st.children, steps, value_table); tree_lines_->Expand(item); }
       steps.pop_back(); } }
 
@@ -422,6 +419,9 @@ void MenuConstructorDialog::buildGrid(const wxString& keep)
               else if (range) { range_args_.push_back((int)i); // V_FindFontColor: a TEXTCOLO range name
                   wxArrayString arr; for (auto& n : rangeNames()) arr.Add(wxString::FromUTF8(n));
                   completions_[prop->GetName()] = arr; }
+              // Show a colour argument in its own colour, in the field where it is written
+              if (colour || range) { auto c = argColour(unquote(st->args[i].value), range);
+                  if (c.IsOk()) grid_args_->SetPropertyTextColour(prop, c); }
               else { auto offers = offersFor(st->word, i < params.size() ? params[i].name : "", unquote(st->args[i].value));
                   if (!offers.names.empty()) { wxArrayString arr; for (auto& n : offers.names) arr.Add(wxString::FromUTF8(n));
                       completions_[prop->GetName()] = arr; } } }
@@ -585,9 +585,22 @@ void MenuConstructorDialog::applyCaption()
 { auto* def = currentDefinition(); auto* st = currentStatement(); auto item = itemForPath(selected_);
   if (!def || !st || !item.IsOk()) return;
   tree_lines_->SetItemText(item, wxString::FromUTF8(caption(*st, isValueTable(*def))));
-  // Re-read the row's colour too, so picking a colour updates it without a full tree rebuild.
-  // An invalid colour here resets the row to the tree's default
-  tree_lines_->SetItemTextColour(item, rowTint(*st)); }
+  // The colour reads in the field where it is written, not in the tree: paint the grid cell that
+  // holds the edited argument, so choosing a colour tints that value and nothing else
+  if (auto* prop = grid_args_->GetSelectedProperty())
+  { auto col = colourCellTint(prop->GetName(), st);
+    grid_args_->SetPropertyTextColour(prop, col.IsOk() ? col : grid_args_->GetForegroundColour()); }
+}
+
+// The colour a grid cell's text should show: the argument's own colour when it names one, or the
+// grid default (invalid colour) otherwise. Only the colour/range arguments are candidates
+wxColour MenuConstructorDialog::colourCellTint(const wxString& name, const MenuStatement* st)
+{ if (!name.StartsWith("arg")) return {};
+  long idx = 0; if (!name.Mid(3).ToLong(&idx) || idx < 0 || (size_t)idx >= st->args.size()) return {};
+  bool colour = std::find(colour_args_.begin(), colour_args_.end(), (int)idx) != colour_args_.end();
+  bool range = std::find(range_args_.begin(), range_args_.end(), (int)idx) != range_args_.end();
+  if (!colour && !range) return {};
+  return argColour(unquote(st->args[(size_t)idx].value), range); }
 
 void MenuConstructorDialog::showHelp()
 { string text; const auto& vocab = MenuVocabulary::instance(); auto* def = currentDefinition(); auto* st = currentStatement();
@@ -802,8 +815,7 @@ void MenuConstructorDialog::updatePreviewWindow()
   for (size_t i = 0; i < rows.size() && i < preview_lines_.size(); i++)
   { rows[i].selected = preview_lines_[i] == sel; if (rows[i].broken) any = true; }
   preview_->setRows(rows, "");
-  preview_->markProblem(any);
-  preview_->fitToZoom();}
+  preview_->markProblem(any); }
 // Points the window at the archive the text came from, so the name lists can carry the
 // cvars that mod declares itself, not just the engine's
 void MenuConstructorDialog::setArchive(Archive* archive)

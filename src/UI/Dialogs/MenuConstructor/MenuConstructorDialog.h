@@ -222,9 +222,11 @@ private:
 	// Re-draws the row the tree is on, so an argument change shows up where he is
 	// looking without rebuilding the list under his hand
 	void applyCaption();
-	// The colour a line's first colour argument names, for tinting its tree row. Invalid when
+	// The colour a line's first colour argument names, for tinting its preview row. Invalid when
 	// the line has no colour argument or the value can't be read as one
 	wxColour rowTint(const MenuStatement& st);
+	// The colour a grid cell's text should show, for the colour/range argument named by [name]
+	wxColour colourCellTint(const wxString& name, const MenuStatement* st);
 	// The note under the grid: what the widget is, and what the selected argument wants
 	void showHelp();
 	void saveGeometry();
