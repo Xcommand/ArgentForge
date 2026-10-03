@@ -199,6 +199,8 @@ private:
 	// Writes [value] into the argument [data] names and out to the text. Both the grid's
 	// own change event and a name picked from the list come through here
 	void commitArg(const wxString& data, const wxString& value);
+	// Edit argument [index] of [st], or append it if the line hasn't written it yet. Type-aware quoting
+	bool writeArgAt(MenuStatement* st, size_t index, const string& typed);
 
 	// Puts a new line into the branch the tree is on, after the line it is on
 	void insertLine(const string& word);

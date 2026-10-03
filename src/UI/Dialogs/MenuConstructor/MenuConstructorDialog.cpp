@@ -430,14 +430,23 @@ void MenuConstructorDialog::buildGrid(const wxString& keep)
                   if (!offers.names.empty()) { wxArrayString arr; for (auto& n : offers.names) arr.Add(wxString::FromUTF8(n));
                       completions_[prop->GetName()] = arr; } } }
           if (params.size() > st->args.size()) {
-              auto& next = params[st->args.size()];
-              string label = next.name.empty() ? fmt::format("argument {}", st->args.size() + 1) : next.name;
-              auto* prop = new wxStringProperty(wxString::FromUTF8(label), "next", "");
-              prop->SetHelpString(wxString::FromUTF8(fmt::format("{}, not yet in line", next.type)));
-              grid_args_->Append(prop); grid_rows_++;
-              auto offers = offersFor(st->word, next.name, "");
-              if (!offers.names.empty()) { wxArrayString arr; for (auto& n : offers.names) arr.Add(wxString::FromUTF8(n));
-                  completions_[prop->GetName()] = arr; } } } }
+              // The next argument the line hasn't written yet. Name it argN (N = the count so far)
+              // rather than a special "next", so it gets the same colour picker, tint and completion
+              // as a written one, and typing into it appends it (see writeArgAt)
+              size_t idx = st->args.size(); auto& next = params[idx];
+              string label = next.name.empty() ? fmt::format("argument {}", idx + 1) : next.name;
+              bool ncol = strutil::equalCI(next.type, "Color");
+              bool nrange = !ncol && (strutil::equalCI(next.name, "cr") || strutil::equalCI(next.name, "color"));
+              string hint = ncol ? "colour, not yet in line" : nrange ? "text colour range, not yet in line"
+                                 : fmt::format("{}, not yet in line", next.type);
+              auto* prop = new wxStringProperty(wxString::FromUTF8(label), wxString("arg") + wxString::Format("%d", (int)idx), "");
+              prop->SetHelpString(wxString::FromUTF8(hint)); grid_args_->Append(prop); grid_rows_++;
+              if (ncol) colour_args_.push_back((int)idx);
+              else if (nrange) { range_args_.push_back((int)idx); wxArrayString arr; for (auto& n : rangeNames()) arr.Add(wxString::FromUTF8(n));
+                  completions_[prop->GetName()] = arr; }
+              else { auto offers = offersFor(st->word, next.name, "");
+                  if (!offers.names.empty()) { wxArrayString arr; for (auto& n : offers.names) arr.Add(wxString::FromUTF8(n));
+                      completions_[prop->GetName()] = arr; } } } } }
   if (!selected.empty()) { if (auto* prop = grid_args_->GetProperty(selected)) grid_args_->SelectProperty(prop, false); }
   // Bring the colour row to whatever row is now selected, if it names a colour
   int shown = -1;
@@ -761,7 +770,7 @@ void MenuConstructorDialog::onGridChanged(wxPropertyGridEvent& e)
       else { buildGrid(wxString::FromUTF8(data)); return; } }
   else if (data.rfind("arg", 0) == 0) {
       size_t index = 0; try { index = (size_t)std::stoul(string(data.substr(3))); } catch (...) { return; }
-      if (index >= st->args.size() || typed.empty() || !st->setArg(index, quoteAs(st->args[index].value, typed))) { buildGrid(wxString::FromUTF8(data)); return; } }
+      if (!writeArgAt(st, index, typed)) { buildGrid(wxString::FromUTF8(data)); return; } }
   else return;
   if (!apply()) { buildTree(); return; } applyCaption(); showHelp(); }
 
@@ -1099,6 +1108,19 @@ static bool firstHex(string_view s, uint8_t& r, uint8_t& g, uint8_t& b)
 
 string MenuConstructorDialog::currentFamily() { return "optionmenu"; }
 
+// Puts [typed] into argument [index] of [st]: edit an argument the line already has, or append the
+// next one it hasn't written yet (how an optional argument like a StaticText's colour range gets
+// added). Quoted the way the argument's type wants. False if the value is empty or the index is
+// past the next unfilled slot
+bool MenuConstructorDialog::writeArgAt(MenuStatement* st, size_t index, const string& typed)
+{ if (typed.empty()) return false;
+  if (index < st->args.size()) return st->setArg(index, quoteAs(st->args[index].value, typed));
+  auto params = signatureParams(signatureFor(st->word));
+  if (index != st->args.size() || index >= params.size()) return false;
+  string ref = strutil::equalCI(params[index].type, "String") ? "\"\"" : "";
+  st->appendArg("", quoteAs(ref, typed));
+  return true; }
+
 // Writes [value] into the argument named by [data] ("argN", "text" or "value") and out to the
 // text. The colour picker comes through here; the grid's own typing path handles itself
 void MenuConstructorDialog::commitArg(const wxString& data, const wxString& value)
@@ -1107,7 +1129,7 @@ void MenuConstructorDialog::commitArg(const wxString& data, const wxString& valu
   auto d = data.utf8_string(); auto v = strutil::trim(value.utf8_string());
   if (d == "text") { if (st->args.empty() || v.empty() || !st->setArg(0, quoteAs(st->args[0].value, v))) return; }
   else if (d.rfind("arg", 0) == 0) { size_t index = 0; try { index = (size_t)std::stoul(string(d.substr(3))); } catch (...) { return; }
-      if (index >= st->args.size() || v.empty() || !st->setArg(index, quoteAs(st->args[index].value, v))) return; }
+      if (!writeArgAt(st, index, v)) return; }
   else return;
   if (!apply()) { buildTree(); return; }
   buildGrid(data); applyCaption(); showHelp(); }
