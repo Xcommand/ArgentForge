@@ -656,6 +656,31 @@ void MenuConstructorDialog::showPreviewWindow()
 // lump nobody can see. Where it stood is kept by wx, so it comes back to the same place
 void MenuConstructorDialog::putAway() { Show(false); }
 void MenuConstructorDialog::updatePreview() { if (preview_) preview_->Refresh(); }
+
+// One preview row per menu line of the block on screen. A line's text argument is what the
+// engine shows, so that is the label, not the widget's class name; a colour argument tints the
+// row; directives (Title, Class, Position) configure the menu but are never drawn as a line, so
+// they're left out. Fills preview_lines_ so a click on a drawn row selects the right statement
+std::vector<MenuPreview::Row> MenuConstructorDialog::buildPreviewRows()
+{ std::vector<MenuPreview::Row> rows; preview_lines_.clear();
+  auto* def = currentDefinition(); if (!def) return rows;
+  const auto& vocab = MenuVocabulary::instance();
+  bool vt = isValueTable(*def);
+  auto& pal = vocab.palette("optionmenu");
+  for (auto& st : def->statements) {
+      if (st.kind == MenuStatement::Kind::Blank || st.kind == MenuStatement::Kind::Comment) continue;
+      if (!vt && std::find(pal.begin(), pal.end(), st.word) == pal.end()) continue;
+      MenuPreview::Row r;
+      r.label = st.args.empty() ? wxString::FromUTF8(st.word) : wxString::FromUTF8(unquote(st.args[0].value));
+      r.value = ""; r.selected = false; r.broken = false; r.colour = *wxWHITE;
+      r.centred = strutil::lower(st.word).find("centered") != string::npos;
+      auto params = signatureParams(vocab.signature("optionmenu", st.word));
+      for (size_t a = 0; a < params.size() && a < st.args.size(); a++)
+          if (strutil::equalCI(params[a].type, "Color")) { auto c = argColour(unquote(st.args[a].value), true);
+              if (c.IsOk()) r.colour = c; break; }
+      preview_lines_.push_back(&st);
+      rows.push_back(std::move(r)); }
+  return rows; }
 void MenuConstructorDialog::previewBackground()
 { auto* def = currentDefinition(); if (!def || def->statements.empty()) return;
   int sw = 640, sh = 480, scale = 1, vw = 640, vh = 480;
@@ -664,15 +689,7 @@ void MenuConstructorDialog::previewBackground()
   if (pos != string::npos) {
       try { sw = std::stoi(screen.substr(0, pos)); vh = std::stoi(screen.substr(pos + 1)); } catch (...) {}
       vw = sw; vh = sh; }
-  vector<MenuPreview::Row> rows;
-  for (auto& st : def->statements) {
-      if (st.kind == MenuStatement::Kind::Blank || st.kind == MenuStatement::Kind::Comment) continue;
-      MenuPreview::Row r;
-      r.label = wxString::FromUTF8(st.word);
-      if (!st.args.empty()) r.value = wxString::FromUTF8(unquote(st.args[0].value));
-      r.x = 0; r.y = 0; r.centred = false; r.selected = false; r.broken = false;
-      r.colour = *wxWHITE;
-      rows.push_back(std::move(r)); }
+  auto rows = buildPreviewRows();
   if (preview_) {
       preview_->setField(sw, sh, scale, vw, vh);
       preview_->setRows(rows, "");
@@ -680,19 +697,10 @@ void MenuConstructorDialog::previewBackground()
       preview_->setBackground({}, ""); }}
 void MenuConstructorDialog::updatePreviewWindow()
 { auto* def = currentDefinition(); if (!def || !preview_) return;
-  vector<MenuPreview::Row> rows;
-  bool found = false;
-  for (size_t i = 0; i < preview_lines_.size(); i++)
-      if (preview_lines_[i] == currentStatement()) {
-          found = true; break; }
-  for (auto& st : def->statements) {
-      if (st.kind == MenuStatement::Kind::Blank || st.kind == MenuStatement::Kind::Comment) continue;
-      MenuPreview::Row r;
-      r.label = wxString::FromUTF8(st.word);
-      if (!st.args.empty()) r.value = wxString::FromUTF8(unquote(st.args[0].value));
-      r.x = 0; r.y = 0; r.centred = false; r.selected = found && &st == currentStatement(); r.broken = false;
-      r.colour = *wxWHITE;
-      rows.push_back(std::move(r)); }
+  auto rows = buildPreviewRows();
+  auto* sel = currentStatement();
+  for (size_t i = 0; i < rows.size() && i < preview_lines_.size(); i++)
+      rows[i].selected = preview_lines_[i] == sel;
   preview_->setRows(rows, "");
   preview_->fitToZoom();}
 // Points the window at the archive the text came from, so the name lists can carry the

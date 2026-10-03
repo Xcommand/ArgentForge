@@ -211,9 +211,42 @@ void MenuPreview::onPaint(wxPaintEvent&)
 	// The engine draws a menu line in the smallfont, one row per linespacing unit
 	gc.SetFont(pixelFont(8 * u));
 
+	// Resolve the layout the way the engine does (optionmenu.zs CalcIndent, optionmenuitems.zs
+	// drawLabel): labels right-align at a gutter one widest-label wide plus four units, values
+	// sit fourteen units right of that gutter, centred lines sit in the middle, and each line
+	// steps down one font height. The callers hand rows with no position, so this is where the
+	// stacking actually happens. Cache it so rowAt picks the line the eye sees.
+	int lineheight = 8 * u + 2;
+	int gutter     = 4 * u;
+	int visible    = 0;
 	for (auto& r : rows_)
 	{
-		auto where = rowPixel(r, k, field);
+		if (r.broken)
+			continue;
+		visible++;
+		if (!r.centred)
+		{
+			int tw = 0, th = 0;
+			gc.GetTextExtent(r.label, &tw, &th);
+			gutter = std::max(gutter, tw + 4 * u);
+		}
+	}
+	int y = field.y + std::max(6 * u, (field.height - visible * lineheight) / 2);
+	laid_.assign(rows_.size(), wxPoint{});
+	for (size_t i = 0; i < rows_.size(); i++)
+	{
+		if (rows_[i].broken)
+			continue;
+		laid_[i] = { field.x + gutter, y };
+		y += lineheight;
+	}
+
+	for (size_t i = 0; i < rows_.size(); i++)
+	{
+		auto& r = rows_[i];
+		if (r.broken)
+			continue;
+		auto where = laid_[i];
 		if (where.y + 8 * u < field.y || where.y > field.y + field.height)
 			continue;
 
@@ -231,11 +264,6 @@ void MenuPreview::onPaint(wxPaintEvent&)
 			gc.DrawRoundedRectangle(left, where.y - 3, where.x + 14 * u - left + 6 + 8 * u, 8 * u + 6, 3);
 			gc.SetBrush(*wxTRANSPARENT_BRUSH);
 		}
-
-		// A line the engine would stop on is left out of the picture, and the count of them is
-		// said below, so what is drawn is a menu that would really appear
-		if (r.broken)
-			continue;
 
 		gc.SetTextForeground(r.colour.IsOk() ? r.colour : *wxWHITE);
 		gc.DrawText(r.label, lx, where.y);
@@ -290,15 +318,17 @@ void MenuPreview::onPaint(wxPaintEvent&)
 
 int MenuPreview::rowAt(const wxPoint& where) const
 {
-	auto field = fieldRect();
-	if (rows_.empty() || field.width <= 0)
+	// Match the click against the positions onPaint actually drew (a stacked gutter), not the
+	// row's raw x/y, which the callers leave at zero
+	if (rows_.empty() || (int)laid_.size() != (int)rows_.size())
 		return -1;
 
-	double k    = (double)field.width / (double)screen_w_;
-	int    best = -1, best_gap = 1 << 30;
+	int best = -1, best_gap = 1 << 30;
 	for (size_t i = 0; i < rows_.size(); i++)
 	{
-		int gap = std::abs(where.y - rowPixel(rows_[i], k, field).y);
+		if (rows_[i].broken)
+			continue;
+		int gap = std::abs(where.y - laid_[i].y);
 		if (gap < best_gap)
 		{
 			best_gap = gap;

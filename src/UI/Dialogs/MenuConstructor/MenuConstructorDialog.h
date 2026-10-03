@@ -5,6 +5,8 @@
 #include <wx/timer.h>
 #include <wx/treectrl.h>
 
+#include "UI/Dialogs/MenuConstructor/MenuPreview.h"
+
 class wxPropertyGrid;
 class wxPGProperty;
 class wxPropertyGridEvent;
@@ -158,6 +160,9 @@ private:
 	// The preview: what a menu block would look like on a screen, and what sits behind it
 	void updatePreview();
 	void previewBackground();
+	// The rows the preview shows for the block on screen: one per menu line, its text as the
+	// label and its colour argument as the ink. Fills preview_lines_ so a click maps back
+	std::vector<MenuPreview::Row> buildPreviewRows();
 	// Opens the preview window as a floating frame above this app only (not system-wide)
 	void showPreviewWindow();
 	void updatePreviewWindow();

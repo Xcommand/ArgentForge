@@ -70,6 +70,10 @@ private:
 	wxPoint rowPixel(const Row& row, double k, const wxRect& field) const;
 
 	std::vector<Row> rows_;
+	// Where each row actually landed, in this panel's pixels, resolved by onPaint from the
+	// engine's own layout (a gutter + a vertical step). rowAt reads it back so a click picks
+	// the line the eye sees, not whatever x/y the caller happened to leave in the row
+	std::vector<wxPoint> laid_;
 	wxBitmap  background_;
 	wxString  background_name_, note_;
 	int       screen_w_ = 640, screen_h_ = 480;
