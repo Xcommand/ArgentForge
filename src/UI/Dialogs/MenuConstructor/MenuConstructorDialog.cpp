@@ -353,14 +353,19 @@ void MenuConstructorDialog::addBranch(wxTreeItemId parent, std::vector<MenuState
       steps.push_back(i);
       auto item = tree_lines_->AppendItem(parent, wxString::FromUTF8(caption(st, value_table)), -1, -1, new LineItem{steps});
       // Tint the row with the colour its first colour argument names, so a colour reads as itself
-      auto params = signatureParams(MenuVocabulary::instance().signature("optionmenu", st.word));
-      for (size_t a = 0; a < params.size() && a < st.args.size(); a++)
-          if (strutil::equalCI(params[a].type, "Color")) {
-              auto col = argColour(unquote(st.args[a].value), true);
-              if (col.IsOk()) tree_lines_->SetItemTextColour(item, col);
-              break; }
+      auto col = rowTint(st);
+      if (col.IsOk()) tree_lines_->SetItemTextColour(item, col);
       if (!st.children.empty()) { addBranch(item, st.children, steps, value_table); tree_lines_->Expand(item); }
       steps.pop_back(); } }
+
+// The colour a line's first colour argument names. Invalid when there is none, or the value
+// isn't a range the window can read
+wxColour MenuConstructorDialog::rowTint(const MenuStatement& st)
+{ auto params = signatureParams(MenuVocabulary::instance().signature("optionmenu", st.word));
+  for (size_t a = 0; a < params.size() && a < st.args.size(); a++)
+      if (strutil::equalCI(params[a].type, "Color"))
+          return argColour(unquote(st.args[a].value), true);
+  return {}; }
 
 wxTreeItemId MenuConstructorDialog::itemForPath(const LinePath& path)
 { if (path.steps.empty() || !tree_lines_->GetRootItem().IsOk()) return {};
@@ -514,7 +519,10 @@ MenuStatement* MenuConstructorDialog::currentStatement(std::vector<MenuStatement
 void MenuConstructorDialog::applyCaption()
 { auto* def = currentDefinition(); auto* st = currentStatement(); auto item = itemForPath(selected_);
   if (!def || !st || !item.IsOk()) return;
-  tree_lines_->SetItemText(item, wxString::FromUTF8(caption(*st, isValueTable(*def)))); }
+  tree_lines_->SetItemText(item, wxString::FromUTF8(caption(*st, isValueTable(*def))));
+  // Re-read the row's colour too, so picking a colour updates it without a full tree rebuild.
+  // An invalid colour here resets the row to the tree's default
+  tree_lines_->SetItemTextColour(item, rowTint(*st)); }
 
 void MenuConstructorDialog::showHelp()
 { string text; const auto& vocab = MenuVocabulary::instance(); auto* def = currentDefinition(); auto* st = currentStatement();
