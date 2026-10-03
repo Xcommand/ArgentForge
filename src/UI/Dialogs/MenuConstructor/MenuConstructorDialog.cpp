@@ -16,6 +16,7 @@
 #include "General/UI.h"
 #include "Archive/Archive.h"
 #include "Archive/ArchiveEntry.h"
+#include "Archive/EntryType/EntryType.h"
 #include "UI/Dialogs/ActorConstructor/DescriptionText.h"
 #include "UI/Controls/ColourBox.h"
 #include "Utility/StringUtils.h"
@@ -488,6 +489,15 @@ MenuConstructorDialog::ArgOffers MenuConstructorDialog::offersFor(string_view wo
 vector<string> MenuConstructorDialog::patchNames() const
 { return mod_patches_; }
 
+// The picture lumps this archive holds, which are what a `patch` argument can name. Any entry
+// the resource can draw as an image qualifies, so the mod's own PNGs and patches show up
+void MenuConstructorDialog::readArchivePatches()
+{ mod_patches_.clear();
+  if (!archive_) return;
+  for (unsigned i = 0; i < archive_->numEntries(); i++) { auto* e = archive_->entryAt(i);
+    if (!e || !e->type() || !e->type()->extraProps().contains("image")) continue;
+    mod_patches_.push_back(e->name()); } }
+
 string MenuConstructorDialog::caption(const MenuStatement& st, bool value_table) const
 { if (st.kind == MenuStatement::Kind::If || st.kind == MenuStatement::Kind::Else) {
       string games; for (auto& a : st.args) { if (!games.empty()) games += ", "; games += unquote(a.value); }
@@ -730,7 +740,8 @@ void MenuConstructorDialog::setArchive(Archive* archive)
 { if (archive_ == archive) return;
   archive_ = archive;
   readArchiveCvars();
-  readArchiveRanges(); }
+  readArchiveRanges();
+  readArchivePatches(); }
 
 // Reads the cvar names out of any CVARINFO lump in the archive. A declaration is
 // "[flags] <type> <name> ...", so the identifier right after a type word is a cvar;
