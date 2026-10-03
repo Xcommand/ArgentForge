@@ -364,8 +364,12 @@ void MenuConstructorDialog::addBranch(wxTreeItemId parent, std::vector<MenuState
 wxColour MenuConstructorDialog::rowTint(const MenuStatement& st)
 { auto params = signatureParams(MenuVocabulary::instance().signature("optionmenu", st.word));
   for (size_t a = 0; a < params.size() && a < st.args.size(); a++)
-      if (strutil::equalCI(params[a].type, "Color"))
+  {
+      bool colour = strutil::equalCI(params[a].type, "Color");
+      bool range = strutil::equalCI(params[a].name, "cr") || strutil::equalCI(params[a].name, "color");
+      if (colour || range)
           return argColour(unquote(st.args[a].value), true);
+  }
   return {}; }
 
 wxTreeItemId MenuConstructorDialog::itemForPath(const LinePath& path)
@@ -405,7 +409,12 @@ void MenuConstructorDialog::buildGrid(const wxString& keep)
                                                 wxString::FromUTF8(unquote(st->args[i].value)));
               prop->SetHelpString(wxString::FromUTF8(hint)); grid_args_->Append(prop); grid_rows_++;
               bool colour = i < params.size() && strutil::equalCI(params[i].type, "Color");
-              if (colour) colour_args_.push_back((int)i); // the picker is the input; no range-name list here
+              bool range = !colour && i < params.size()
+                        && (strutil::equalCI(params[i].name, "cr") || strutil::equalCI(params[i].name, "color"));
+              if (colour) colour_args_.push_back((int)i); // V_GetColor: the picker writes #RRGGBB
+              else if (range) { range_args_.push_back((int)i); // V_FindFontColor: a TEXTCOLO range name
+                  wxArrayString arr; for (auto& n : rangeNames()) arr.Add(wxString::FromUTF8(n));
+                  completions_[prop->GetName()] = arr; }
               else { auto offers = offersFor(st->word, i < params.size() ? params[i].name : "", unquote(st->args[i].value));
                   if (!offers.names.empty()) { wxArrayString arr; for (auto& n : offers.names) arr.Add(wxString::FromUTF8(n));
                       completions_[prop->GetName()] = arr; } } }
@@ -423,7 +432,8 @@ void MenuConstructorDialog::buildGrid(const wxString& keep)
   int shown = -1;
   if (auto* prop = grid_args_->GetSelectedProperty()) { auto nm = prop->GetName();
       if (nm.StartsWith("arg")) { long idx = 0; if (nm.Mid(3).ToLong(&idx))
-          for (int c : colour_args_) if (c == (int)idx) { shown = (int)idx; break; } } }
+          for (int c : colour_args_) if (c == (int)idx) { shown = (int)idx; break; }
+          if (shown < 0) for (int c : range_args_) if (c == (int)idx) { shown = (int)idx; break; } } }
   showColourRow(shown);
   rebuilding_ = false;
   sizeGrid();
@@ -651,7 +661,8 @@ void MenuConstructorDialog::onGridSelected(wxPropertyGridEvent& e)
   int shown = -1;
   if (auto* prop = grid_args_->GetSelectedProperty()) { auto nm = prop->GetName();
       if (nm.StartsWith("arg")) { long idx = 0; if (nm.Mid(3).ToLong(&idx))
-          for (int c : colour_args_) if (c == (int)idx) { shown = (int)idx; break; } } }
+          for (int c : colour_args_) if (c == (int)idx) { shown = (int)idx; break; }
+          if (shown < 0) for (int c : range_args_) if (c == (int)idx) { shown = (int)idx; break; } } }
   showColourRow(shown); }
 
 void MenuConstructorDialog::showPreviewWindow()
@@ -702,11 +713,9 @@ std::vector<MenuPreview::Row> MenuConstructorDialog::buildPreviewRows()
           if (strutil::equalCI(params[a].type, "String")) { text = unquote(st.args[a].value); break; }
       if (text.empty() && !st.args.empty()) text = unquote(st.args[0].value);
       r.label = wxString::FromUTF8(text.empty() ? st.word : text);
-      r.value = ""; r.selected = false; r.broken = false; r.colour = *wxWHITE;
+      r.value = ""; r.selected = false; r.broken = false;
       r.centred = strutil::lower(st.word).find("centered") != string::npos;
-      for (size_t a = 0; a < params.size() && a < st.args.size(); a++)
-          if (strutil::equalCI(params[a].type, "Color")) { auto c = argColour(unquote(st.args[a].value), true);
-              if (c.IsOk()) r.colour = c; break; }
+      r.colour = rowTint(st); // white when the line names no readable colour (MenuPreview falls back)
       preview_lines_.push_back(&st);
       rows.push_back(std::move(r)); }
   return rows; }
@@ -1042,11 +1051,21 @@ void MenuConstructorDialog::flushColour() { colour_wait_ = false; pickColour(); 
 
 // Turns the box's colour into text and writes it into the argument. A `Color` argument is read by
 // V_GetColor, which takes "#RRGGBB" (quoted, because the menu scanner makes a bare # its own token)
-// or an X11 name - but NOT a TEXTCOLO range name, so the nearest-range-name trick would write a
-// value the engine can't read here. The hex keeps the colour exact, which a name can't
+// or an X11 name - so the hex keeps it exact. A text-colour int is read by V_FindFontColor, which
+// knows only TEXTCOLO range names, so there the picked colour is snapped to the nearest one it can
+// read; writing a name into a Color field, or hex into a text-colour field, the engine can't parse
 void MenuConstructorDialog::pickColour()
 { if (colour_arg_ < 0) return;
   auto c = colour_box_->colour();
-  commitArg(wxString::Format("arg%d", colour_arg_),
-            wxString::Format("\"#%02X%02X%02X\"", c.r, c.g, c.b)); }
+  if (std::find(range_args_.begin(), range_args_.end(), colour_arg_) != range_args_.end())
+  { string best; int bestd = 1 << 30;
+    for (auto& n : rangeNames()) { auto hex = rangeColourFor(n); uint8_t r, g, b;
+        if (hex.empty() || !parseHex(hex, r, g, b)) continue;
+        int dr = (int)r - c.r, dg = (int)g - c.g, db = (int)b - c.b, d = dr * dr + dg * dg + db * db;
+        if (d < bestd) { bestd = d; best = n; } }
+    if (best.empty()) return;
+    commitArg(wxString::Format("arg%d", colour_arg_), wxString::FromUTF8(best)); }
+  else
+    commitArg(wxString::Format("arg%d", colour_arg_),
+              wxString::Format("\"#%02X%02X%02X\"", c.r, c.g, c.b)); }
 MenuConstructorDialog::~MenuConstructorDialog() = default;
