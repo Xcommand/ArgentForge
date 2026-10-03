@@ -768,7 +768,12 @@ std::vector<MenuPreview::Row> MenuConstructorDialog::buildPreviewRows()
           if (strutil::equalCI(params[a].type, "String")) { text = unquote(st.args[a].value); break; }
       if (text.empty() && !st.args.empty()) text = unquote(st.args[0].value);
       r.label = wxString::FromUTF8(text.empty() ? st.word : text);
-      r.value = ""; r.selected = false; r.broken = false;
+      r.value = ""; r.selected = false;
+      // A line the engine would stop on: a widget given fewer arguments than its leading required
+      // (no-default) Init params. Valid menus never ship like this, so this only lights up on a
+      // line that genuinely won't load - half-built, or missing a value the class demands
+      size_t required = 0; for (auto& p : params) { if (p.optional) break; required++; }
+      r.broken = !vt && !params.empty() && st.args.size() < required;
       r.centred = strutil::lower(st.word).find("centered") != string::npos;
       r.colour = rowTint(st); // white when the line names no readable colour (MenuPreview falls back)
       preview_lines_.push_back(&st);
@@ -786,15 +791,18 @@ void MenuConstructorDialog::previewBackground()
   if (preview_) {
       preview_->setField(sw, sh, scale, vw, vh);
       preview_->setRows(rows, "");
-      preview_->markProblem(false);
+      bool any = false; for (auto& r : rows) if (r.broken) { any = true; break; }
+      preview_->markProblem(any);
       preview_->setBackground({}, ""); }}
 void MenuConstructorDialog::updatePreviewWindow()
 { auto* def = currentDefinition(); if (!def || !preview_) return;
   auto rows = buildPreviewRows();
   auto* sel = currentStatement();
+  bool any = false;
   for (size_t i = 0; i < rows.size() && i < preview_lines_.size(); i++)
-      rows[i].selected = preview_lines_[i] == sel;
+  { rows[i].selected = preview_lines_[i] == sel; if (rows[i].broken) any = true; }
   preview_->setRows(rows, "");
+  preview_->markProblem(any);
   preview_->fitToZoom();}
 // Points the window at the archive the text came from, so the name lists can carry the
 // cvars that mod declares itself, not just the engine's
