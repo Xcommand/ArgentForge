@@ -186,7 +186,11 @@ void SplashWindow::init()
 		bm_banner = wxBitmap(banner);
 
 	img_width  = ui::scalePx(300);
-	img_height = ui::scalePx(204) + (bm_banner.IsOk() ? bm_banner.GetHeight() : 0);
+	img_height = ui::scalePx(204);
+
+	// The banner is a backdrop rather than a strip, so a tall one sets the window height
+	if (bm_banner.IsOk())
+		img_height = std::max(img_height, bm_banner.GetHeight());
 
 	// Clean up
 	wxRemoveFile(wxString::FromUTF8(tempfile));
@@ -267,24 +271,24 @@ void SplashWindow::onPaint(wxPaintEvent& e)
 	dc.SetPen(wxPen(pal.border));
 	dc.DrawRectangle(0, 0, img_width, img_height);
 
-	// Draw SLADE logo
-	if (bm_logo.IsOk())
-		dc.DrawBitmap(bm_logo, 0, 0, true);
-
-	// Draw the banner strip right under it
+	// Draw the banner first, as the backdrop of the whole window
 	if (bm_banner.IsOk())
-		dc.DrawBitmap(bm_banner, 0, ui::scalePx(200), true);
+		dc.DrawBitmap(bm_banner, 0, 0, true);
+
+	// Draw the logo centred over it
+	if (bm_logo.IsOk())
+		dc.DrawBitmap(bm_logo, (img_width - bm_logo.GetWidth()) / 2, (img_height - bm_logo.GetHeight()) / 2, true);
 
 	// Setup text
 	wxFont font(8, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL, false, wxS("Calibri"));
 	dc.SetFont(font);
 	dc.SetTextForeground(pal.dim);
 
-	// Draw version
+	// Draw version, just above the message line so it follows the bottom of the artwork
 	string vers      = "v" + app::version().toString();
 	auto   text_size = dc.GetTextExtent(wxString::FromUTF8(vers));
 	auto   x         = img_width - text_size.GetWidth() - ui::scalePx(8);
-	auto   y         = ui::scalePx(190) - text_size.GetHeight();
+	auto   y         = img_height - ui::scalePx(14) - text_size.GetHeight();
 	dc.DrawText(wxString::FromUTF8(vers), x, y);
 
 	// Draw message
