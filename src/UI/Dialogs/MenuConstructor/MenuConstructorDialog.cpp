@@ -840,7 +840,8 @@ void MenuConstructorDialog::deleteLine()
   auto keep = selected_; if (!apply()) selected_ = keep; buildTree(); }
 
 void MenuConstructorDialog::moveLine(int direction)
-{ std::vector<MenuStatement>* siblings = nullptr; size_t row = 0;
+{ KeepFocus focus;	// same reason as in moveBlock: the tree rebuild must not take the keyboard away
+  std::vector<MenuStatement>* siblings = nullptr; size_t row = 0;
   if (!currentStatement(&siblings, &row)) return;
   int target = (int)row + direction;
   while (target >= 0 && target < (int)siblings->size()) {
@@ -1476,7 +1477,10 @@ void MenuConstructorDialog::onBlockDelete(wxCommandEvent&)
   buildMenuList(); buildAddList(); buildTree(); apply(); }
 
 void MenuConstructorDialog::moveBlock(int dir)
-{ if (!source_.moveDefinition(block_, dir)) return;
+{ // Rebuilding the tree pulls focus into the line list, so a second Shift+Down that should have
+  // moved the block again would land on a line instead
+  KeepFocus focus;
+  if (!source_.moveDefinition(block_, dir)) return;
   block_ = (size_t)((int)block_ + dir);
   buildMenuList(); buildTree(); apply(); }
 
