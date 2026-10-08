@@ -71,3 +71,14 @@ CMakeUserPresets.json
 *.ilk
 *.exp
 *.idb
+
+# A cmake configure that ran in the repo root instead of out/build/win-x64-release. The real cache is
+# in that folder, so these are leftovers of a mistyped command rather than a second build.
+/CMakeCache.txt
+/CMakeFiles/
+
+# Tool state that belongs to nobody in the project: the editor's own folder, the wiki Qoder generates
+# from the code, and the ignore file it writes for itself. All three regenerate, none of them is source.
+/.continue/
+/.qoder/
+/.qoderignore
