@@ -81,35 +81,13 @@ const Palette& palette()
 	}();
 	return pal;
 }
-
-// The two images are rescaled when the window changes size, not on every repaint
-struct Scaled
-{
-	wxBitmap bmp;
-	wxSize   size;
-};
-Scaled logo_draw, banner_draw;
-
-const wxBitmap& drawImage(Scaled& cache, const wxBitmap& src, wxSize size)
-{
-	if (cache.size != size || !cache.bmp.IsOk())
-	{
-		cache.bmp = size == src.GetSize() ? src : wxBitmap(src.ConvertToImage().Scale(size.x, size.y, wxIMAGE_QUALITY_HIGH));
-		cache.size = size;
-	}
-	return cache.bmp;
-}
 } // namespace
 
 //#if __WXGTK__
 //CVAR(Int, splash_refresh_ms, 100, CVar::Flag::Save)
 //#else
-CVAR(Int,   splash_refresh_ms, 20, CVar::Flag::Save)
-CVAR(Bool,  splash_banner, true, CVar::Flag::Save)
-CVAR(Int,   splash_width, 0, CVar::Flag::Save)
-CVAR(Int,   splash_height, 0, CVar::Flag::Save)
-// The composition height the above size was fitted to, so a new artwork resets it
-CVAR(Int,   splash_comp_height, 0, CVar::Flag::Save)
+CVAR(Int,  splash_refresh_ms, 20, CVar::Flag::Save)
+CVAR(Bool, splash_banner, true, CVar::Flag::Save)
 //#endif
 
 
@@ -126,7 +104,7 @@ CVAR(Int,   splash_comp_height, 0, CVar::Flag::Save)
 SplashWindow::SplashWindow(wxWindow* parent) :
 	wxMiniFrame{ parent,        -1,
 				 wxEmptyString, wxDefaultPosition,
-				 wxDefaultSize, wxBORDER_NONE | wxRESIZE_BORDER | (parent ? wxFRAME_FLOAT_ON_PARENT : 0) }
+				 wxDefaultSize, wxBORDER_NONE | (parent ? wxFRAME_FLOAT_ON_PARENT : 0) }
 {
 	// Init
 	wxMiniFrame::SetBackgroundStyle(wxBG_STYLE_PAINT);
@@ -135,7 +113,6 @@ SplashWindow::SplashWindow(wxWindow* parent) :
 
 	// Bind events
 	Bind(wxEVT_PAINT, &SplashWindow::onPaint, this);
-	Bind(wxEVT_SIZE, &SplashWindow::onSize, this);
 
 	// Hide initially
 	wxTopLevelWindow::Show(false);
@@ -230,10 +207,6 @@ void SplashWindow::init()
 	if (bm_banner.IsOk())
 		img_height = std::max(img_height, bm_banner.GetHeight());
 
-	// New artwork invalidates whatever was scaled from the old one
-	logo_draw   = {};
-	banner_draw = {};
-
 	// Clean up
 	wxRemoveFile(wxString::FromUTF8(tempfile));
 	banner_key = splash_banner;
@@ -257,16 +230,11 @@ void SplashWindow::show(string_view message, bool progress)
 	else
 		show_progress_ = false;
 
-	// Show & init window. A size he dragged the window to sticks, as long as it was
-	// fitted to this same artwork; a new banner brings the natural size back
-	wxSize wsize{ img_width, rheight };
-	if (splash_width > 0 && splash_height > 0 && splash_comp_height == rheight)
-		wsize = { splash_width, splash_height };
-
+	// Show & init window
 #ifndef __WXGTK__
-	SetInitialSize(wsize);
+	SetInitialSize({ img_width, rheight });
 #else
-	SetInitialSize({ wsize.x + ui::scalePx(6), wsize.y + ui::scalePx(6) });
+	SetInitialSize({ img_width + ui::scalePx(6), rheight + ui::scalePx(6) });
 #endif
 	setMessage(message);
 	Show();
@@ -314,73 +282,50 @@ void SplashWindow::onPaint(wxPaintEvent& e)
 	wxAutoBufferedPaintDC dc(this);
 	const auto&         pal = palette();
 
-	// The splash is laid out at its own size and then scaled to fit the window, so dragging an
-	// edge grows the whole picture instead of revealing more empty space around it
-	auto client = GetClientSize();
-	int  comp_h = img_height + (show_progress_ ? ui::scalePx(10) : 0);
-	auto k      = std::min((double)client.x / (double)img_width, (double)client.y / (double)comp_h);
-	if (!(k > 0.))
-		k = 1.;
+	// Fill first, since the progress bar strip sits under the artwork
+	dc.SetBackground(wxBrush(pal.bg));
+	dc.Clear();
 
-	auto sp = [k](int px) {
-		return (int)((double)px * k);
-	};
-
-	int cw = sp(img_width), ch = sp(comp_h), ah = sp(img_height);
-	int ox = (client.x - cw) / 2, oy = (client.y - ch) / 2;
-
-	// Fill whatever the picture doesn't reach with our own background, then frame the picture
+	// Draw border
 	dc.SetBrush(wxBrush(pal.bg));
-	dc.SetPen(*wxTRANSPARENT_PEN);
-	dc.DrawRectangle(client);
-
 	dc.SetPen(wxPen(pal.border));
-	dc.DrawRectangle(ox, oy, cw, ch);
+	dc.DrawRectangle(0, 0, img_width, img_height);
 
-	// Draw the banner as the backdrop of the picture
+	// Draw the banner as the backdrop of the whole window
 	if (bm_banner.IsOk())
-		dc.DrawBitmap(drawImage(banner_draw, bm_banner, { cw, ch }), ox, oy, true);
+		dc.DrawBitmap(bm_banner, 0, 0, true);
 
 	// Draw the logo centred over it
 	if (bm_logo.IsOk())
-	{
-		auto lsize = wxSize{ sp(bm_logo.GetWidth()), sp(bm_logo.GetHeight()) };
-		dc.DrawBitmap(drawImage(logo_draw, bm_logo, lsize), ox + (cw - lsize.x) / 2, oy + (ah - lsize.y) / 2, true);
-	}
+		dc.DrawBitmap(bm_logo, (img_width - bm_logo.GetWidth()) / 2, (img_height - bm_logo.GetHeight()) / 2, true);
 
 	// Setup text
-	wxFont font(
-		std::max(1, (int)std::lround(8.0 * k)),
-		wxFONTFAMILY_SWISS,
-		wxFONTSTYLE_NORMAL,
-		wxFONTWEIGHT_NORMAL,
-		false,
-		wxS("Calibri"));
+	wxFont font(8, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL, false, wxS("Calibri"));
 	dc.SetFont(font);
 	dc.SetTextForeground(pal.dim);
 
 	// Draw version, just above the message line so it follows the bottom of the artwork
 	string vers      = "v" + app::version().toString();
 	auto   text_size = dc.GetTextExtent(wxString::FromUTF8(vers));
-	auto   x         = ox + cw - text_size.GetWidth() - sp(ui::scalePx(8));
-	auto   y         = oy + ah - sp(ui::scalePx(14)) - text_size.GetHeight();
+	auto   x         = img_width - text_size.GetWidth() - ui::scalePx(8);
+	auto   y         = img_height - ui::scalePx(14) - text_size.GetHeight();
 	dc.DrawText(wxString::FromUTF8(vers), x, y);
 
 	// Draw message
-	font.SetPointSize(std::max(1, (int)std::lround(10.0 * k)));
+	font.SetPointSize(10);
 	font.SetWeight(wxFONTWEIGHT_BOLD);
 	dc.SetFont(font);
 	dc.SetTextForeground(pal.text);
 	text_size = dc.GetTextExtent(wxString::FromUTF8(message_));
-	x         = ox + (cw - text_size.GetWidth()) / 2;
-	y         = oy + ah - sp(4) - text_size.GetHeight();
+	x         = (img_width * 0.5) - int((double)text_size.GetWidth() * 0.5);
+	y         = (img_height - 4) - text_size.GetHeight();
 	dc.DrawText(wxString::FromUTF8(message_), x, y);
 
 	// Draw progress bar if necessary
 	if (show_progress_)
 	{
 		// Setup progress bar
-		wxRect rect_pbar(ox, oy + ah - sp(ui::scalePx(4)), cw, sp(ui::scalePx(14)));
+		wxRect rect_pbar(0, img_height - ui::scalePx(4), img_width, ui::scalePx(14));
 
 		// Draw background
 		dc.SetBrush(wxBrush(pal.track));
@@ -390,8 +335,8 @@ void SplashWindow::onPaint(wxPaintEvent& e)
 		// Draw meter
 		if (progress_ >= 0)
 		{
-			rect_pbar.SetRight(ox + (int)(progress_ * cw));
-			rect_pbar.Deflate(std::max(1, sp(1)), std::max(1, sp(1)));
+			rect_pbar.SetRight(progress_ * img_width);
+			rect_pbar.Deflate(1, 1);
 			dc.SetBrush(wxBrush(pal.meter));
 			dc.SetPen(*wxTRANSPARENT_PEN);
 			dc.DrawRectangle(rect_pbar);
@@ -409,7 +354,7 @@ void SplashWindow::onPaint(wxPaintEvent& e)
 			wxColor right = mix(pal.ember, pal.meter, interval);
 
 			// Draw the animated meter
-			rect_pbar.Deflate(std::max(1, sp(1)), std::max(1, sp(1)));
+			rect_pbar.Deflate(1, 1);
 			dc.GradientFillLinear(rect_pbar, left, right);
 
 			// Increase animation counter
@@ -419,30 +364,14 @@ void SplashWindow::onPaint(wxPaintEvent& e)
 		}
 
 		// Draw text
-		font.SetPointSize(std::max(1, (int)std::lround(8.0 * k)));
+		font.SetPointSize(8);
 		dc.SetFont(font);
 		text_size = dc.GetTextExtent(wxString::FromUTF8(message_progress_));
-		x         = ox + (cw - text_size.GetWidth()) / 2;
-		y         = oy + ah - sp(ui::scalePx(4));
+		x         = (img_width * 0.5) - int((double)text_size.GetWidth() * 0.5);
+		y         = img_height - ui::scalePx(4);
 		dc.SetTextForeground(pal.text);
 		dc.DrawText(wxString::FromUTF8(message_progress_), x, y);
 	}
 
 	timer_.Start();
-}
-
-// -----------------------------------------------------------------------------
-// Remembers the size he drags the window to
-// -----------------------------------------------------------------------------
-void SplashWindow::onSize(wxSizeEvent& e)
-{
-	auto size = GetClientSize();
-	if (IsShown() && size.x > 0 && size.y > 0)
-	{
-		splash_width        = size.x;
-		splash_height       = size.y;
-		splash_comp_height  = img_height + (show_progress_ ? ui::scalePx(10) : 0);
-	}
-
-	e.Skip();
 }

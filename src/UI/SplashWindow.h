@@ -21,7 +21,6 @@ public:
 
 	// Events
 	void onPaint(wxPaintEvent& e);
-	void onSize(wxSizeEvent& e);
 
 private:
 	string      message_;
