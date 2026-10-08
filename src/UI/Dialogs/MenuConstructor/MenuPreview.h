@@ -171,6 +171,9 @@ private:
 	std::map<int, int> font_char_xpos_;
 	// The slider rail glyphs, straight out of the port's console font sheets
 	wxImage   rail_;
+	// The rail once tinted and scaled, so a menu full of sliders doesn't rebuild it per row
+	wxImage   rail_tinted_;
+	long      rail_tint_key_ = -1;
 	// Tinted glyphs, keyed by code point + colour + zoom step, so a repaint blits instead of
 	// rebuilding every pixel of every row
 	std::map<long long, wxBitmap> tile_cache_;

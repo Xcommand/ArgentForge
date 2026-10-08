@@ -1260,10 +1260,23 @@ void MenuConstructorDialog::applySliderGlyphs()
   wxImage rail(24, 8);
   rail.InitAlpha();
   if (auto* a = rail.GetAlpha()) memset(a, 0, 24 * 8);
+  int brightest = 0;
   for (int g = 0; g < 3; g++) for (int y = 0; y < 8; y++) for (int x = 0; x < 8; x++)
   { int sx = g * 8 + x, sy = 8 + y;
     rail.SetRGB(g * 8 + x, y, sheet.GetRed(sx, sy), sheet.GetGreen(sx, sy), sheet.GetBlue(sx, sy));
-    rail.SetAlpha(g * 8 + x, y, sheet.HasAlpha() ? sheet.GetAlpha(sx, sy) : 255); }
+    rail.SetAlpha(g * 8 + x, y, sheet.HasAlpha() ? sheet.GetAlpha(sx, sy) : 255);
+    brightest = std::max(brightest, (sheet.GetRed(sx, sy) + sheet.GetGreen(sx, sy) + sheet.GetBlue(sx, sy)) / 3); }
+
+  // The sheet is nearly black: measured on the real file the rail spans luminance 1 to 79,
+  // because the engine doesn't paint those values, it maps them onto a colour range
+  // (menusliderbackcolor, White for Doom, whose top is #EFEFEF). Stretching the sheet to full
+  // scale here lets the preview do the same mapping by tint, instead of drawing a bar three
+  // times darker than the game's
+  if (brightest > 0 && brightest < 255)
+      for (int i = 0; i < 3; i++) for (int y = 0; y < 8; y++) for (int x = 0; x < 8; x++)
+      { int px = i * 8 + x;
+        rail.SetRGB(px, y, rail.GetRed(px, y) * 255 / brightest, rail.GetGreen(px, y) * 255 / brightest,
+                    rail.GetBlue(px, y) * 255 / brightest); }
 
   preview_->setSliderRail(wxBitmap(rail)); }
 

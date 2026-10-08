@@ -204,6 +204,8 @@ const wxBitmap& MenuPreview::glyphTile(int code, const wxColour& colour, int sca
 void MenuPreview::setSliderRail(const wxBitmap& rail)
 {
 	rail_ = rail.IsOk() ? rail.ConvertToImage() : wxImage{};
+	rail_tinted_ = wxImage{};
+	rail_tint_key_ = -1;	// a new sheet, so the tinted copy is stale
 	screen_dirty_ = true;
 	Refresh();
 }
@@ -598,16 +600,43 @@ void MenuPreview::drawField(wxGCDC& gc)
 		// value and the file holds none, so the rail is drawn on its own
 		if (r.is_slider && rail_.IsOk())
 		{
-			int cell   = 16 * u;
+			int cell = 16 * u;
+			// The game paints the rail through menusliderbackcolor, which for Doom is White
+			// (doomcommon.txt:43), so the sheet's own gray is only a shape, not a colour
+			wxColour ink{239, 239, 239};
+			if (range_ink_)
+			{
+				auto white = range_ink_(9, {});
+				if (white.IsOk())
+					ink = white;
+			}
+			long tint_key = (long)cell * 16777216L + (long)ink.Red() * 65536 + (long)ink.Green() * 256 + ink.Blue();
+			if (tint_key != rail_tint_key_)
+			{
+				rail_tint_key_ = tint_key;
+				// Built pixel by pixel into a fresh image rather than copying rail_, so tinting
+				// can't reach back into the sheet the next menu will reuse
+				wxImage tinted(rail_.GetWidth(), rail_.GetHeight());
+				tinted.InitAlpha();
+				for (int py = 0; py < rail_.GetHeight(); py++)
+					for (int px = 0; px < rail_.GetWidth(); px++)
+					{
+						tinted.SetRGB(px, py, rail_.GetRed(px, py) * ink.Red() / 255,
+						              rail_.GetGreen(px, py) * ink.Green() / 255,
+						              rail_.GetBlue(px, py) * ink.Blue() / 255);
+						tinted.SetAlpha(px, py, rail_.HasAlpha() ? rail_.GetAlpha(px, py) : 255);
+					}
+				rail_tinted_ = tinted.Scale(tinted.GetWidth() * cell / 8, cell, wxIMAGE_QUALITY_NORMAL);
+			}
+
 			int pieces = vx + 13 * cell <= field.width ? 13 : 8;
 			for (int c = 0; c < pieces; c++)
 			{
 				int src = c == 0 ? 0 : (c + 1 == pieces ? 2 : 1);
-				if (src * 8 + 8 > rail_.GetWidth())
+				if (src * cell + cell > rail_tinted_.GetWidth())
 					continue;
-				wxImage cut = rail_.GetSubImage(wxRect(src * 8, 0, 8, 8));
-				gc.DrawBitmap(wxBitmap(cut.Scale(cell, cell, wxIMAGE_QUALITY_NORMAL)), vx + c * cell,
-				              where.y + u, true);
+				gc.DrawBitmap(wxBitmap(rail_tinted_.GetSubImage(wxRect(src * cell, 0, cell, cell))),
+				              vx + c * cell, where.y + u, true);
 			}
 		}
 		else if (!r.value.empty())
