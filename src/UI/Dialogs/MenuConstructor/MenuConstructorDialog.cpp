@@ -887,8 +887,9 @@ void MenuConstructorDialog::moveLine(int direction)
 
   // The selected lines that live in this same list. A line under another ifgame has its own
   // list, and trading across two of them would move the branch rather than the line
+  auto paths = selectedPaths();
   vector<LinePath> group;
-  for (auto& path : selectedPaths())
+  for (auto& path : paths)
   { if (path.steps.size() != selected_.steps.size()) continue;
     bool same_parent = true;
     for (size_t d = 0; d + 1 < path.steps.size(); d++)
@@ -926,11 +927,21 @@ void MenuConstructorDialog::moveLine(int direction)
   for (size_t i = 0; i < group.size(); i++) group[i].steps.back() = pos[i];
 
   auto keep = selected_; selected_ = group[anchor];
-  if (!apply()) { selected_ = keep; buildTree(); return; }
-  buildTree(); selectPaths(group, selected_); }
+  bool took = apply();
+  if (!took) selected_ = keep;
+  buildTree(); selectPaths(group, selected_);
+
+  // Temporary receipt. A group that had nowhere to go looks exactly like a move that was
+  // never attempted, and these four numbers tell the two apart
+  help_->setText(fmt::format(
+      "move {}: tree held {} selected, group {}, row {} -> {}, apply {}",
+      direction, paths.size(), group.size(), row, pos[anchor], took ? "ok" : "refused")); }
 
 void MenuConstructorDialog::onMenuChosen(wxCommandEvent& e)
-{ // The clicked row rather than the first selected one: a Shift range selects several, and the
+{ // Rebuilding the tree selects a line in it, and that selection takes the keyboard with it, so
+  // the next Shift+Down would move a line instead of the block he just picked
+  KeepFocus focus;
+  // The clicked row rather than the first selected one: a Shift range selects several, and the
   // block he asked to see is the one under the cursor
   int clicked = e.GetInt() >= 0 ? e.GetInt() : list_menus_->GetSelection();
   auto at = (size_t)std::max(0, clicked); if (at == block_) return;
@@ -1560,6 +1571,7 @@ void MenuConstructorDialog::moveBlock(int dir)
 { // Rebuilding the tree pulls focus into the line list, so a second Shift+Down that should have
   // moved the block again would land on a line instead
   KeepFocus focus;
+  auto was = block_;
   auto picked = selectedBlocks();
   if (picked.empty()) picked.push_back(block_);
   if (std::find(picked.begin(), picked.end(), block_) == picked.end())
@@ -1585,7 +1597,11 @@ void MenuConstructorDialog::moveBlock(int dir)
 
   buildMenuList();
   selectBlocks(pos, anchor);
-  buildTree(); apply(); }
+  buildTree(); apply();
+
+  // The same receipt as a line move: the two numbers differ for a block that moved
+  help_->setText(fmt::format(
+      "move block {}: {} picked, anchor {} -> {}", dir, picked.size(), was, block_)); }
 
 void MenuConstructorDialog::onBlockMove(wxCommandEvent& e)
 { moveBlock(e.GetEventObject() == (wxObject*)block_down_ ? 1 : -1); }
