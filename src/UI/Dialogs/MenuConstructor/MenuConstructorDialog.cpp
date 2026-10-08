@@ -184,6 +184,8 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	button_del_block_ = new wxButton(panel_menus_, wxID_ANY, wxS("Delete"));
 	block_up_   = new wxButton(panel_menus_, wxID_ANY, wxS("^"), wxDefaultPosition, wxSize(28, -1));
 	block_down_ = new wxButton(panel_menus_, wxID_ANY, wxS("v"), wxDefaultPosition, wxSize(28, -1));
+	block_up_->SetToolTip(wxS("Shift+Up"));
+	block_down_->SetToolTip(wxS("Shift+Down"));
 	auto block_row = new wxBoxSizer(wxHORIZONTAL);
 	block_row->Add(button_new_block_, 0, wxRIGHT, ui::pad());
 	block_row->Add(button_del_block_, 0, wxRIGHT, ui::pad());
@@ -238,6 +240,8 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	auto* button_del_line = new wxButton(panel_right_, wxID_ANY, wxS("Delete"));
 	button_up_ = new wxButton(panel_right_, wxID_ANY, "^", wxDefaultPosition, wxSize(28, -1));
 	button_down_ = new wxButton(panel_right_, wxID_ANY, "v", wxDefaultPosition, wxSize(28, -1));
+	button_up_->SetToolTip(wxS("Shift+Up"));
+	button_down_->SetToolTip(wxS("Shift+Down"));
 	auto* button_preview = new wxButton(panel_right_, wxID_ANY, wxS("Preview"), wxDefaultPosition, wxDefaultSize);
 	help_ = new DescriptionText(panel_right_);
 	help_->SetMinSize({-1, help_->GetCharHeight() * 2});
@@ -267,6 +271,7 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	buildAddList();
 
 	list_menus_->Bind(wxEVT_LISTBOX, &MenuConstructorDialog::onMenuChosen, this);
+	list_menus_->Bind(wxEVT_KEY_DOWN, &MenuConstructorDialog::onMenuKey, this);
 	tree_lines_->Bind(wxEVT_TREE_SEL_CHANGED, &MenuConstructorDialog::onLineChosen, this);
 	tree_lines_->Bind(wxEVT_KEY_DOWN, &MenuConstructorDialog::onLineKey, this);
 	choice_add_->Bind(wxEVT_CHOICE, &MenuConstructorDialog::onAddChosen, this);
@@ -1470,11 +1475,21 @@ void MenuConstructorDialog::onBlockDelete(wxCommandEvent&)
   have_selection_ = false; selected_ = LinePath{};
   buildMenuList(); buildAddList(); buildTree(); apply(); }
 
-void MenuConstructorDialog::onBlockMove(wxCommandEvent& e)
-{ int dir = e.GetEventObject() == (wxObject*)block_down_ ? 1 : -1;
-  if (!source_.moveDefinition(block_, dir)) return;
+void MenuConstructorDialog::moveBlock(int dir)
+{ if (!source_.moveDefinition(block_, dir)) return;
   block_ = (size_t)((int)block_ + dir);
   buildMenuList(); buildTree(); apply(); }
+
+void MenuConstructorDialog::onBlockMove(wxCommandEvent& e)
+{ moveBlock(e.GetEventObject() == (wxObject*)block_down_ ? 1 : -1); }
+
+// The block list answers the same keys the line tree already does. Moving a menu up or down is as
+// common as moving a line while a file is being arranged, and reaching for the buttons each time
+// is the slower path
+void MenuConstructorDialog::onMenuKey(wxKeyEvent& e)
+{ if ((e.GetModifiers() & wxMOD_SHIFT) && (e.GetKeyCode() == WXK_UP || e.GetKeyCode() == WXK_DOWN))
+  { moveBlock(e.GetKeyCode() == WXK_UP ? -1 : 1); return; }
+  e.Skip(); }
 
 void MenuConstructorDialog::onAddLineChosen(wxCommandEvent&) {}
 void MenuConstructorDialog::onNameTyped(wxCommandEvent&) {}

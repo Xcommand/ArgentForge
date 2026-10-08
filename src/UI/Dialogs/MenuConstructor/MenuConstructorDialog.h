@@ -228,6 +228,7 @@ private:
 	void onBlockMove(wxCommandEvent& event);
 	void onLineChosen(wxTreeEvent& event);
 	void onLineKey(wxKeyEvent& event);
+	void onMenuKey(wxKeyEvent& event);
 	void onAddChosen(wxCommandEvent& event);
 	void onAddLineChosen(wxCommandEvent& event);
 	void onDelete(wxCommandEvent& event);
@@ -262,6 +263,7 @@ private:
 	// Trades the line the tree is on with the one [direction] away, skipping anything
 	// the tree does not show
 	void moveLine(int direction);
+	void moveBlock(int direction);
 
 	// The statement the tree is on, or null. [siblings] comes back as the list that
 	// holds it, which is what a move or a delete has to work on
