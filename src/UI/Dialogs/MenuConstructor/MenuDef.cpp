@@ -197,6 +197,61 @@ std::vector<MenuStatement::Arg> splitArgs(string_view text)
 	return out;
 }
 
+// A widget line ends at the first argument that isn't followed by a comma, and the engine keeps
+// reading the same line from there (menudef.cpp:1246-1258). So `StaticText "" StaticText "" ...`
+// is not one broken item but a run of them, which is how mods hide rows below a menu's fold.
+// Cuts the first one out of [body], counts the rest into [runs], and moves the untouched
+// remainder into [tail] so regenerating an edited line can't drop it
+void cutFirstRun(string& body, string_view word, string& tail, int& runs)
+{
+	runs = 1;
+	if (word.empty())
+		return;
+
+	bool   quoted = false;
+	size_t cut    = string::npos;
+	for (size_t i = 0; i < body.size(); i++)
+	{
+		char c = body[i];
+		if (quoted)
+		{
+			if (c == '"') quoted = false;
+			continue;
+		}
+		if (c == '"')
+		{
+			quoted = true;
+			continue;
+		}
+		if (c != word.front())
+			continue;
+
+		size_t e     = i + word.size();
+		bool   left  = i == 0 || isspace((unsigned char)body[i - 1]);
+		bool   right = e >= body.size() || !(isalnum((unsigned char)body[e]) || body[e] == '_');
+		if (!left || !right || !strutil::equalCI(string_view{ body.data() + i, word.size() }, word))
+			continue;
+
+		if (cut == string::npos)
+			cut = i;
+		runs++;
+		i = e - 1;
+	}
+
+	if (cut == string::npos)
+	{
+		runs = 1;
+		return;
+	}
+
+	// Keep the whitespace that separated the runs, so the line goes back byte for byte
+	size_t ws = cut;
+	while (ws > 0 && isspace((unsigned char)body[ws - 1]))
+		ws--;
+	tail.assign(body, ws, string::npos);
+	body.resize(ws);
+}
+
 // The ten words that open a block, from the engine's parser. A vocabulary replaces
 // them when the caller has one; these keep a round trip working without it.
 const char* const block_words_default[] = {
@@ -362,6 +417,7 @@ bool parseBody(string_view text, const std::vector<char>& mask, size_t& pos, siz
 			body.resize(cut);
 		}
 		body = strutil::rtrim(body);
+		cutFirstRun(body, st.word, st.tail, st.runs);
 		st.args = splitArgs(body);
 		st.as_read = st.args;
 
@@ -457,7 +513,7 @@ string MenuStatement::text() const
 		return body + close;
 	}
 
-	return out + trailing_comment + eol;
+	return out + tail + trailing_comment + eol;
 }
 
 // -----------------------------------------------------------------------------

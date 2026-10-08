@@ -19,6 +19,7 @@
 #include "Application/App.h"
 #include "Archive/Archive.h"
 #include "Archive/ArchiveEntry.h"
+#include "Archive/ArchiveManager.h"
 #include "Archive/EntryType/EntryType.h"
 #include "Graphics/SImage/SImage.h"
 #include "Graphics/Palette/Palette.h"
@@ -28,6 +29,7 @@
 #include "Utility/StringUtils.h"
 
 #include <wx/bitmap.h>
+#include <wx/mstream.h>
 #include <wx/button.h>
 #include <wx/choice.h>
 #include <wx/display.h>
@@ -56,6 +58,13 @@ CVAR(Int, menucon_sash_lines, 380, CVar::Flag::Save)
 
 // Defined in MenuPreview.cpp; the preview reads the screen it imitates from here
 EXTERN_CVAR(String, menucon_preview_screen)
+
+// Defined in MenuPreview.cpp; whether the preview paints any backdrop at all
+EXTERN_CVAR(Bool, menucon_preview_titlepic)
+
+// Defined in Game/Game.cpp: the port's own pk3, which is where the engine keeps the font the
+// menu is drawn with. It is not part of the IWAD base resource, so this is the only way in
+EXTERN_CVAR(String, zdoom_pk3_path)
 
 namespace
 {
@@ -368,6 +377,9 @@ void MenuConstructorDialog::addBranch(wxTreeItemId parent, std::vector<MenuState
       if (!st.children.empty()) { addBranch(item, st.children, steps, value_table); tree_lines_->Expand(item); }
       steps.pop_back(); } }
 
+// Forward declaration for parseHex (defined later in the file)
+static bool parseHex(string_view hex, uint8_t& r, uint8_t& g, uint8_t& b);
+
 // The colour a line's first colour argument names. Invalid when there is none, or the value
 // isn't a range the window can read
 wxColour MenuConstructorDialog::rowTint(const MenuStatement& st)
@@ -378,6 +390,19 @@ wxColour MenuConstructorDialog::rowTint(const MenuStatement& st)
       bool range = strutil::equalCI(params[a].name, "cr") || strutil::equalCI(params[a].name, "color");
       if (colour || range)
           return argColour(unquote(st.args[a].value), true);
+  }
+  // For custom widgets without signatures, check all args for colour-like values
+  if (params.empty()) {
+      for (size_t a = 0; a < st.args.size(); a++) {
+          auto v = strutil::trim(unquote(st.args[a].value));
+          if (v.empty()) continue;
+          // Try as a colour range name or index
+          auto hex = rangeColourFor(v);
+          if (!hex.empty()) {
+              uint8_t r, g, b;
+              if (parseHex(hex, r, g, b)) return wxColour(r, g, b);
+          }
+      }
   }
   return {}; }
 
@@ -394,7 +419,8 @@ void MenuConstructorDialog::selectPath(const LinePath& path)
   tree_lines_->SelectItem(item); tree_lines_->EnsureVisible(item); }
 
 void MenuConstructorDialog::buildGrid(const wxString& keep)
-{ rebuilding_ = true;
+{ if (dying_) return;
+  rebuilding_ = true;
   wxString selected = keep;
   if (selected.empty()) { if (auto* prop = grid_args_->GetSelectedProperty()) selected = prop->GetName(); }
   grid_args_->Clear();
@@ -547,16 +573,84 @@ void MenuConstructorDialog::readArchivePatches()
 // engine reads every lump named LANGUAGE; a definition is "NAME = "text";" (the name is the
 // identifier just before the =), a leading $ifgame guard or a [lang] header isn't part of it, and
 // a compiled (binary) lump - a null byte in the first 512 - is one the engine skips, so we do too
+// The port's own pk3, opened once. Both the menu font and the engine's LANGUAGE keys live in it,
+// and a mod's menu line points at those keys as often as at its own. SLADE has carried this path
+// in its settings since 2017 for its own reasons; the preview just reads the same archive
+void MenuConstructorDialog::openPortArchive()
+{ port_pk3_tried_ = strutil::trim((string)zdoom_pk3_path);
+  port_archive_   = nullptr;
+  if (port_pk3_tried_.empty()) return;
+  port_archive_ = app::archiveManager().openArchive(port_pk3_tried_, false, true); }
+
+// Engine first, mod last: the string table keeps the last definition it read, and in the load
+// order the mod comes after the port. Counting the result into the status line is deliberate,
+// "no keys found" and "keys found but this one isn't among them" need different fixes
 void MenuConstructorDialog::readArchiveLanguage()
 { mod_language_.clear();
-  if (!archive_) return;
-  for (unsigned i = 0; i < archive_->numEntries(); i++) { auto* e = archive_->entryAt(i);
+  readLanguageFrom(port_archive_.get());
+  readLanguageFrom(app::archiveManager().baseResourceArchive());
+  readLanguageFrom(archive_);
+  language_keys_ = (int)mod_language_.size(); }
+
+// One row of the spreadsheet form. Quotes hide commas, and a doubled quote inside a quoted field
+// is an escaped one
+std::vector<string> splitCsvLine(string_view line)
+{ std::vector<string> f; string cur; bool quoted = false;
+  for (size_t i = 0; i < line.size(); i++)
+  { char c = line[i];
+    if (c == '"')
+    { if (quoted && i + 1 < line.size() && line[i + 1] == '"') { cur += '"'; i++; continue; }
+      quoted = !quoted; continue; }
+    if (c == ',' && !quoted) { f.push_back(cur); cur.clear(); continue; }
+    cur += c; }
+  f.push_back(cur); return f; }
+
+// The first row names the columns, and which one holds the key is not fixed: the engine accepts
+// the table starting at `default,` or at `identifier,`. So the header is read for those two names
+// and the rest of the rows are taken by what they say, not by position. A row with no key is a
+// section label. The `default` column is the untranslated text, which is what the engine shows
+// when the game language has no entry for the string, so it is the right thing for a preview
+void MenuConstructorDialog::readLanguageTable(const string& raw)
+{ size_t pos = 0;
+  int    key_col = 1, text_col = 0;
+  bool   header = true;
+  while (pos < raw.size())
+  { auto nl = raw.find('\n', pos); if (nl == string::npos) nl = raw.size();
+    auto fields = splitCsvLine(strutil::rtrim(string_view{ raw }.substr(pos, nl - pos)));
+    pos = nl + 1;
+    if (header)
+    { header = false;
+      for (size_t c = 0; c < fields.size(); c++)
+      { auto f = strutil::lower(strutil::trim(fields[c]));
+        if (f == "identifier") key_col = (int)c;
+        else if (f == "default") text_col = (int)c; }
+      continue; }
+    if (fields.size() <= (size_t)std::max(key_col, text_col)) continue;
+    string key = strutil::trim(fields[key_col]);
+    if (key.empty() || isdigit((unsigned char)key[0])) continue;
+    bool clean = true;
+    for (char c : key) if (!(isalnum((unsigned char)c) || c == '_')) { clean = false; break; }
+    if (!clean) continue;
+    mod_language_["$" + key] = fields[text_col]; } }
+
+void MenuConstructorDialog::readLanguageFrom(Archive* ar)
+{ if (!ar) return;
+  for (unsigned i = 0; i < ar->numEntries(); i++) { auto* e = ar->entryAt(i);
     if (!e) continue;
     string nm = strutil::lower(e->name());
     if (nm.size() < 8 || nm.compare(0, 8, "language") != 0 || (nm.size() > 8 && nm[8] != '.')) continue;
     const auto& mc = e->data();
     string raw((const char*)mc.data(), mc.size());
     if (raw.substr(0, std::min<size_t>(raw.size(), 512)).find('\0') != string::npos) continue;
+
+    // Two shapes carry one table. A mod writes `NAME = "text";` lines behind a [lang] header, a
+    // modern port ships the spreadsheet. Reading only the first finds zero keys in the second,
+    // and a preview that resolves nothing still has to say why. The two prefixes are the engine's
+    // own test (stringtable.cpp:501), which accepts the table starting at either column
+    auto first_line = strutil::lower(strutil::trim(raw.substr(0, raw.find('\n'))));
+    if (strutil::startsWith(first_line, "default,") || strutil::startsWith(first_line, "identifier,"))
+    { readLanguageTable(raw); continue; }
+
     string text;
     for (size_t p = 0; p < raw.size(); p++) {
       if (raw[p] == '/' && p + 1 < raw.size() && raw[p + 1] == '/') { while (p < raw.size() && raw[p] != '\n') p++; continue; }
@@ -625,6 +719,11 @@ string MenuConstructorDialog::caption(const MenuStatement& st, bool value_table)
       size_t shown = 0; for (auto& c : st.children) if (c.kind != MenuStatement::Kind::Blank && c.kind != MenuStatement::Kind::Comment) shown++;
       return fmt::format("{} ({}) ({} lines)", st.word, games.empty() ? "all games" : games, shown); }
   if (value_table) return fmt::format("{}   {}", st.word, st.args.empty() ? "" : unquote(st.args[0].value));
+  // One source line can hold several widgets, and the tree lists lines, not widgets. Say how
+  // many rather than printing all eighteen copies of `StaticText ""` across the row
+  if (st.runs > 1 && !st.tail.empty())
+  { auto full = strutil::trim(st.text());
+    return fmt::format("{}   ({} rows)", full.substr(0, full.size() - st.tail.size()), st.runs); }
   return strutil::trim(st.text()); }
 
 MenuDefinition* MenuConstructorDialog::currentDefinition()
@@ -749,7 +848,7 @@ void MenuConstructorDialog::onMenuChosen(wxCommandEvent&)
   buildAddList(); buildTree(); if (select_) select_(block_); }
 
 void MenuConstructorDialog::onLineChosen(wxTreeEvent&)
-{ if (rebuilding_) return;
+{ if (rebuilding_ || dying_) return;
   auto* data = tree_lines_->GetSelection().IsOk() ? static_cast<LineItem*>(tree_lines_->GetItemData(tree_lines_->GetSelection())) : nullptr;
   if (data) { selected_.steps = data->steps(); have_selection_ = true; } else { have_selection_ = false; selected_ = LinePath{}; }
   buildGrid(); showHelp();
@@ -817,6 +916,21 @@ void MenuConstructorDialog::showPreviewWindow()
     preview_frame_->SetSize(area.x + std::max(0, (area.width - fw) / 2),
                             area.y + std::max(0, (area.height - fh) / 2), fw, fh);
     preview_ = new MenuPreview(preview_frame_);
+    // The preview resolves a colour escape through the same table the argument grid uses. The
+    // order is the engine's EColorRange enum (v_font.h:39-71), not an alphabetised one, because
+    // the escape says "range 17" and only that order turns it into DarkRed
+    preview_->setRangeInk([this](int range, const wxString& name) -> wxColour
+    {
+        static const char* const ranges[] = { "Brick", "Tan", "Gray", "Green", "Brown", "Gold", "Red",
+                                              "Blue", "Orange", "White", "Yellow", "Untranslated",
+                                              "Black", "LightBlue", "Cream", "Olive", "DarkGreen",
+                                              "DarkRed", "DarkBrown", "Purple", "DarkGray", "Cyan",
+                                              "Ice", "Fire", "Sapphire", "Teal" };
+        if (name.empty())
+            return range >= 0 && range < (int)(sizeof(ranges) / sizeof(*ranges)) ? argColour(ranges[range], true)
+                                                                                : wxColour{};
+        return argColour(std::string(name.ToUTF8().data()), true);
+    });
     auto sizer = new wxBoxSizer(wxVERTICAL); sizer->Add(preview_, 1, wxEXPAND); preview_frame_->SetSizer(sizer);
     // Closing hides the window instead of destroying it. The dialog keeps calling
     // updatePreviewWindow -> preview_->setRows after a menu pick, and a destroyed frame would leave
@@ -827,9 +941,26 @@ void MenuConstructorDialog::showPreviewWindow()
     auto pick = [this](int row) { if (row < 0 || row >= (int)preview_lines_.size() || !preview_lines_[row]) return;
       auto* def = currentDefinition(); if (def) { vector<size_t> steps;
         for (size_t i = 0; i < def->statements.size(); i++) if (&def->statements[i] == preview_lines_[row]) { selectPath(LinePath{{i}}); break; } } };
+    preview_->onActivate = [this](int row) { activatePreviewRow(row); };
+    preview_->onBack     = [this]() { backFromSubmenu(); };
+    // The screen it imitates and what it loaded belongs in the title, not painted over the
+    // bottom row of the menu
+    preview_->onStatus   = [this](const wxString& status)
+    { if (preview_frame_) preview_frame_->SetTitle("Menu preview - " + status); };
     preview_->onPick = pick; preview_->onCursor = [this, pick](int step) { if (preview_lines_.empty()) return; auto* sel = currentStatement(); int at = -1;
       for (size_t i = 0; i < preview_lines_.size(); i++) if (preview_lines_[i] == sel) { at = (int)i; break; }
-      pick(std::clamp(at + step, 0, (int)preview_lines_.size() - 1)); }; previewBackground(); }
+      // One step moves to the next line the game's cursor could actually sit on, so headers and
+      // dashed rules are walked over rather than through. At the ends it stops rather than
+      // parking on the last line, which used to land the cursor on an unselectable header
+      int next = at;
+      for (size_t guard = 0; guard < preview_lines_.size(); guard++)
+      { next += step;
+        if (next < 0 || next >= (int)preview_lines_.size()) break;
+        if (preview_lines_[next] && lineSelectable(*preview_lines_[next])) { at = next; break; } }
+      if (at < 0)
+          for (size_t i = 0; i < preview_lines_.size(); i++)
+              if (preview_lines_[i] && lineSelectable(*preview_lines_[i])) { at = (int)i; break; }
+      if (at >= 0) pick(at); }; previewBackground(); }
   preview_frame_->ShowWithoutActivating(); preview_frame_->Raise(); updatePreviewWindow(); }
 
 // Takes the window out of view when its entry panel goes away, so it never edits a
@@ -862,35 +993,92 @@ std::vector<MenuPreview::Row> MenuConstructorDialog::buildPreviewRows()
       if (text.empty() && !st.args.empty()) text = unquote(st.args[0].value);
       // Resolve $KEY references to their LANGUAGE values so the preview shows what the player sees
       text = resolveLanguageKey(text);
-      r.label = wxString::FromUTF8(text.empty() ? st.word : text);
-      r.value = ""; r.selected = false;
+      // StaticText "" is a spacer in the game, not the widget name
+      bool is_static = strutil::equalCI(st.word, "StaticText");
+      r.label = wxString::FromUTF8((text.empty() && is_static) ? "" : text.empty() ? st.word : text);
+      // For sliders and options, show the current value the way the engine does
+      r.value = "";
+      if (strutil::equalCI(st.word, "Slider") && st.args.size() >= 4) {
+          // Slider "label", "cvar", min, max, step - show current value from cvar if available
+          // For preview, show the default (min) since we can't read cvars
+          r.value = wxString::FromUTF8(unquote(st.args[2].value));
+      } else if (strutil::equalCI(st.word, "Option") && st.args.size() >= 3) {
+          // Option "label", "cvar", "choices" - show first choice
+          string choices = unquote(st.args[2].value);
+          auto comma = choices.find(',');
+          r.value = wxString::FromUTF8(comma != string::npos ? choices.substr(0, comma) : choices);
+      }
+      r.selected = false;
+      // Submenu widgets show a ► indicator in the game
+      r.is_submenu = strutil::equalCI(st.word, "Submenu");
+      r.is_slider  = strutil::equalCI(st.word, "Slider") || strutil::equalCI(st.word, "ScaleSlider");
+      r.selectable = lineSelectable(st);
       // A line the engine would stop on: a widget given fewer arguments than its leading required
       // (no-default) Init params. Valid menus never ship like this, so this only lights up on a
       // line that genuinely won't load - half-built, or missing a value the class demands
       size_t required = 0; for (auto& p : params) { if (p.optional) break; required++; }
       r.broken = !vt && !params.empty() && st.args.size() < required;
-      r.centred = strutil::lower(st.word).find("centered") != string::npos;
-      r.colour = rowTint(st); // white when the line names no readable colour (MenuPreview falls back)
+      // Every StaticText sits in the middle of the screen, not in the label column: its Init
+      // passes center=true to the base (optionmenuitems.zs:738) and drawLabel then uses
+      // (screen width - text width)/2 instead of the gutter (:80). The same goes for
+      // StaticTextSwitchable (:788). A dashed StaticText is therefore a full-width rule
+      // centred on the screen, which is how mods actually draw a separator
+      r.centred = is_static || strutil::equalCI(st.word, "StaticTextSwitchable");
+      // The game uses different default colours for different widget types: Submenu gets a yellow/orange
+      // "more" colour (optionmenuitems.zs:166 uses mFontColorMore), other widgets use the default text colour.
+      // rowTint extracts the colour from the widget's arguments when present; when absent, Submenu gets
+      // the "more" colour and others fall back to white (MenuPreview's default)
+      r.colour = rowTint(st);
+      if (!r.colour.IsOk())
+      {
+          // A bare number above zero in StaticText's colour slot is not a colour: the engine
+          // reads it as 'use the header colour', which GAMEINFO sets to GOLD for Doom
+          // (optionmenuitems.zs:741, doomcommon.txt:56)
+          if (is_static && st.args.size() >= 2)
+          { auto a = strutil::trim(unquote(st.args[1].value));
+            if (!a.empty() && isdigit((unsigned char)a[0]) && std::atoi(a.c_str()) > 0)
+                r.colour = argColour("GOLD", true); }
+          // A Submenu label is the 'more' colour, and that GAMEINFO key is menufontcolor_action,
+          // GRAY for Doom (gi.cpp:434, doomcommon.txt:55) - not a highlight
+          else if (r.is_submenu)
+              r.colour = argColour("GRAY", true);
+      }
       preview_lines_.push_back(&st);
+      // One source line can be several of the game's rows; the reader counted them when it cut
+      // the first one off. The count rides on the row rather than becoming duplicate rows,
+      // because one row is one line of the file and the cursor walk depends on that holding
+      r.repeat = st.runs;
       rows.push_back(std::move(r)); }
   return rows; }
 // The texture a block draws its menu over. The engine reads a `background "NAME"` directive in the
 // block body (menudef.cpp:1415), not a TITLEPIC. Empty when the block declares none
 string MenuConstructorDialog::blockBackground()
 { auto* def = currentDefinition(); if (!def) return "";
+  // One switch for the whole backdrop, so "off" means the flat dark and not "off except for
+  // blocks that name their own picture"
+  if (!menucon_preview_titlepic) return "";
   // First try the block's own `background` directive
   for (auto& st : def->statements)
       if (strutil::equalCI(st.word, "background") && !st.args.empty()) return unquote(st.args[0].value);
   // Fallback to the archive's TITLEPIC (global background for menus without a custom bg).
   // TITLEPIC lives in patches/graphics/textures, not flats, so check all the namespaces
   // the engine's GetMenuTexture would search
-  if (archive_) {
-      auto& res = app::resources();
-      if (res.getFlatEntry("TITLEPIC", archive_)) return "TITLEPIC";
-      if (res.getPatchEntry("TITLEPIC", "patches", archive_)) return "TITLEPIC";
-      if (res.getPatchEntry("TITLEPIC", "graphics", archive_)) return "TITLEPIC";
-      if (res.getPatchEntry("TITLEPIC", "textures", archive_)) return "TITLEPIC"; }
+  if (findMenuTexture("TITLEPIC")) return "TITLEPIC";
   return ""; }
+
+// The entry a menu background name points at, in the order the engine searches it: a flat, then a
+// patch in the patches / graphics / textures namespaces. This archive first so a mod's own TITLEPIC
+// wins, then the base resource, which is where the backdrop is when the mod ships none
+ArchiveEntry* MenuConstructorDialog::findMenuTexture(string_view name)
+{ if (name.empty()) return nullptr;
+  auto& res = app::resources();
+  for (const Archive* ar : { (const Archive*)archive_, (const Archive*)nullptr })
+      {
+          if (auto* e = res.getFlatEntry(name, ar)) return e;
+          for (auto ns : { "patches", "graphics", "textures" })
+              if (auto* e = res.getPatchEntry(name, ns, ar)) return e;
+      }
+  return nullptr; }
 
 // The block's `Position N` directive (OptionMenu takes one number = y offset from top, default 0).
 // Engine: menudef.cpp:1080-1083 reads a single number into desc->mPosition
@@ -902,16 +1090,32 @@ int MenuConstructorDialog::blockPosition()
       }
   return 0; }
 
-// Resolve a menu background name the way the engine's GetMenuTexture does: a flat, then a patch in
-// the patches / graphics / textures namespaces, searched through this archive and the base resource.
-// Decoded onto the global palette. Empty if nothing by that name exists, so the preview stays flat
+// The block's `Title "..."` directive. The engine draws this caption at the top when Position <= 0.
+// Optional second argument is the colour name; when absent the engine uses the menu's default
+// (red for OptionMenu). We return just the text here - colour is handled separately
+string MenuConstructorDialog::blockTitle()
+{ auto* def = currentDefinition(); if (!def) return "";
+  for (auto& st : def->statements)
+      if (strutil::equalCI(st.word, "title") && !st.args.empty())
+          return resolveLanguageKey(unquote(st.args[0].value));
+  return ""; }
+
+// The colour of the block's `Title "text", "color"` directive. When no colour is given the engine
+// uses the menu's default (red for OptionMenu, white for ListMenu). We return red as the default
+// since that matches what the game actually draws for OptionMenu titles
+wxColour MenuConstructorDialog::blockTitleColor()
+{ auto* def = currentDefinition(); if (!def) return wxColour{200, 0, 0};
+  for (auto& st : def->statements)
+      if (strutil::equalCI(st.word, "title") && st.args.size() >= 2)
+          return argColour(unquote(st.args[1].value), true);
+  // No colour argument - use the menu's default. OptionMenu titles are red in the engine
+  return wxColour{200, 0, 0}; }
+
+// Resolve a menu background name to pixels. The search order is findMenuTexture's; this only
+// decodes what it found onto the global palette. Empty if nothing by that name exists anywhere,
+// so the preview stays flat
 wxBitmap MenuConstructorDialog::resolveMenuTexture(string_view name)
-{ if (!archive_ || name.empty()) return {};
-  auto& res = app::resources();
-  ArchiveEntry* e = res.getFlatEntry(name, archive_);
-  if (!e) e = res.getPatchEntry(name, "patches", archive_);
-  if (!e) e = res.getPatchEntry(name, "graphics", archive_);
-  if (!e) e = res.getPatchEntry(name, "textures", archive_);
+{ auto* e = findMenuTexture(name);
   if (!e) return {};
   SImage img; if (!misc::loadImageFromEntry(&img, e) || !img.isValid()) return {};
   auto* pal = app::paletteManager()->globalPalette();
@@ -922,19 +1126,214 @@ wxBitmap MenuConstructorDialog::resolveMenuTexture(string_view name)
           d[o] = c.r; d[o + 1] = c.g; d[o + 2] = c.b; }
   return wxBitmap(wimg); }
 
+// The engine draws every menu line with NewSmallFont, and NewSmallFont comes out of one text
+// lump it always reads from its own pk3 - a mod cannot replace it (v_font.cpp:861-866). Each
+// line of that file is `<code point in hex>:<hex byte pairs>`; 16 bytes is one 8x16 cell and a
+// wider glyph is that many cells side by side (hexfont.cpp:48-79, :272-300). NewSmallFont
+// stamps a cell nine times: eight copies offset by a pixel in the dark end of the ramp and one
+// dead centre in the bright end (hexfont.cpp:229-240), which is the outline the game shows.
+// The ramp is SmallPal[i] = i*255/17 (:81-92), so the ring sits at 15 and the body at 210.
+// Reading the lump is all it takes: no FONTDEF, no CRATE, no palette translation.
+void MenuConstructorDialog::loadGameFont()
+{ hex_glyphs_.clear(); hex_font_read_ = true;
+  if (!port_archive_) openPortArchive();
+  Archive::SearchOptions opts;
+  opts.match_name     = "newconsolefont.hex";
+  opts.ignore_ext     = false;
+  opts.search_subdirs = true;
+
+  // SLADE has had one slot for the port's own archive for years, the "ZDoom PK3 Path" on the Base
+  // Resource page, and that archive is the only place this file can be: the engine reads it out of
+  // its own pk3 and refuses to let a mod replace it. The IWAD that base resource currently has
+  // open never holds it, so the port archive is asked first
+  shared_ptr<Archive> held;
+  ArchiveEntry*       entry = nullptr;
+  auto&               am    = app::archiveManager();
+  if (port_archive_)
+  { held  = port_archive_;
+    entry = held->findFirst(opts); }
+
+  // Then whatever is already open, and finally any pk3 sitting in the base resource list, each
+  // opened just long enough to read this one text entry. held keeps it alive while the glyphs are
+  // parsed out of it
+  if (!entry) entry = am.findResourceEntry(opts);
+  if (!entry && archive_)
+      entry = archive_->findFirst(opts);
+  if (!entry)
+      for (auto& ar : am.allArchives())
+          if ((entry = ar->findFirst(opts)))
+              break;
+  for (unsigned i = 0; i < am.numBaseResourcePaths() && !entry; i++)
+  {
+      auto  path = strutil::lower(am.getBaseResourcePath(i));
+      auto  dot  = path.find_last_of('.');
+      if (dot == string::npos)
+          continue;
+      if (auto ext = path.substr(dot + 1); ext != "pk3" && ext != "zip")
+          continue;
+      held  = am.openArchive(path, false, true);
+      entry = held ? held->findFirst(opts) : nullptr;
+      // The same archive holds the engine's LANGUAGE, so keep it for the next preview as well
+      if (entry) port_archive_ = held;
+  }
+  if (!entry)
+  {
+      font_paths_tried_ = (int)am.numBaseResourcePaths();
+      return;
+  }
+  const auto& mc = entry->data();
+  string text((const char*)mc.data(), mc.size());
+  size_t p = 0;
+  while (p < text.size())
+  { auto eol = text.find('\n', p); if (eol == string::npos) eol = text.size();
+    auto colon = text.find(':', p);
+    if (colon != string::npos && colon >= eol) colon = string::npos;
+    if (colon != string::npos)
+    { int cp = (int)strtol(text.substr(p, colon - p).c_str(), nullptr, 16);
+      string hex;
+      for (size_t i = colon + 1; i < eol; i++) if (isxdigit((unsigned char)text[i])) hex += text[i];
+      // A cell is 16 bytes: 8 columns x 16 rows, one bit per pixel. Anything else is a line
+      // this format doesn't have, and the engine's own integer divide would read it wrong too
+      if (cp > 0 && hex.size() >= 32 && hex.size() % 32 == 0)
+      { std::vector<uint8_t> bytes; bool any = false;
+        for (size_t i = 0; i + 1 < hex.size(); i += 2)
+        { uint8_t b = (uint8_t)strtoul(hex.substr(i, 2).c_str(), nullptr, 16);
+          if (b) any = true; bytes.push_back(b); }
+        // An all-zero glyph is skipped by the engine as well (hexfont.cpp:58)
+        if (any) hex_glyphs_[cp] = std::move(bytes); } }
+    p = eol + 1; } }
+
+// The sheet the preview blits from: Latin-1 plus Cyrillic, which is what a menu line can hold.
+// A character outside it advances like a space rather than showing a wrong glyph. False when
+// there was nothing to build, which is also the answer to "did the base resource not load yet"
+bool MenuConstructorDialog::applyGameFont()
+{ if (!preview_ || hex_glyphs_.empty()) return false;
+  std::map<int, int> widths; int total = 0;
+  for (auto& [cp, bytes] : hex_glyphs_)
+  { if (cp < 0x20 || (cp > 0xFF && cp < 0x400) || cp > 0x45F) continue;
+    int cell = ((int)bytes.size() / 16) * 9;   // 8 columns of pixels and the gap the engine bakes in
+    widths[cp] = cell; total += cell; }
+  if (widths.empty() || total <= 0) return false;
+  widths[' '] = 9;                             // a space has no glyph in the file, only an advance
+
+  wxImage sheet(total, 16);
+  if (auto* d = sheet.GetData()) memset(d, 0, (size_t)total * 16 * 3);
+  sheet.InitAlpha();
+  if (auto* a = sheet.GetAlpha()) memset(a, 0, (size_t)total * 16);
+
+  // Source bytes run row by row within a column of 16, so byte y*cols+x is row y of column x
+  auto stamp = [&](int ox, const std::vector<uint8_t>& bytes, int ix, int iy, uint8_t val)
+  { int cols = (int)bytes.size() / 16;
+    for (int y = 0; y < 14; y++) for (int x = 0; x < cols; x++)
+    { uint8_t b = bytes[(size_t)y * cols + x];
+      for (int bit = 0; bit < 8; bit++) if (b & (128 >> bit))
+      { int px = ox + ix + 8 * x + bit, py = iy + y;
+        if (px >= ox + cols * 9 || py >= 16) continue;   // the engine's own last column is the next glyph's
+        sheet.SetRGB(px, py, val, val, val); sheet.SetAlpha(px, py, 255); } } };
+
+  int ox = 0;
+  for (auto& [cp, cell] : widths)
+  { auto g = hex_glyphs_.find(cp); if (g == hex_glyphs_.end()) { ox += cell; continue; }
+    for (int yy = 0; yy < 3; yy++) for (int xx = 0; xx < 3; xx++)
+        if (xx != 1 || yy != 1) stamp(ox, g->second, xx, yy, 15);
+    stamp(ox, g->second, 1, 1, 210);
+    ox += cell; }
+
+  game_font_chars_ = (int)widths.size();
+  preview_->setGameFont(wxBitmap(sheet), 16, std::move(widths));
+  return true; }
+
+// The slider rail is drawn as text, out of four glyphs of the engine's console font
+// (optionmenuitems.zs:1126-1131). That font is not in the hex lump: it ships as sheets of 8x8
+// cells under fonts/consolefont/ in the port's pk3, sixteen cells to a row, so 0x10, 0x11 and
+// 0x12 sit in the second row of the first sheet at columns 0, 1 and 2. Only the rail is taken;
+// the knob's position is a cvar value, and the file doesn't hold one.
+void MenuConstructorDialog::applySliderGlyphs()
+{ if (!preview_ || !port_archive_) return;
+  auto* e = port_archive_->entryAtPath("fonts/consolefont/0000.png");
+  if (!e) return;
+  const auto& mc = e->data();
+  wxMemoryInputStream in(mc.data(), mc.size());
+  wxImage sheet(in, wxBITMAP_TYPE_PNG);
+  if (!sheet.IsOk() || sheet.GetWidth() < 24 || sheet.GetHeight() < 16) return;
+
+  wxImage rail(24, 8);
+  rail.InitAlpha();
+  if (auto* a = rail.GetAlpha()) memset(a, 0, 24 * 8);
+  for (int g = 0; g < 3; g++) for (int y = 0; y < 8; y++) for (int x = 0; x < 8; x++)
+  { int sx = g * 8 + x, sy = 8 + y;
+    rail.SetRGB(g * 8 + x, y, sheet.GetRed(sx, sy), sheet.GetGreen(sx, sy), sheet.GetBlue(sx, sy));
+    rail.SetAlpha(g * 8 + x, y, sheet.HasAlpha() ? sheet.GetAlpha(sx, sy) : 255); }
+
+  preview_->setSliderRail(wxBitmap(rail)); }
+
+// What the preview says about its own font, in the line at the bottom of the window. A preview
+// that quietly fell back to the platform font looks like a preview that loaded the game's
+string MenuConstructorDialog::fontNote()
+{ if (game_font_chars_ > 0)
+      return fmt::format("font {} glyphs, lang {} keys", game_font_chars_, language_keys_);
+  if (!hex_font_read_) return "font: not read";
+  if (!hex_glyphs_.empty()) return "font: sheet failed";
+  // Say which file was asked for, because "not found" and "you never told me where the port is"
+  // look identical otherwise and only one of them is fixable from this window
+  if (port_pk3_tried_.empty()) return "font: no port pk3 set (ZDoom PK3 Path)";
+  auto slash = port_pk3_tried_.find_last_of("/\\");
+  return fmt::format("font: no newconsolefont.hex in {}",
+                     slash == string::npos ? port_pk3_tried_ : port_pk3_tried_.substr(slash + 1)); }
+
+// The cursor in the game walks only lines it can land on. OptionMenuItem answers Selectable()
+// true (optionmenuitems.zs:120); StaticText and StaticTextSwitchable answer false (:760, :838),
+// and everything else the engine ships inherits true
+bool MenuConstructorDialog::lineSelectable(const MenuStatement& st)
+{ return !(strutil::equalCI(st.word, "StaticText") || strutil::equalCI(st.word, "StaticTextSwitchable")); }
+
+// ENTER on a Submenu in the game opens the menu its second argument names (the argument is a
+// submenu name, not a cvar and not a console command - optionmenuitems.zs:177-184). In here that
+// means bringing the whole constructor to that block, and Backspace is the way back
+void MenuConstructorDialog::activatePreviewRow(int row)
+{ if (row < 0 || row >= (int)preview_lines_.size() || !preview_lines_[row]) return;
+  auto& st = *preview_lines_[row];
+  if (!strutil::equalCI(st.word, "Submenu") || st.args.size() < 2) return;
+  auto target = strutil::trim(unquote(st.args[1].value));
+  if (target.empty()) return;
+  auto& defs = source_.definitions();
+  for (size_t i = 0; i < defs.size(); i++)
+      if (strutil::equalCI(defs[i].nameText(), target))
+      { preview_back_.push_back(block_);
+        showBlock(i);
+        if (select_) select_(i);
+        if (preview_) updatePreviewWindow();
+        return; } }
+
+// Out of the chain of submenus the preview was walked down, most recent first
+void MenuConstructorDialog::backFromSubmenu()
+{ if (preview_back_.empty()) return;
+  auto back = preview_back_.back(); preview_back_.pop_back();
+  if (back < source_.definitions().size())
+  { showBlock(back);
+    if (select_) select_(back);
+    if (preview_) updatePreviewWindow(); } }
+
 void MenuConstructorDialog::previewBackground()
 { auto* def = currentDefinition(); if (!def || def->statements.empty()) return;
-  int sw = 640, sh = 480, scale = 1, vw = 640, vh = 480;
-  string screen = strutil::trim((string)menucon_preview_screen);
-  auto pos = screen.find('x');
-  if (pos != string::npos) {
-      try { sw = std::stoi(screen.substr(0, pos)); sh = std::stoi(screen.substr(pos + 1)); } catch (...) {}
-      vw = sw; vh = sh; }
+  // The font is the engine's own and doesn't change with the mod, so it is read once per
+  // preview and then left alone - rebuilding a few hundred glyphs on every keystroke is work
+  // that has no reason to happen twice
+  if (!hex_font_read_) loadGameFont();
+  if (!game_font_applied_)
+  { game_font_applied_ = applyGameFont();
+    if (game_font_applied_) applySliderGlyphs(); }
+  // The engine's own clean scale for the screen being imitated (V_UpdateModeSize), not a 1:1
+  // copy of it. menuFieldFor is the one place that math lives; parsing the resolution here
+  // instead of calling it left every row two or three times too tight on a Full HD screen
+  auto field = menuFieldFor(strutil::trim((string)menucon_preview_screen), 0);
   auto rows = buildPreviewRows();
   if (preview_) {
-      preview_->setField(sw, sh, scale, vw, vh);
-      preview_->setRows(rows, "");
+      preview_->setField(field.screenW, field.screenH, field.scale, field.width, field.height);
+      preview_->setRows(rows, fontNote());
       preview_->setPosition(blockPosition());
+      preview_->setTitle(wxString::FromUTF8(blockTitle()));
+      preview_->setTitleColor(blockTitleColor());
       bool any = false; for (auto& r : rows) if (r.broken) { any = true; break; }
       preview_->markProblem(any);
       string bg = blockBackground();
@@ -948,7 +1347,7 @@ void MenuConstructorDialog::updatePreviewWindow()
   bool any = false;
   for (size_t i = 0; i < rows.size() && i < preview_lines_.size(); i++)
   { rows[i].selected = preview_lines_[i] == sel; if (rows[i].broken) any = true; }
-  preview_->setRows(rows, "");
+  preview_->setRows(rows, fontNote());
   preview_->setPosition(blockPosition());
   preview_->markProblem(any);
   // The background only changes when a different block is shown, so re-decode it just then, not on
@@ -960,6 +1359,9 @@ void MenuConstructorDialog::updatePreviewWindow()
 void MenuConstructorDialog::setArchive(Archive* archive)
 { if (archive_ == archive) return;
   archive_ = archive;
+  // Before the language read: half the keys a mod's menu uses belong to the port, and they are
+  // only reachable through this archive
+  openPortArchive();
   readArchiveCvars();
   readArchiveRanges();
   readArchivePatches();
@@ -1315,4 +1717,9 @@ void MenuConstructorDialog::pickColour()
   else
     commitArg(wxString::Format("arg%d", colour_arg_),
               wxString::Format("\"#%02X%02X%02X\"", c.r, c.g, c.b)); }
-MenuConstructorDialog::~MenuConstructorDialog() = default;
+// The base window destroys its children after this body has run, and wxTreeCtrl::DeleteAllItems
+// still announces a selection change on its way out. Handling that announcement reaches for the
+// property grid, which by then is being destroyed too - the crash on quitting with a Menu
+// Constructor tab open
+MenuConstructorDialog::~MenuConstructorDialog()
+{ dying_ = true; }

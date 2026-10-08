@@ -32,6 +32,7 @@ using namespace slade;
 
 EXTERN_CVAR(String, menucon_preview_screen)
 EXTERN_CVAR(Int, menucon_preview_scale)
+EXTERN_CVAR(Bool, menucon_preview_titlepic)
 
 
 // -----------------------------------------------------------------------------
@@ -68,18 +69,25 @@ MenuConstructorPrefsPanel::MenuConstructorPrefsPanel(wxWindow* parent) : PrefsPa
 		400,
 		(int)menucon_preview_scale);
 
+	check_titlepic_id_ = wxNewId();
+	auto check_titlepic_ = new wxCheckBox(this, check_titlepic_id_, wxS("Draw a picture behind the menu"));
+	check_titlepic_->SetValue(menucon_preview_titlepic);
+
 	wxutil::layoutVertically(
 		sizer,
 		vector<wxObject*>{
 			new wxStaticText(this, -1, wxS("Preview, the picture under the arguments")),
 			wxutil::createLabelHBox(this, "Draw it as a screen:", choice_screen_),
 			wxutil::createLabelHBox(this, "Zoom (%):", spin_preview_scale_),
+			check_titlepic_,
 			new wxStaticText(
 				this,
 				-1,
 				wxS("100% puts the whole screen inside the window; more crops it around the menu.\n"
 				    "The engine picks the text size from the resolution, so a bigger screen shows\n"
-				    "more of the menu rather than bigger letters, except where it doubles it.")) },
+				    "more of the menu rather than bigger letters, except where it doubles it.\n"
+				    "The picture is the title screen the game would be sitting on, from the mod\n"
+				    "you have open or from the base resource; off leaves a flat dark.")) },
 		wxSizerFlags(0).Expand().Border(wxALL, ui::padLarge()));
 }
 
@@ -114,5 +122,12 @@ void MenuConstructorPrefsPanel::applyPreferences()
 		auto* spin = wxDynamicCast(FindWindow(spin_preview_scale_id_), wxSpinCtrl);
 		if (spin)
 			menucon_preview_scale = spin->GetValue();
+	}
+
+	if (check_titlepic_id_ >= 0)
+	{
+		auto* check = wxDynamicCast(FindWindow(check_titlepic_id_), wxCheckBox);
+		if (check)
+			menucon_preview_titlepic = check->IsChecked();
 	}
 }

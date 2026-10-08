@@ -27,6 +27,7 @@ class wxSplitterWindow;
 namespace slade
 {
 class Archive;
+class ArchiveEntry;
 class ColourBox;
 class DescriptionText;
 class MenuPreview;
@@ -163,9 +164,57 @@ private:
 	// The block's own `background "NAME"` directive (empty if it has none), and the texture it names
 	// resolved to a bitmap through this archive and the base resource
 	string     blockBackground();
+	// The block's `Title "..."` directive (the caption drawn at the top when Position <= 0)
+	string     blockTitle();
+	// The block's `Title "text", "color"` directive - optional second arg is the colour name.
+	// When absent the engine uses the menu's default (red for OptionMenu)
+	wxColour   blockTitleColor();
 	// The block's `Position N` directive (OptionMenu takes one number = y offset, default 0 = top)
 	int        blockPosition();
 	wxBitmap   resolveMenuTexture(string_view name);
+	// The entry a background name points at: this archive first, then the base resource
+	ArchiveEntry* findMenuTexture(string_view name);
+	// Loads SMALLFONT from the archive and converts it to a bitmap + char widths for the preview
+	void       loadGameFont();
+	// Assembles the loaded glyphs into one sheet and hands it to the preview window. False when
+	// there was nothing to hand over, so the caller keeps trying
+	bool       applyGameFont();
+	// The three slider rail glyphs, from the console font sheets in the port's pk3
+	void       applySliderGlyphs();
+	// Kept open because the menu font and the slider rail live in it and nowhere else
+	shared_ptr<Archive> port_archive_;
+	// Opens the archive at ZDoom PK3 Path, if one is set
+	void       openPortArchive();
+	// One archive's LANGUAGE lumps, merged into the table
+	void       readLanguageFrom(Archive* ar);
+	// The same table in the spreadsheet shape a modern port ships
+	void       readLanguageTable(const string& raw);
+	// How many $KEY names the table ended up holding, for the status line
+	int        language_keys_ = 0;
+	// How many characters ended up on that sheet; the preview says it in its own status line
+	int        game_font_chars_ = 0;
+	// How many base resource archive paths were opened looking for the font, for that same line
+	int        font_paths_tried_ = 0;
+	// The port pk3 that was asked first, whatever it holds or doesn't
+	string     port_pk3_tried_;
+	// What the status line should say about the font, including "it didn't load"
+	string     fontNote();
+	// Whether the game's cursor can be moved onto a line at all
+	bool       lineSelectable(const MenuStatement& st);
+	// What a double-click or ENTER on a preview row does: a Submenu takes the constructor to the
+	// block it names
+	void       activatePreviewRow(int row);
+	// Backspace: the way back out of the submenus the preview was walked down
+	void       backFromSubmenu();
+	std::vector<size_t> preview_back_;
+	// Set once the window has begun dying, so a late tree event can't rebuild a grid that is
+	// already being destroyed
+	bool       dying_ = false;
+	// The engine's menu font, read once out of newconsolefont.hex: code point -> that glyph's
+	// bytes exactly as the file wrote them (16 bytes per 8-pixel column of width)
+	std::map<int, std::vector<uint8_t>> hex_glyphs_;
+	bool                                hex_font_read_ = false;
+	bool                                game_font_applied_ = false;
 	// The rows the preview shows for the block on screen: one per menu line, its text as the
 	// label and its colour argument as the ink. Fills preview_lines_ so a click maps back
 	std::vector<MenuPreview::Row> buildPreviewRows();

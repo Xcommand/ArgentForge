@@ -56,6 +56,11 @@ public:
 	string after_word = " ";    // What separates the keyword from its first argument.
 	                            // A widget line uses a space; an OptionValue pair must keep
 	                            // its comma, because the engine asks for one by name
+	// A widget ends at the first argument with no comma after it (menudef.cpp:1246-1258), so one
+	// line can hold several of them. [runs] counts how many, [tail] carries everything after the
+	// first verbatim so editing the first can't silently delete the rest
+	int    runs = 1;
+	string tail;
 	size_t begin = 0;
 	size_t end   = 0;
 	bool   edited = false;
