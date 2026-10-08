@@ -157,6 +157,12 @@ private:
 	wxTreeItemId itemForPath(const LinePath& path);
 	// Selects [path] if it still exists, otherwise the first line there is
 	void selectPath(const LinePath& path);
+	// The paths the tree holds under selection, and the way to put a group of them back
+	vector<LinePath> selectedPaths();
+	void             selectPaths(const vector<LinePath>& paths, const LinePath& anchor);
+	// The blocks the list holds under selection, ascending, and the way to put them back
+	vector<size_t>   selectedBlocks();
+	void             selectBlocks(const vector<size_t>& indexes, size_t anchor);
 
 	// The preview: what a menu block would look like on a screen, and what sits behind it
 	void updatePreview();

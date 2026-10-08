@@ -179,7 +179,9 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 
 	// LEFT: the block list, with the block operations along its bottom
 	panel_menus_ = new wxPanel(split_outer_);
-	list_menus_ = new wxListBox(panel_menus_, wxID_ANY, wxDefaultPosition, wxDefaultSize, 0, nullptr, wxLB_SINGLE);
+	// The block list takes a range with Shift and extra picks with Ctrl, so a run of menus can be
+	// moved as one rather than one at a time
+	list_menus_ = new wxListBox(panel_menus_, wxID_ANY, wxDefaultPosition, wxDefaultSize, 0, nullptr, wxLB_EXTENDED);
 	button_new_block_ = new wxButton(panel_menus_, wxID_ANY, wxS("New"));
 	button_del_block_ = new wxButton(panel_menus_, wxID_ANY, wxS("Delete"));
 	block_up_   = new wxButton(panel_menus_, wxID_ANY, wxS("^"), wxDefaultPosition, wxSize(28, -1));
@@ -212,9 +214,10 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	header_hbox->Add(text_menu_name_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, ui::pad());
 	header_hbox->Add(check_protected_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, ui::pad());
 
-	// The tree of lines, the top of the right column
+	// The tree of lines, the top of the right column. Multiple selection for the same reason
+	// the block list has it: a block of lines gets arranged together
 	tree_lines_ = new wxTreeCtrl(panel_right_, wxID_ANY, wxDefaultPosition, wxDefaultSize,
-	                               wxTR_DEFAULT_STYLE | wxTR_HIDE_ROOT | wxBORDER_SUNKEN);
+	                               wxTR_DEFAULT_STYLE | wxTR_HIDE_ROOT | wxTR_MULTIPLE | wxBORDER_SUNKEN);
 	tree_lines_->AddRoot(wxEmptyString);
 
 	// The arguments, under the tree; its height is set to fit every row
@@ -422,6 +425,44 @@ void MenuConstructorDialog::selectPath(const LinePath& path)
   if (!data) { have_selection_ = false; selected_ = LinePath{}; return; }
   selected_.steps = data->steps(); have_selection_ = true;
   tree_lines_->SelectItem(item); tree_lines_->EnsureVisible(item); }
+
+// Everything under selection in the tree. A group is only as wide as the list it sits in: a
+// move takes the lines sharing the anchor's parent and leaves the rest where they are
+vector<MenuConstructorDialog::LinePath> MenuConstructorDialog::selectedPaths()
+{ wxArrayTreeItemIds items; tree_lines_->GetSelections(items);
+  vector<LinePath> out;
+  for (size_t i = 0; i < items.GetCount(); i++)
+      if (auto* data = static_cast<LineItem*>(tree_lines_->GetItemData(items[i]))) out.push_back(LinePath{data->steps()});
+  return out; }
+
+// Puts a group of lines back under selection, with [anchor] the one the arguments show
+void MenuConstructorDialog::selectPaths(const vector<LinePath>& paths, const LinePath& anchor)
+{ if (paths.empty()) return;
+  rebuilding_ = true;
+  tree_lines_->UnselectAll();
+  for (auto& path : paths)
+      if (!(path == anchor)) if (auto item = itemForPath(path); item.IsOk()) tree_lines_->SelectItem(item);
+  if (auto keep = itemForPath(anchor); keep.IsOk())
+  { tree_lines_->SelectItem(keep); tree_lines_->SetFocusedItem(keep); tree_lines_->EnsureVisible(keep); }
+  selected_ = anchor; have_selection_ = true;
+  rebuilding_ = false; }
+
+// The blocks under selection in the list, ascending
+vector<size_t> MenuConstructorDialog::selectedBlocks()
+{ wxArrayInt items; list_menus_->GetSelections(items);
+  vector<size_t> out;
+  for (size_t i = 0; i < items.GetCount(); i++) out.push_back((size_t)items[i]);
+  std::sort(out.begin(), out.end());
+  return out; }
+
+// Puts a group of blocks back under selection, with [anchor] the one the rest of the window reads
+void MenuConstructorDialog::selectBlocks(const vector<size_t>& indexes, size_t anchor)
+{ rebuilding_ = true;
+  list_menus_->SetSelection(-1);
+  for (auto i : indexes)
+      if (i < (size_t)list_menus_->GetCount()) list_menus_->SetSelection((int)i, true);
+  block_ = anchor;
+  rebuilding_ = false; }
 
 void MenuConstructorDialog::buildGrid(const wxString& keep)
 { if (dying_) return;
@@ -843,17 +884,56 @@ void MenuConstructorDialog::moveLine(int direction)
 { KeepFocus focus;	// same reason as in moveBlock: the tree rebuild must not take the keyboard away
   std::vector<MenuStatement>* siblings = nullptr; size_t row = 0;
   if (!currentStatement(&siblings, &row)) return;
-  int target = (int)row + direction;
-  while (target >= 0 && target < (int)siblings->size()) {
-      auto kind = (*siblings)[target].kind;
-      if (kind != MenuStatement::Kind::Blank && kind != MenuStatement::Kind::Comment) break; target += direction; }
-  if (target < 0 || target >= (int)siblings->size()) return;
-  std::swap((*siblings)[row], (*siblings)[target]);
-  selected_.steps.back() = (size_t)target; auto keep = selected_;
-  if (!apply()) selected_ = keep; buildTree(); }
 
-void MenuConstructorDialog::onMenuChosen(wxCommandEvent&)
-{ auto at = (size_t)std::max(0, list_menus_->GetSelection()); if (at == block_) return;
+  // The selected lines that live in this same list. A line under another ifgame has its own
+  // list, and trading across two of them would move the branch rather than the line
+  vector<LinePath> group;
+  for (auto& path : selectedPaths())
+  { if (path.steps.size() != selected_.steps.size()) continue;
+    bool same_parent = true;
+    for (size_t d = 0; d + 1 < path.steps.size(); d++)
+        if (path.steps[d] != selected_.steps[d]) { same_parent = false; break; }
+    if (same_parent) group.push_back(path); }
+  if (std::find_if(group.begin(), group.end(), [&](const LinePath& p) { return p.steps.back() == row; }) == group.end())
+      group.push_back(selected_);
+  std::sort(group.begin(), group.end(), [](const LinePath& a, const LinePath& b) { return a.steps.back() < b.steps.back(); });
+
+  // The lines the tree shows, in order. Blanks and comments sit between them and stay where they
+  // are, so a move trades places with the next visible line rather than the next row of text
+  vector<size_t> visible;
+  for (size_t i = 0; i < siblings->size(); i++)
+      if ((*siblings)[i].kind != MenuStatement::Kind::Blank && (*siblings)[i].kind != MenuStatement::Kind::Comment)
+          visible.push_back(i);
+
+  // Step toward the direction from the leading edge and never onto another member of the group,
+  // which is what makes a run of lines slide as one instead of shuffling inside itself
+  vector<size_t> pos, original;
+  for (auto& p : group) { pos.push_back(p.steps.back()); original.push_back(p.steps.back()); }
+  auto order = pos;
+  if (direction > 0) std::reverse(order.begin(), order.end());
+  for (auto cur : order)
+  { auto it = std::find(visible.begin(), visible.end(), cur);
+    if (it == visible.end()) continue;
+    auto nt = it + direction;
+    if (nt < visible.begin() || nt >= visible.end()) continue;
+    size_t target = *nt;
+    if (std::find(pos.begin(), pos.end(), target) != pos.end()) continue;
+    std::swap((*siblings)[cur], (*siblings)[target]);
+    std::replace(pos.begin(), pos.end(), cur, target); }
+
+  size_t anchor = 0;
+  for (size_t i = 0; i < original.size(); i++) if (original[i] == row) anchor = i;
+  for (size_t i = 0; i < group.size(); i++) group[i].steps.back() = pos[i];
+
+  auto keep = selected_; selected_ = group[anchor];
+  if (!apply()) { selected_ = keep; buildTree(); return; }
+  buildTree(); selectPaths(group, selected_); }
+
+void MenuConstructorDialog::onMenuChosen(wxCommandEvent& e)
+{ // The clicked row rather than the first selected one: a Shift range selects several, and the
+  // block he asked to see is the one under the cursor
+  int clicked = e.GetInt() >= 0 ? e.GetInt() : list_menus_->GetSelection();
+  auto at = (size_t)std::max(0, clicked); if (at == block_) return;
   block_ = at; have_selection_ = false; selected_ = LinePath{};
   buildAddList(); buildTree(); if (select_) select_(block_); }
 
@@ -1480,9 +1560,32 @@ void MenuConstructorDialog::moveBlock(int dir)
 { // Rebuilding the tree pulls focus into the line list, so a second Shift+Down that should have
   // moved the block again would land on a line instead
   KeepFocus focus;
-  if (!source_.moveDefinition(block_, dir)) return;
-  block_ = (size_t)((int)block_ + dir);
-  buildMenuList(); buildTree(); apply(); }
+  auto picked = selectedBlocks();
+  if (picked.empty()) picked.push_back(block_);
+  if (std::find(picked.begin(), picked.end(), block_) == picked.end())
+  { picked.push_back(block_); std::sort(picked.begin(), picked.end()); }
+
+  // Step toward the direction from the leading edge, and never onto another member of the
+  // group: that is what makes a run of blocks slide as one instead of shuffling inside itself
+  auto pos = picked;
+  auto order = picked;
+  if (dir > 0) std::reverse(order.begin(), order.end());
+  for (auto cur : order)
+  {
+      auto nxt = (int)cur + dir;
+      if (nxt < 0 || nxt >= (int)source_.definitions().size()) continue;
+      if (std::find(pos.begin(), pos.end(), (size_t)nxt) != pos.end()) continue;
+      if (!source_.moveDefinition(cur, dir)) continue;
+      std::replace(pos.begin(), pos.end(), cur, (size_t)nxt);
+  }
+
+  auto anchor = block_;
+  if (auto at = std::find(picked.begin(), picked.end(), block_); at != picked.end())
+      anchor = pos[(size_t)(at - picked.begin())];
+
+  buildMenuList();
+  selectBlocks(pos, anchor);
+  buildTree(); apply(); }
 
 void MenuConstructorDialog::onBlockMove(wxCommandEvent& e)
 { moveBlock(e.GetEventObject() == (wxObject*)block_down_ ? 1 : -1); }
