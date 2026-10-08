@@ -48,9 +48,39 @@ using namespace slade;
 namespace
 {
 wxBitmap bm_logo;
+wxBitmap bm_banner;
 int      img_width  = 300;
 int      img_height = 204;
 bool     init_done  = false;
+
+// The splash shows before any window exists to inherit a theme from, so it has to
+// carry its own colours. Same shades as the start page, keyed off the system appearance
+struct Palette
+{
+	wxColour bg, border, text, dim, track, meter, ember;
+};
+
+wxColour mix(const wxColour& a, const wxColour& b, float t)
+{
+	auto l = [t](int x, int y) {
+		return (unsigned char)((double)x + ((double)y - (double)x) * t);
+	};
+	return { l(a.Red(), b.Red()), l(a.Green(), b.Green()), l(a.Blue(), b.Blue()) };
+}
+
+const Palette& palette()
+{
+	static Palette pal = []
+	{
+		if (app::isDarkTheme())
+			return Palette{ { 38, 29, 28 },     { 96, 64, 40 },   { 232, 230, 228 },
+							{ 150, 132, 122 },  { 20, 15, 14 },   { 226, 150, 70 },
+							{ 122, 60, 22 } };
+		return Palette{ { 250, 240, 220 }, { 154, 106, 20 }, { 40, 34, 30 },  { 104, 88, 76 },
+						{ 226, 212, 188 }, { 154, 106, 20 }, { 250, 240, 220 } };
+	}();
+	return pal;
+}
 } // namespace
 
 //#if __WXGTK__
@@ -77,7 +107,7 @@ SplashWindow::SplashWindow(wxWindow* parent) :
 {
 	// Init
 	wxMiniFrame::SetBackgroundStyle(wxBG_STYLE_PAINT);
-	wxMiniFrame::SetBackgroundColour(wxColour(180, 186, 200));
+	wxMiniFrame::SetBackgroundColour(palette().bg);
 	wxMiniFrame::SetDoubleBuffered(true);
 
 	// Bind events
@@ -130,21 +160,33 @@ void SplashWindow::init()
 
 	// Load logo image
 	auto tempfile = app::path("temp.png", app::Dir::Temp);
-	auto logo     = app::archiveManager().programResourceArchive()->entry("logo.png");
-	if (logo)
+	auto resources = app::archiveManager().programResourceArchive();
+
+	auto load = [&](string_view name)
 	{
-		logo->exportFile(tempfile);
+		wxImage image;
+		auto    entry = resources ? resources->entry(name) : nullptr;
+		if (entry && entry->exportFile(tempfile))
+		{
+			image.LoadFile(wxString::FromUTF8(tempfile), wxBITMAP_TYPE_PNG);
+			if (image.IsOk() && ui::scaleFactor() != 1.)
+				image = image.Scale(ui::scalePx(image.GetWidth()), ui::scalePx(image.GetHeight()), wxIMAGE_QUALITY_BICUBIC);
+		}
+		return image;
+	};
 
-		wxImage img;
-		img.LoadFile(wxString::FromUTF8(tempfile), wxBITMAP_TYPE_PNG);
-		if (ui::scaleFactor() != 1.)
-			img = img.Scale(ui::scalePx(img.GetWidth()), ui::scalePx(img.GetHeight()), wxIMAGE_QUALITY_BICUBIC);
+	auto logo = load("logo.png");
+	if (logo.IsOk())
+		bm_logo = wxBitmap(logo);
 
-		bm_logo = wxBitmap(img);
-	}
+	// An optional strip under the logo. Its own height sets how much taller the
+	// window gets, so the artwork decides the layout rather than a constant here
+	auto banner = load("splash_banner.png");
+	if (banner.IsOk())
+		bm_banner = wxBitmap(banner);
 
 	img_width  = ui::scalePx(300);
-	img_height = ui::scalePx(204);
+	img_height = ui::scalePx(204) + (bm_banner.IsOk() ? bm_banner.GetHeight() : 0);
 
 	// Clean up
 	wxRemoveFile(wxString::FromUTF8(tempfile));
@@ -218,20 +260,25 @@ void SplashWindow::onPaint(wxPaintEvent& e)
 {
 	// Create device context
 	wxAutoBufferedPaintDC dc(this);
+	const auto&         pal = palette();
 
 	// Draw border
-	dc.SetBrush(wxBrush(wxColour(180, 186, 200)));
-	dc.SetPen(wxPen(wxColour(100, 104, 116)));
+	dc.SetBrush(wxBrush(pal.bg));
+	dc.SetPen(wxPen(pal.border));
 	dc.DrawRectangle(0, 0, img_width, img_height);
 
 	// Draw SLADE logo
 	if (bm_logo.IsOk())
 		dc.DrawBitmap(bm_logo, 0, 0, true);
 
+	// Draw the banner strip right under it
+	if (bm_banner.IsOk())
+		dc.DrawBitmap(bm_banner, 0, ui::scalePx(200), true);
+
 	// Setup text
 	wxFont font(8, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL, false, wxS("Calibri"));
 	dc.SetFont(font);
-	dc.SetTextForeground(*wxBLACK);
+	dc.SetTextForeground(pal.dim);
 
 	// Draw version
 	string vers      = "v" + app::version().toString();
@@ -244,6 +291,7 @@ void SplashWindow::onPaint(wxPaintEvent& e)
 	font.SetPointSize(10);
 	font.SetWeight(wxFONTWEIGHT_BOLD);
 	dc.SetFont(font);
+	dc.SetTextForeground(pal.text);
 	text_size = dc.GetTextExtent(wxString::FromUTF8(message_));
 	x         = (img_width * 0.5) - int((double)text_size.GetWidth() * 0.5);
 	y         = (img_height - 4) - text_size.GetHeight();
@@ -256,7 +304,8 @@ void SplashWindow::onPaint(wxPaintEvent& e)
 		wxRect rect_pbar(0, img_height - ui::scalePx(4), img_width, ui::scalePx(14));
 
 		// Draw background
-		dc.SetBrush(wxBrush(wxColour(40, 40, 56)));
+		dc.SetBrush(wxBrush(pal.track));
+		dc.SetPen(*wxTRANSPARENT_PEN);
 		dc.DrawRectangle(rect_pbar);
 
 		// Draw meter
@@ -264,7 +313,7 @@ void SplashWindow::onPaint(wxPaintEvent& e)
 		{
 			rect_pbar.SetRight(progress_ * img_width);
 			rect_pbar.Deflate(1, 1);
-			dc.SetBrush(wxBrush(wxColour(100, 120, 255)));
+			dc.SetBrush(wxBrush(pal.meter));
 			dc.SetPen(*wxTRANSPARENT_PEN);
 			dc.DrawRectangle(rect_pbar);
 		}
@@ -277,8 +326,8 @@ void SplashWindow::onPaint(wxPaintEvent& e)
 			if (interval > 1.0f)
 				interval = 2.0f - interval;
 
-			wxColor left(100 - (60.0f * interval), 120 - (80.0f * interval), 255 - (199.0f * interval));
-			wxColor right(40 + (60.0f * interval), 40 + (80.0f * interval), 56 + (199.0f * interval));
+			wxColor left  = mix(pal.meter, pal.ember, interval);
+			wxColor right = mix(pal.ember, pal.meter, interval);
 
 			// Draw the animated meter
 			rect_pbar.Deflate(1, 1);
@@ -296,7 +345,7 @@ void SplashWindow::onPaint(wxPaintEvent& e)
 		text_size = dc.GetTextExtent(wxString::FromUTF8(message_progress_));
 		x         = (img_width * 0.5) - int((double)text_size.GetWidth() * 0.5);
 		y         = img_height - ui::scalePx(4);
-		dc.SetTextForeground(wxColour(200, 210, 255));
+		dc.SetTextForeground(pal.text);
 		dc.DrawText(wxString::FromUTF8(message_progress_), x, y);
 	}
 
