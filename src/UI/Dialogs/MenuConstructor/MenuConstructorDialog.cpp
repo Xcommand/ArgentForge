@@ -883,7 +883,11 @@ void MenuConstructorDialog::deleteLine()
 void MenuConstructorDialog::moveLine(int direction)
 { KeepFocus focus;	// same reason as in moveBlock: the tree rebuild must not take the keyboard away
   std::vector<MenuStatement>* siblings = nullptr; size_t row = 0;
-  if (!currentStatement(&siblings, &row)) return;
+  if (!currentStatement(&siblings, &row))
+  { help_->setText(fmt::format(
+        "move {}: entered, but no line under selection (have {}, {} steps deep)",
+        direction, have_selection_, selected_.steps.size()));
+    return; }
 
   // The selected lines that live in this same list. A line under another ifgame has its own
   // list, and trading across two of them would move the branch rather than the line
@@ -950,7 +954,12 @@ void MenuConstructorDialog::onMenuChosen(wxCommandEvent& e)
 
 void MenuConstructorDialog::onLineChosen(wxTreeEvent&)
 { if (rebuilding_ || dying_) return;
-  auto* data = tree_lines_->GetSelection().IsOk() ? static_cast<LineItem*>(tree_lines_->GetItemData(tree_lines_->GetSelection())) : nullptr;
+  // With several rows under selection the control's own idea of "the" selection can come back
+  // empty, while the group is plainly there. Either way the arguments belong to one of them
+  auto* data = static_cast<LineItem*>(tree_lines_->GetItemData(tree_lines_->GetSelection()));
+  if (!data)
+  { wxArrayTreeItemIds items; tree_lines_->GetSelections(items);
+    for (size_t i = 0; i < items.GetCount() && !data; i++) data = static_cast<LineItem*>(tree_lines_->GetItemData(items[i])); }
   if (data) { selected_.steps = data->steps(); have_selection_ = true; } else { have_selection_ = false; selected_ = LinePath{}; }
   buildGrid(); showHelp();
   // Bring the editor to the row he picked in the tree, unless this selection is only
