@@ -163,6 +163,8 @@ private:
 	// The block's own `background "NAME"` directive (empty if it has none), and the texture it names
 	// resolved to a bitmap through this archive and the base resource
 	string     blockBackground();
+	// The block's `Position N` directive (OptionMenu takes one number = y offset, default 0 = top)
+	int        blockPosition();
 	wxBitmap   resolveMenuTexture(string_view name);
 	// The rows the preview shows for the block on screen: one per menu line, its text as the
 	// label and its colour argument as the ink. Fills preview_lines_ so a click maps back
@@ -366,9 +368,12 @@ private:
 	void                                   readArchivePatches();
 	std::vector<string>                    patchNames() const;
 	// The labels the archive's own LANGUAGE lumps define. A menu line writes '$NAME' for the
-	// text it shows, and the label is a name to point at rather than a word to invent
-	std::vector<string> mod_language_;
+	// text it shows, and the label is a name to point at rather than a word to invent.
+	// Stored as key -> value so the preview can resolve $KEY to the actual text
+	std::map<string, string> mod_language_;
 	void              readArchiveLanguage();
+	// Look up a $KEY in the archive's LANGUAGE; returns the value or the original text if not found
+	string            resolveLanguageKey(string_view text) const;
 	string                                 rangeColourFor(string_view name) const;
 
 	// Argument lists of widgets this archive declares in its own ZScript. The engine builds

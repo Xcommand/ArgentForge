@@ -40,11 +40,11 @@ public:
 	string pageTitle() override { return "Actor Constructor"; }
 
 private:
-	wxSpinCtrl* spin_preview_scale_   = nullptr;
-	wxCheckBox* cb_preview_loop_      = nullptr;
-	wxChoice*   choice_preview_speed_ = nullptr;
-	wxChoice*   choice_action_frame_  = nullptr;
-	wxCheckBox* cb_action_next_frame_ = nullptr;
-	wxSpinCtrl* spin_action_tics_     = nullptr;
+	int spin_preview_scale_id_   = -1;
+	int cb_preview_loop_id_      = -1;
+	int choice_preview_speed_id_ = -1;
+	int choice_action_frame_id_  = -1;
+	int cb_action_next_frame_id_ = -1;
+	int spin_action_tics_id_     = -1;
 };
 } // namespace slade

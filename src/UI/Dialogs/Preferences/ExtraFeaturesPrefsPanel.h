@@ -26,6 +26,7 @@
 #pragma once
 
 #include "PrefsPanelBase.h"
+#include <wx/spinctrl.h>
 
 class wxButton;
 
@@ -47,7 +48,11 @@ public:
 private:
 	// One-time migration: pull SLADE's settings into our own folder (we no longer share it)
 	void importSladeSettings();
+	void init() override;
+	void applyPreferences() override;
 
-	wxButton* button_import_ = nullptr;
+	wxButton*          button_import_ = nullptr;
+	int                spin_recent_scale_id_ = -1;
+	int                recent_scale_value_ = 100;
 };
 } // namespace slade

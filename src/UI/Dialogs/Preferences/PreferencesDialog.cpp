@@ -175,8 +175,12 @@ PreferencesDialog::PreferencesDialog(wxWindow* parent) : SDialog(parent, "Argent
 	// Add preferences treebook
 	sizer->Add(tree_prefs_, 1, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, ui::padLarge());
 
-	// Add buttons
-	sizer->Add(CreateButtonSizer(wxOK | wxCANCEL | wxAPPLY), 0, wxEXPAND | wxALL, ui::padLarge());
+	// Add buttons: Apply and Close side-by-side on the right
+	auto button_sizer = new wxBoxSizer(wxHORIZONTAL);
+	button_sizer->AddStretchSpacer();
+	button_sizer->Add(new wxButton(this, wxID_APPLY, wxS("Apply")), 0, wxRIGHT, ui::pad());
+	button_sizer->Add(new wxButton(this, wxID_CLOSE, wxS("Close")), 0);
+	sizer->Add(button_sizer, 0, wxEXPAND | wxALL, ui::padLarge());
 
 	// Bind events
 	Bind(wxEVT_BUTTON, &PreferencesDialog::onButtonClicked, this);
@@ -354,6 +358,8 @@ void PreferencesDialog::onButtonClicked(wxCommandEvent& e)
 	// Check if it was the apply button
 	if (e.GetId() == wxID_APPLY)
 		applyPreferences();
+	else if (e.GetId() == wxID_CLOSE)
+		EndModal(wxID_CLOSE);
 	else
 		e.Skip();
 }
@@ -381,8 +387,7 @@ void PreferencesDialog::openPreferences(wxWindow* parent, string initial_page, c
 	dlg.CenterOnParent();
 
 	// Show dialog
-	if (dlg.ShowModal() == wxID_OK)
-		dlg.applyPreferences();
+	dlg.ShowModal();
 	theMainWindow->archiveManagerPanel()->refreshAllTabs();
 
 	// Save state

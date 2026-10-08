@@ -227,7 +227,6 @@ wxPanel* InterfacePrefsPanel::setupGeneralTab(wxWindow* stc_tabs)
 	gb_sizer->Add(new wxStaticText(panel, -1, wxS("Icons:")), { row, 0 }, { 1, 1 }, wxALIGN_CENTRE_VERTICAL);
 	gb_sizer->Add(choice_iconset_general_, { row, 1 }, { 1, 1 }, wxEXPAND);
 	gb_sizer->Add(new wxStaticText(panel, -1, wxS("*")), { row++, 2 }, { 1, 1 }, wxALIGN_CENTRE_VERTICAL);
-
 	gb_sizer->AddGrowableCol(1, 1);
 	sizer->Add(
 		new wxStaticText(panel, -1, wxS("* requires restart to take effect")), 0, wxALL | wxALIGN_RIGHT, ui::pad());

@@ -157,10 +157,9 @@ wxRect MenuPreview::fieldRect() const
 	if (size.x <= 0 || size.y <= 0)
 		return {};
 
-	// The screen is fitted by its width and cropped at the bottom if it is taller than the
-	// window: a menu is a list, so what must survive is how the labels sit against the gutter,
-	// while rows past the edge are the same overflow the game scrolls through
-	double k = (double)size.x / (double)screen_w_ * (double)zoom() / 100.0;
+	// The window was already sized to screen*zoom/100 by fitToZoom(), so the field just fills it.
+	// No extra zoom factor here - that would shrink the picture at <100% and crop it at >100%.
+	double k = (double)size.x / (double)screen_w_;
 	int    w = (int)std::lround(screen_w_ * k), h = (int)std::lround(screen_h_ * k);
 
 	// Only a screen that fits whole gets centred; otherwise the first row is held near the top
@@ -230,6 +229,7 @@ void MenuPreview::onPaint(wxPaintEvent&)
 	// for the gutter and to find where the cursor sits in this drawn list
 	std::vector<int> order;
 	int              sel = -1;
+	int              max_label_tw = 0;
 	for (size_t i = 0; i < rows_.size(); i++)
 	{
 		if (rows_[i].broken)
@@ -242,8 +242,17 @@ void MenuPreview::onPaint(wxPaintEvent&)
 			int tw = 0, th = 0;
 			gc.GetTextExtent(rows_[i].label, &tw, &th);
 			gutter = std::max(gutter, tw + 4 * u);
+			max_label_tw = std::max(max_label_tw, tw);
 		}
 	}
+
+	// The engine's GetIndent() (optionmenu.zs:878) returns screen.GetWidth()/2 + indent, so the
+	// gutter sits at the screen centre and labels stick out to its left, values to its right.
+	// Centre the gutter on the field, then push it right if the longest label would overflow
+	int centered_x = field.x + field.width / 2;
+	if (max_label_tw > centered_x - field.x)
+		centered_x = field.x + max_label_tw;
+	
 	int visible = (int)order.size();
 	int fit     = lineheight > 0 ? std::max(1, field.height / lineheight) : visible;
 
@@ -266,10 +275,12 @@ void MenuPreview::onPaint(wxPaintEvent&)
 	else
 		scroll_ = 0;
 
-	int y0 = field.y + (visible > fit ? 6 * u : std::max(6 * u, (field.height - visible * lineheight) / 2));
+	// The engine starts the menu at mPosition (optionmenu.zs:914), a y offset from the top in clean-space units.
+	// Default 0 means top; positive values push the menu down, negative values are clamped to a small leading gap
+	int y0 = field.y + std::max(2 * u, position_y_ * u);
 	laid_.assign(rows_.size(), wxPoint{});
 	for (int k = 0; k < visible; k++)
-		laid_[order[k]] = { field.x + gutter, y0 + (k - first) * lineheight };
+		laid_[order[k]] = { centered_x, y0 + (k - first) * lineheight };
 
 	for (size_t i = 0; i < rows_.size(); i++)
 	{

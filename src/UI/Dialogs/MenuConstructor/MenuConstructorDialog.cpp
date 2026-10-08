@@ -525,7 +525,7 @@ MenuConstructorDialog::ArgOffers MenuConstructorDialog::offersFor(string_view wo
   else if (!now.empty() && now[0] == '$' &&
            (strutil::equalCI(pname, "label") || strutil::equalCI(pname, "text") ||
             strutil::equalCI(pname, "prompt") || strutil::equalCI(pname, "label2")))
-  { offers.names = mod_language_;
+  { for (auto& [key, val] : mod_language_) offers.names.push_back(key);
     offers.what = "the LANGUAGE string this text points at"; }
   return offers; }
 
@@ -543,7 +543,7 @@ void MenuConstructorDialog::readArchivePatches()
     if (!e || !e->type() || !e->type()->extraProps().contains("image")) continue;
     mod_patches_.push_back(e->name()); } }
 
-// The LANGUAGE keys this archive declares, so a label/text/prompt can point at one as $KEY. The
+// The LANGUAGE keys and values this archive declares, so a label/text/prompt can point at one as $KEY. The
 // engine reads every lump named LANGUAGE; a definition is "NAME = "text";" (the name is the
 // identifier just before the =), a leading $ifgame guard or a [lang] header isn't part of it, and
 // a compiled (binary) lump - a null byte in the first 512 - is one the engine skips, so we do too
@@ -572,9 +572,19 @@ void MenuConstructorDialog::readArchiveLanguage()
       if (j == left.size()) continue;
       string name = left.substr(j);
       if (isdigit((unsigned char)name[0])) continue;
-      string key = "$" + name;
-      if (std::find(mod_language_.begin(), mod_language_.end(), key) == mod_language_.end())
-          mod_language_.push_back(key); } } }
+      auto right = strutil::trim(stmt.substr(eq + 1));
+      string value;
+      if (right.size() >= 2 && right.front() == '"' && right.back() == '"')
+          value = right.substr(1, right.size() - 2);
+      else value = right;
+      mod_language_["$" + name] = value; } } }
+
+// Look up a $KEY in the archive's LANGUAGE; returns the value or the original text if not found
+string MenuConstructorDialog::resolveLanguageKey(string_view text) const
+{ if (text.empty() || text[0] != '$') return string(text);
+  auto it = mod_language_.find(string(text));
+  if (it != mod_language_.end()) return it->second;
+  return string(text); }
 
 // The widget classes this archive declares in its own ZScript. The engine builds the class name
 // out of the word in a menu line (OptionMenuItem<word>, ListMenuItem<word>) and reads that class'
@@ -850,6 +860,8 @@ std::vector<MenuPreview::Row> MenuConstructorDialog::buildPreviewRows()
       for (size_t a = 0; a < params.size() && a < st.args.size(); a++)
           if (strutil::equalCI(params[a].type, "String")) { text = unquote(st.args[a].value); break; }
       if (text.empty() && !st.args.empty()) text = unquote(st.args[0].value);
+      // Resolve $KEY references to their LANGUAGE values so the preview shows what the player sees
+      text = resolveLanguageKey(text);
       r.label = wxString::FromUTF8(text.empty() ? st.word : text);
       r.value = ""; r.selected = false;
       // A line the engine would stop on: a widget given fewer arguments than its leading required
@@ -866,9 +878,29 @@ std::vector<MenuPreview::Row> MenuConstructorDialog::buildPreviewRows()
 // block body (menudef.cpp:1415), not a TITLEPIC. Empty when the block declares none
 string MenuConstructorDialog::blockBackground()
 { auto* def = currentDefinition(); if (!def) return "";
+  // First try the block's own `background` directive
   for (auto& st : def->statements)
       if (strutil::equalCI(st.word, "background") && !st.args.empty()) return unquote(st.args[0].value);
+  // Fallback to the archive's TITLEPIC (global background for menus without a custom bg).
+  // TITLEPIC lives in patches/graphics/textures, not flats, so check all the namespaces
+  // the engine's GetMenuTexture would search
+  if (archive_) {
+      auto& res = app::resources();
+      if (res.getFlatEntry("TITLEPIC", archive_)) return "TITLEPIC";
+      if (res.getPatchEntry("TITLEPIC", "patches", archive_)) return "TITLEPIC";
+      if (res.getPatchEntry("TITLEPIC", "graphics", archive_)) return "TITLEPIC";
+      if (res.getPatchEntry("TITLEPIC", "textures", archive_)) return "TITLEPIC"; }
   return ""; }
+
+// The block's `Position N` directive (OptionMenu takes one number = y offset from top, default 0).
+// Engine: menudef.cpp:1080-1083 reads a single number into desc->mPosition
+int MenuConstructorDialog::blockPosition()
+{ auto* def = currentDefinition(); if (!def) return 0;
+  for (auto& st : def->statements)
+      if (strutil::equalCI(st.word, "position") && !st.args.empty()) {
+          try { return std::stoi(st.args[0].value); } catch (...) { return 0; }
+      }
+  return 0; }
 
 // Resolve a menu background name the way the engine's GetMenuTexture does: a flat, then a patch in
 // the patches / graphics / textures namespaces, searched through this archive and the base resource.
@@ -896,12 +928,13 @@ void MenuConstructorDialog::previewBackground()
   string screen = strutil::trim((string)menucon_preview_screen);
   auto pos = screen.find('x');
   if (pos != string::npos) {
-      try { sw = std::stoi(screen.substr(0, pos)); vh = std::stoi(screen.substr(pos + 1)); } catch (...) {}
+      try { sw = std::stoi(screen.substr(0, pos)); sh = std::stoi(screen.substr(pos + 1)); } catch (...) {}
       vw = sw; vh = sh; }
   auto rows = buildPreviewRows();
   if (preview_) {
       preview_->setField(sw, sh, scale, vw, vh);
       preview_->setRows(rows, "");
+      preview_->setPosition(blockPosition());
       bool any = false; for (auto& r : rows) if (r.broken) { any = true; break; }
       preview_->markProblem(any);
       string bg = blockBackground();
@@ -909,12 +942,14 @@ void MenuConstructorDialog::previewBackground()
       preview_->setBackground(resolveMenuTexture(bg), bg); }}
 void MenuConstructorDialog::updatePreviewWindow()
 { auto* def = currentDefinition(); if (!def || !preview_) return;
+  previewBackground();
   auto rows = buildPreviewRows();
   auto* sel = currentStatement();
   bool any = false;
   for (size_t i = 0; i < rows.size() && i < preview_lines_.size(); i++)
   { rows[i].selected = preview_lines_[i] == sel; if (rows[i].broken) any = true; }
   preview_->setRows(rows, "");
+  preview_->setPosition(blockPosition());
   preview_->markProblem(any);
   // The background only changes when a different block is shown, so re-decode it just then, not on
   // every keystroke - decoding a texture each edit is exactly the lag we don't want

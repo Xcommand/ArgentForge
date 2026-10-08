@@ -34,7 +34,7 @@ public:
 	string pageTitle() override { return "Menu Constructor"; }
 
 private:
-	wxChoice*   choice_screen_      = nullptr;
-	wxSpinCtrl* spin_preview_scale_ = nullptr;
+	int choice_screen_id_      = -1;
+	int spin_preview_scale_id_ = -1;
 };
 } // namespace slade

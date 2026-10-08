@@ -34,6 +34,7 @@ public:
 	void setField(int screenWidth, int screenHeight, int scale, int virtualWidth, int virtualHeight);
 	void setRows(std::vector<Row> rows, wxString note);
 	void setBackground(const wxBitmap& picture, wxString name);
+	void setPosition(int y) { position_y_ = y; }
 
 	// Called with the row a click landed on, or -1 for the empty space around them
 	std::function<void(int)> onPick;
@@ -79,6 +80,7 @@ private:
 	int       screen_w_ = 640, screen_h_ = 480;
 	int       scale_ = 1, vwidth_ = 640, vheight_ = 480;
 	int       content_top_ = 0;   // where the rows start on that screen, in its pixels
+	int       position_y_ = 0;    // the block's Position directive (y offset from top, default 0)
 	int       scroll_ = 0;        // first visible row when the menu is taller than the screen, so
 	                              // the list scrolls to keep the cursor in view the way the game does
 	int       zoom_ = 0;          // 0 = follow the setting

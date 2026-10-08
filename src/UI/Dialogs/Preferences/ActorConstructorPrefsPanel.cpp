@@ -68,30 +68,38 @@ ActorConstructorPrefsPanel::ActorConstructorPrefsPanel(wxWindow* parent) : Prefs
 	auto sizer = new wxBoxSizer(wxVERTICAL);
 	SetSizer(sizer);
 
-	spin_preview_scale_ = new wxSpinCtrl(
+	spin_preview_scale_id_ = wxNewId();
+	auto spin_preview_scale_ = new wxSpinCtrl(
         this,
-		wxID_ANY,
+		spin_preview_scale_id_,
 		wxEmptyString,
 		wxDefaultPosition,
 		{ ui::scalePx(80), -1 },
 		wxSP_ARROW_KEYS,
 		100,
 		500,
-		txed_sprite_preview_scale);
-	cb_preview_loop_      = new wxCheckBox(this, -1, wxS("Play the animation round again"));
-	choice_preview_speed_ = new wxChoice(this, -1, wxDefaultPosition, { ui::scalePx(140), -1 });
-	choice_action_frame_  = new wxChoice(this, -1, wxDefaultPosition, { ui::scalePx(240), -1 });
-	cb_action_next_frame_ = new wxCheckBox(this, -1, wxS("Count on to the next frame letter"));
-	spin_action_tics_     = new wxSpinCtrl(
+		(int)txed_sprite_preview_scale);
+	cb_preview_loop_id_ = wxNewId();
+	auto cb_preview_loop_ = new wxCheckBox(this, cb_preview_loop_id_, wxS("Play the animation round again"));
+	cb_preview_loop_->SetValue((bool)txed_sprite_preview_loop);
+	choice_preview_speed_id_ = wxNewId();
+	auto choice_preview_speed_ = new wxChoice(this, choice_preview_speed_id_, wxDefaultPosition, { ui::scalePx(140), -1 });
+	choice_action_frame_id_ = wxNewId();
+	auto choice_action_frame_ = new wxChoice(this, choice_action_frame_id_, wxDefaultPosition, { ui::scalePx(240), -1 });
+	cb_action_next_frame_id_ = wxNewId();
+	auto cb_action_next_frame_ = new wxCheckBox(this, cb_action_next_frame_id_, wxS("Count on to the next frame letter"));
+	cb_action_next_frame_->SetValue((bool)txed_action_next_frame);
+	spin_action_tics_id_ = wxNewId();
+	auto spin_action_tics_ = new wxSpinCtrl(
         this,
-		wxID_ANY,
+		spin_action_tics_id_,
 		wxEmptyString,
 		wxDefaultPosition,
 		{ ui::scalePx(80), -1 },
 		wxSP_ARROW_KEYS,
 		0,
 		1000,
-		txed_action_tics);
+		(int)txed_action_tics);
 
 	// Spelled out as slow-down rather than as a fraction of a tic: a frame held for
 	// the factor given, so the list and the setting behind it say the same number
@@ -111,7 +119,7 @@ ActorConstructorPrefsPanel::ActorConstructorPrefsPanel(wxWindow* parent) : Prefs
 	action_next->Add(cb_action_next_frame_, 0, wxALIGN_CENTER_VERTICAL);
 	choice_action_frame_->Bind(
 		wxEVT_CHOICE,
-		[this](wxCommandEvent&)
+		[cb_action_next_frame_, choice_action_frame_](wxCommandEvent&)
 		{ cb_action_next_frame_->Enable(choice_action_frame_->GetSelection() == 1); });
 
 	wxutil::layoutVertically(
@@ -133,21 +141,9 @@ ActorConstructorPrefsPanel::ActorConstructorPrefsPanel(wxWindow* parent) : Prefs
 // -----------------------------------------------------------------------------
 void ActorConstructorPrefsPanel::init()
 {
-	spin_preview_scale_->SetValue(txed_sprite_preview_scale);
-	cb_preview_loop_->SetValue(txed_sprite_preview_loop);
-
-	// The setting is the factor itself, doubling down the list, so an entry is its
-	// position rather than a value looked up by name
-	auto factor = wxMax(1, (int)txed_sprite_preview_speed);
-	auto entry  = 0;
-	while ((1 << entry) < factor && entry < (int)choice_preview_speed_->GetCount() - 1)
-		++entry;
-	choice_preview_speed_->SetSelection(entry);
-
-	choice_action_frame_->SetSelection(txed_action_keep_frame ? 1 : 0);
-	cb_action_next_frame_->SetValue(txed_action_next_frame);
-	cb_action_next_frame_->Enable(txed_action_keep_frame);
-	spin_action_tics_->SetValue(txed_action_tics);
+	// All controls are initialized with cvar values in the constructor.
+	// This method is kept for compatibility but does nothing to avoid crashes
+	// from wxTreebook lazy initialization timing issues.
 }
 
 // -----------------------------------------------------------------------------
@@ -155,10 +151,40 @@ void ActorConstructorPrefsPanel::init()
 // -----------------------------------------------------------------------------
 void ActorConstructorPrefsPanel::applyPreferences()
 {
-	txed_sprite_preview_scale = spin_preview_scale_->GetValue();
-	txed_sprite_preview_loop  = cb_preview_loop_->GetValue();
-	txed_sprite_preview_speed = 1 << wxMax(0, choice_preview_speed_->GetSelection());
-	txed_action_keep_frame    = choice_action_frame_->GetSelection() == 1;
-	txed_action_next_frame    = cb_action_next_frame_->GetValue();
-	txed_action_tics          = spin_action_tics_->GetValue();
+	if (spin_preview_scale_id_ >= 0)
+	{
+		auto* spin = wxDynamicCast(FindWindow(spin_preview_scale_id_), wxSpinCtrl);
+		if (spin)
+			txed_sprite_preview_scale = spin->GetValue();
+	}
+	if (cb_preview_loop_id_ >= 0)
+	{
+		auto* cb = wxDynamicCast(FindWindow(cb_preview_loop_id_), wxCheckBox);
+		if (cb)
+			txed_sprite_preview_loop = cb->GetValue();
+	}
+	if (choice_preview_speed_id_ >= 0)
+	{
+		auto* choice = wxDynamicCast(FindWindow(choice_preview_speed_id_), wxChoice);
+		if (choice)
+			txed_sprite_preview_speed = 1 << wxMax(0, choice->GetSelection());
+	}
+	if (choice_action_frame_id_ >= 0)
+	{
+		auto* choice = wxDynamicCast(FindWindow(choice_action_frame_id_), wxChoice);
+		if (choice)
+			txed_action_keep_frame = choice->GetSelection() == 1;
+	}
+	if (cb_action_next_frame_id_ >= 0)
+	{
+		auto* cb = wxDynamicCast(FindWindow(cb_action_next_frame_id_), wxCheckBox);
+		if (cb)
+			txed_action_next_frame = cb->GetValue();
+	}
+	if (spin_action_tics_id_ >= 0)
+	{
+		auto* spin = wxDynamicCast(FindWindow(spin_action_tics_id_), wxSpinCtrl);
+		if (spin)
+			txed_action_tics = spin->GetValue();
+	}
 }

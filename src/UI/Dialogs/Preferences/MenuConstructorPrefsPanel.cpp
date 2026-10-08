@@ -44,20 +44,29 @@ MenuConstructorPrefsPanel::MenuConstructorPrefsPanel(wxWindow* parent) : PrefsPa
 
 	// The names come from the same table the preview lays itself out with, so a screen
 	// added there shows up here without anything being typed twice
-	choice_screen_ = new wxChoice(this, -1, wxDefaultPosition, { ui::scalePx(260), -1 });
+	choice_screen_id_ = wxNewId();
+	auto choice_screen_ = new wxChoice(this, choice_screen_id_, wxDefaultPosition, { ui::scalePx(260), -1 });
 	for (auto& screen : menuScreens())
 		choice_screen_->Append(wxString::FromUTF8(screen.label));
 
-	spin_preview_scale_ = new wxSpinCtrl(
+	// Set the initial selection based on the cvar value
+	auto entry = 0;
+	for (size_t i = 0; i < menuScreens().size(); i++)
+		if (strutil::equalCI(menuScreens()[i].name, menucon_preview_screen))
+			entry = (int)i;
+	choice_screen_->SetSelection(entry);
+
+	spin_preview_scale_id_ = wxNewId();
+	auto spin_preview_scale_ = new wxSpinCtrl(
 		this,
-		wxID_ANY,
+		spin_preview_scale_id_,
 		wxEmptyString,
 		wxDefaultPosition,
 		{ ui::scalePx(80), -1 },
 		wxSP_ARROW_KEYS,
 		50,
 		400,
-		menucon_preview_scale);
+		(int)menucon_preview_scale);
 
 	wxutil::layoutVertically(
 		sizer,
@@ -79,13 +88,9 @@ MenuConstructorPrefsPanel::MenuConstructorPrefsPanel(wxWindow* parent) : PrefsPa
 // -----------------------------------------------------------------------------
 void MenuConstructorPrefsPanel::init()
 {
-	auto  entry = 0;
-	for (size_t i = 0; i < menuScreens().size(); i++)
-		if (strutil::equalCI(menuScreens()[i].name, menucon_preview_screen))
-			entry = (int)i;
-	choice_screen_->SetSelection(entry);
-
-	spin_preview_scale_->SetValue(std::clamp((int)menucon_preview_scale, 50, 400));
+	// All controls are initialized with cvar values in the constructor.
+	// This method is kept for compatibility but does nothing to avoid crashes
+	// from wxTreebook lazy initialization timing issues.
 }
 
 // -----------------------------------------------------------------------------
@@ -93,9 +98,21 @@ void MenuConstructorPrefsPanel::init()
 // -----------------------------------------------------------------------------
 void MenuConstructorPrefsPanel::applyPreferences()
 {
-	auto entry = choice_screen_->GetSelection();
-	if (entry >= 0 && entry < (int)menuScreens().size())
-		menucon_preview_screen = menuScreens()[entry].name;
+	if (choice_screen_id_ >= 0)
+	{
+		auto* choice = wxDynamicCast(FindWindow(choice_screen_id_), wxChoice);
+		if (choice)
+		{
+			auto entry = choice->GetSelection();
+			if (entry >= 0 && entry < (int)menuScreens().size())
+				menucon_preview_screen = menuScreens()[entry].name;
+		}
+	}
 
-	menucon_preview_scale = spin_preview_scale_->GetValue();
+	if (spin_preview_scale_id_ >= 0)
+	{
+		auto* spin = wxDynamicCast(FindWindow(spin_preview_scale_id_), wxSpinCtrl);
+		if (spin)
+			menucon_preview_scale = spin->GetValue();
+	}
 }
