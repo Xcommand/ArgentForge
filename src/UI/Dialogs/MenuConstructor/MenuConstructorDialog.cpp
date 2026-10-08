@@ -792,7 +792,11 @@ void MenuConstructorDialog::showHelp()
 
 bool MenuConstructorDialog::apply()
 { if (!apply_) return false; auto text = source_.serialize();
-  if (!apply_(text)) return false; adopt(text); return true; }
+  if (!apply_(text)) return false; adopt(text);
+  // Every edit lands here, so this is where the preview is told. Doing it per caller instead is
+  // how editing a label or a colour left the window showing the old line until it was reopened
+  if (preview_) updatePreviewWindow();
+  return true; }
 
 void MenuConstructorDialog::insertLine(const string& word)
 { auto* def = currentDefinition(); if (!def) return;
