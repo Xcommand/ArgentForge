@@ -862,6 +862,12 @@ bool MenuSource::insertDefinition(size_t index, MenuDefinition def)
 	if (!before.empty() && !endsBlankLine(before, eol))
 		def.head.insert(0, eol);
 
+	// The same on the other side: a block copied from the end of a file has no line ending
+	// behind its brace, and here a block does come after it, so without one the two heads
+	// would read as one line and the file would lose a menu
+	if (index < definitions_.size() && !def.close.empty() && def.close.back() != '\n')
+		def.close += eol;
+
 	// No place in the text as it was read, same rule as a block we write from scratch
 	def.begin = def.end = string::npos;
 
