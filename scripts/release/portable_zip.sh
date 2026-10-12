@@ -42,18 +42,20 @@ Argent Forge ${ver}
 A Doom editor: a fork of SLADE3, which Simon Judd wrote. It opens WAD, PK3 and
 the other formats those games use, and edits their graphics, textures, maps and
 scripts. This build adds a visual actor constructor for DECORATE and ZScript, a
-sprite preview in the code editor, painting tools for the picture editor, and
-two colour schemes. The full list is CHANGES.md in the repository.
+menu constructor that edits a mod's MENUDEF with a live preview of the menu as
+the game draws it, a sprite preview in the code editor, painting tools for the
+picture editor, and two colour schemes. The full list is CHANGES.md in the
+repository.
 
 Run
 ---
 Unzip the folder anywhere and start ArgentForge.exe. Nothing is installed, and
 no file is written next to the exe. Needs 64-bit Windows.
 
-Settings live in %APPDATA%\SLADE3, the folder SLADE3 itself uses, so both
-editors read and write one file. Each program writes only the options it knows
-about, which means running plain SLADE drops the lines this fork added, and they
-come back from their defaults the next time Argent Forge starts. Delete that
+Settings live in their own folder, %APPDATA%\ArgentForge, so this build and a
+plain SLADE install cannot write over each other. Coming from SLADE, the first
+run asks whether to pull the old settings across, and the same import sits under
+Settings > Extra Features if you say no and change your mind later. Delete that
 folder to start over.
 
 The start page and the crash dialog use the WebView2 runtime that ships with

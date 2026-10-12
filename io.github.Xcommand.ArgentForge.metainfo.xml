@@ -19,8 +19,9 @@
 		</p>
 		<p>
 			On top of SLADE it adds a visual actor constructor that reads and writes your DECORATE and
-			ZScript without rewriting what it did not touch, a sprite preview beside the code editor,
-			painting tools for the picture editor, and two colour schemes of its own.
+			ZScript without rewriting what it did not touch, a menu constructor that edits a mod's
+			MENUDEF with a live preview of the menu as the game draws it, a sprite preview beside the
+			code editor, painting tools for the picture editor, and two colour schemes of its own.
 		</p>
 		<p>
 			Everything from SLADE that this fork did not change is still SLADE's, and upstream releases are
@@ -28,6 +29,21 @@
 		</p>
 	</description>
 	<releases>
+		<release date="2026-10-13" version="1.1.0">
+			<description>
+				<ul>
+					<li>The Menu Constructor: edit a mod's menus from the text that is open, with a preview
+					that draws them the way the game does.</li>
+					<li>Its lists come from your own archive: cvars, TEXTCOLO ranges, LANGUAGE labels,
+					pictures, and the widget classes a mod writes in its own ZScript.</li>
+					<li>An empty MENUDEF is a starting point now: the window asks where your first menu
+					should hang and writes both blocks it takes to be seen in game.</li>
+					<li>Open Containing Folder for projects opened as folders, and a setting that hands
+					Argent Forge to AceZDL.</li>
+					<li>Settings live in Argent Forge's own folder, with a one-time import of SLADE's.</li>
+				</ul>
+			</description>
+		</release>
 		<release date="2026-09-28" version="1.0.0"/>
 	</releases>
 	<content_rating type="oars-1.1"/>
