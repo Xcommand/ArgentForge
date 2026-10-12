@@ -427,10 +427,7 @@ void MenuConstructorDialog::refreshFrom(string_view text)
   auto index = std::min(block_, fresh.definitions().size() - 1);
   if (fresh.definitions()[index].text() == blockText()) return;
   source_ = std::move(fresh); block_ = index;
-  buildMenuList(); buildAddList(); buildTree();
-  // The preview is part of what this window shows, so a text that came back from an undo
-  // has to redraw it too or the row he just undoes stays on screen
-  if (preview_) updatePreviewWindow(); }
+  buildMenuList(); buildAddList(); buildTree(); }
 
 void MenuConstructorDialog::buildMenuList()
 { list_menus_->Clear();
@@ -445,7 +442,10 @@ void MenuConstructorDialog::buildTree()
   auto root = tree_lines_->AddRoot(wxEmptyString);
   if (auto* def = currentDefinition()) { vector<size_t> steps; addBranch(root, def->statements, steps, isValueTable(*def)); }
   selectPath(selected_); tree_lines_->Thaw(); rebuilding_ = false;
-  updateHeader(); buildGrid(); showHelp(); }
+  updateHeader(); buildGrid(); showHelp();
+  // Which block is on screen is decided here, so the preview follows it from here too: a
+  // caret that walked into another menu left the drawn screen showing the previous one
+  if (preview_) updatePreviewWindow(); }
 
 void MenuConstructorDialog::addBranch(wxTreeItemId parent, std::vector<MenuStatement>& list, vector<size_t>& steps, bool value_table)
 { for (size_t i = 0; i < list.size(); i++) {
