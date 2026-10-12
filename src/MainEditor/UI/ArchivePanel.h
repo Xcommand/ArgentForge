@@ -177,6 +177,7 @@ protected:
 	sigslot::scoped_connection sc_bookmarks_changed_;
 
 	bool canMoveEntries() const;
+	bool onDiskEntries() const;
 	void selectionChanged();
 	void updateFilter() const;
 

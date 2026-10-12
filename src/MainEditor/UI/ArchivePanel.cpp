@@ -38,7 +38,6 @@
 #include <wx/filename.h>
 #include <wx/utils.h>
 #include "Archive/ArchiveDir.h"
-#include "Archive/Formats/DirArchive.h"
 #include "UI/Dialogs/MenuConstructor/MenuDef.h"
 #include "UI/Dialogs/MenuConstructor/MenuVocabulary.h"
 #include "Archive/ArchiveManager.h"
@@ -582,6 +581,7 @@ wxPanel* ArchivePanel::createEntryListPanel(wxWindow* parent)
 	tbg_entry->addSeparator();
 	tbg_entry->addActionButton("arch_entry_import");
 	tbg_entry->addActionButton("arch_entry_export");
+	tbg_entry->addActionButton("arch_entry_openfolder");
 	tbg_entry->setAllButtonsEnabled(false);
 	toolbar_elist_->addGroup(tbg_entry);
 	if (archive->formatId() != "folder")
@@ -2476,7 +2476,7 @@ bool ArchivePanel::openEntryExternal() const
 bool ArchivePanel::openContainingFolder() const
 {
 	auto archive = archive_.lock();
-	if (!dynamic_cast<DirArchive*>(archive.get()))
+	if (!onDiskEntries())
 		return true;
 
 	// The archive keeps the on-disk path of everything it read, and updates it on save and rename
@@ -4082,6 +4082,15 @@ wxMenu* ArchivePanel::createMaintenanceMenu()
 }
 
 // -----------------------------------------------------------------------------
+// True when this project's entries are files on disk, so there's a folder to show somewhere
+// -----------------------------------------------------------------------------
+bool ArchivePanel::onDiskEntries() const
+{
+	auto archive = archive_.lock();
+	return archive && archive->formatId() == "folder";
+}
+
+// -----------------------------------------------------------------------------
 // Returns true if entries can be moved up/down in the list
 // -----------------------------------------------------------------------------
 bool ArchivePanel::canMoveEntries() const
@@ -4147,6 +4156,10 @@ void ArchivePanel::selectionChanged()
 		if (sel_dirs.size() == 1)
 			toolbar_elist_->findActionButton("arch_entry_bookmark")->Enable(true);
 	}
+
+	// The file manager has nothing to show for an entry that lives inside an archive
+	if (auto* open_folder = toolbar_elist_->findActionButton("arch_entry_openfolder"))
+		open_folder->Enable(onDiskEntries() && (!selection.empty() || !sel_dirs.empty()));
 
 	toolbar_elist_->Refresh();
 }
@@ -4289,7 +4302,7 @@ void ArchivePanel::onEntryListRightClick(wxDataViewEvent& e)
 	auto sel_dirs  = entry_tree_->selectedDirectories();
 
 	// Whether the file manager can be pointed at anything for this project
-	bool on_disk = dynamic_cast<DirArchive*>(archive.get()) != nullptr;
+	bool on_disk = onDiskEntries();
 
 	// Check what types exist in the selection
 	// TODO: This stuff is absolutely terrible, nicer system needed
