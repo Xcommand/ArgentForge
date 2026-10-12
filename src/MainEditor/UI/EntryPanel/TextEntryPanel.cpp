@@ -998,8 +998,12 @@ void TextEntryPanel::openMenuConstructor()
 		menu_constructor_->SetTitle(wxString::FromUTF8(title));
 	}
 
-	// A text with no block in it isn't a menu file: that's where a MENUDEF starts
-	if (!menu_constructor_->loadText(text))
+	menu_constructor_->loadText(text);
+
+	// No block in it means one of two things. The archive's own MENUDEF simply hasn't started,
+	// which is a page to write on; any other text isn't a menu file at all, and the menus are
+	// somewhere else in the archive
+	if (!menu_constructor_->hasBlocks() && !isMenuDefLump())
 	{
 		openMenuDefElsewhere();
 		return;
@@ -1010,6 +1014,11 @@ void TextEntryPanel::openMenuConstructor()
 	menu_constructor_->Show(true);
 	menu_constructor_->Raise();
 	menu_constructor_->SetFocus();
+
+	// The empty page gets asked where its first menu should hang, instead of being shown as a
+	// list of nothing
+	if (!menu_constructor_->hasBlocks())
+		menu_constructor_->offerStartMenu();
 }
 
 // -----------------------------------------------------------------------------
@@ -1112,8 +1121,9 @@ void TextEntryPanel::resyncMenuConstructor()
 }
 
 // -----------------------------------------------------------------------------
-// Brings the window round to the text now loaded. A lump with no menu block in it
-// closes the window rather than leaving it showing another file
+// Brings the window round to the text now loaded. A lump that isn't a menu file
+// closes the window rather than leaving it showing another file; the archive's own
+// MENUDEF stays open even with nothing in it, because that is a page being started
 // -----------------------------------------------------------------------------
 void TextEntryPanel::updateMenuConstructor()
 {
@@ -1124,7 +1134,8 @@ void TextEntryPanel::updateMenuConstructor()
 	text_area_->getRawText(mc);
 	string current((const char*)mc.data(), mc.size());
 
-	if (!menu_constructor_->loadText(current))
+	menu_constructor_->loadText(current);
+	if (!menu_constructor_->hasBlocks() && !isMenuDefLump())
 	{
 		menu_constructor_->Show(false);
 		return;
@@ -1149,6 +1160,16 @@ bool TextEntryPanel::menuConstructorHasKeyboard()
 			return true;
 
 	return false;
+}
+
+// -----------------------------------------------------------------------------
+// True when this lump is the one the engine reads menus from. The name decides it,
+// exactly as it does in the archive
+// -----------------------------------------------------------------------------
+bool TextEntryPanel::isMenuDefLump() const
+{
+	auto entry = entry_.lock();
+	return entry && strutil::equalCI(entry->name(), "MENUDEF");
 }
 
 // -----------------------------------------------------------------------------
@@ -1177,17 +1198,6 @@ void TextEntryPanel::openMenuDefElsewhere()
 			    this)
 		    == wxYES)
 			panel->openEntryAsText(menudef);
-		return;
-	}
-
-	// This lump is the MENUDEF and it's simply empty
-	if (menudef && menudef == entry.get())
-	{
-		wxMessageBox(
-			wxS("This MENUDEF has no menus in it yet.\n\nUse New to add the first block."),
-			wxS("Menu Constructor"),
-			wxOK | wxICON_INFORMATION,
-			this);
 		return;
 	}
 

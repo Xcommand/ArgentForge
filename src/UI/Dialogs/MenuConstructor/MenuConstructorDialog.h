@@ -55,6 +55,10 @@ public:
 	// menu file" from "this menu file hasn't started yet"
 	bool hasBlocks() const { return !source_.definitions().empty(); }
 
+	// Asks where the first menu of an empty MENUDEF should hang, and writes the page plus the
+	// line that points at it. Only for a file with nothing in it
+	void offerStartMenu();
+
 	// Takes text the panel has already accepted, so the window's own copy stays the
 	// truth: without this the next change looks like it is being applied over somebody
 	// else's edit and the guard refuses it

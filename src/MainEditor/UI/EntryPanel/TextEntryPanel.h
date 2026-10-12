@@ -86,6 +86,10 @@ private:
 	// Goes looking for the archive's MENUDEF when this text has no menu block
 	void openMenuDefElsewhere();
 
+	// Whether this lump is the MENUDEF the engine reads, which decides if an empty text is a
+	// page that hasn't started rather than a file with no business in the window
+	bool isMenuDefLump() const;
+
 	// Reads the editor text into [source]. False if it isn't a language the
 	// constructor works with
 	bool readActorSource(ActorSource& source);

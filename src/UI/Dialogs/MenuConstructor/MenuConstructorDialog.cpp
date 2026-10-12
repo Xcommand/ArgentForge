@@ -40,6 +40,7 @@
 #include <wx/listbox.h>
 #include <wx/msgdlg.h>
 #include <wx/panel.h>
+#include <wx/radiobut.h>
 #include <wx/propgrid/advprops.h>
 #include <wx/propgrid/propgrid.h>
 #include <wx/sizer.h>
@@ -403,14 +404,17 @@ bool MenuConstructorDialog::loadText(string_view text)
   source_ = MenuSource{};
   source_.setVocabulary(MenuVocabulary::instance().blockWords(), MenuVocabulary::instance().menuWords());
   source_.load(text);
-  if (source_.definitions().empty()) return false;
+  // A file with no block in it is a page that hasn't started, not a failed read. What to do
+  // about that is the panel's call, and it asks hasBlocks()
   if (block_ >= source_.definitions().size()) { block_ = 0; have_selection_ = false; selected_ = LinePath{}; }
   buildMenuList(); buildAddList(); buildTree(); return true; }
 
 void MenuConstructorDialog::adopt(string_view text)
 { MenuSource fresh; fresh.setVocabulary(MenuVocabulary::instance().blockWords(), MenuVocabulary::instance().menuWords());
-  fresh.load(text); if (fresh.definitions().empty()) return;
-  block_ = std::min(block_, fresh.definitions().size() - 1); source_ = std::move(fresh); }
+  fresh.load(text);
+  // The last block going is a file with nothing in it, and the window has to follow it there
+  block_ = std::min(block_, fresh.definitions().empty() ? (size_t)0 : fresh.definitions().size() - 1);
+  source_ = std::move(fresh); }
 
 void MenuConstructorDialog::showBlock(size_t index)
 { KeepFocus focus;
@@ -440,7 +444,12 @@ void MenuConstructorDialog::followCaret(size_t offset)
 void MenuConstructorDialog::refreshFrom(string_view text)
 { KeepFocus focus;
   MenuSource fresh; fresh.setVocabulary(MenuVocabulary::instance().blockWords(), MenuVocabulary::instance().menuWords());
-  fresh.load(text); if (fresh.definitions().empty()) return;
+  fresh.load(text);
+  // The last block going is a state to show, not a reason to keep showing the old ones
+  if (fresh.definitions().empty())
+  { if (source_.definitions().empty()) return;
+    source_ = std::move(fresh); block_ = 0; have_selection_ = false; selected_ = LinePath{};
+    buildMenuList(); buildAddList(); buildTree(); return; }
   auto index = std::min(block_, fresh.definitions().size() - 1);
   if (fresh.definitions()[index].text() == blockText()) return;
   source_ = std::move(fresh); block_ = index;
@@ -1795,10 +1804,54 @@ void MenuConstructorDialog::onBlockAdd(wxCommandEvent&)
   block_ = source_.definitions().size() - 1; have_selection_ = false; selected_ = LinePath{};
   buildMenuList(); buildAddList(); buildTree(); apply(); }
 
-void MenuConstructorDialog::onBlockDelete(wxCommandEvent&)
-{ deleteBlocks(); }
+// The first menu in a file that has none. Two blocks go in, because a page nothing points at is a
+// page nobody can open: this writes the page and the line that hangs it under a menu the engine
+// already has. Which of the two hosts is the whole question a first-timer can't answer alone, so it
+// is asked with the rule on screen rather than assumed
+void MenuConstructorDialog::offerStartMenu()
+{
+  wxDialog dlg(this, wxID_ANY, wxS("Start a Menu"), wxDefaultPosition, wxDefaultSize, wxDEFAULT_DIALOG_STYLE);
+  auto name_text = new wxTextCtrl(&dlg, wxID_ANY, wxS("My Mod Settings"));
+  auto radio_options = new wxRadioButton(&dlg, wxID_ANY, wxS("Under the game's Options list"), wxDefaultPosition, wxDefaultSize, wxRB_GROUP);
+  auto radio_main = new wxRadioButton(&dlg, wxID_ANY, wxS("On the main menu"));
+  radio_options->SetValue(true);
 
-void MenuConstructorDialog::moveBlock(int dir)
+  auto sizer = new wxBoxSizer(wxVERTICAL);
+  sizer->Add(new wxStaticText(&dlg, wxID_ANY, wxS("A few settings for a mod go under Options, where the player already\n"
+      "looks. A wall of them, or a menu that replaces the game's own, goes on the main menu.")), 0, wxBOTTOM, ui::pad());
+  sizer->Add(new wxStaticText(&dlg, wxID_ANY, wxS("Name of your menu")), 0, wxBOTTOM, 2);
+  sizer->Add(name_text, 0, wxEXPAND | wxBOTTOM, ui::pad());
+  sizer->Add(radio_options, 0, wxBOTTOM, 2);
+  sizer->Add(radio_main, 0, wxBOTTOM, ui::pad());
+  sizer->Add(new wxStaticText(&dlg, wxID_ANY, wxS("This writes two blocks: your page, and the line that points at it from\n"
+      "the menu you picked. One Ctrl+Z in the editor takes both back.")), 0, wxBOTTOM, ui::pad());
+  sizer->Add(dlg.CreateStdDialogButtonSizer(wxOK | wxCANCEL), 0, wxEXPAND);
+  dlg.SetSizer(sizer);
+  if (dlg.ShowModal() != wxID_OK) return;
+
+  // A quote would end the string the name is written into, so a name takes none
+  auto name = strutil::trim(strutil::replace(name_text->GetValue().utf8_string(), "\"", ""));
+  if (name.empty()) name = "My Mod Settings";
+  auto quoted = "\"" + name + "\"";
+  auto eol = source_.lineEnding();
+  auto host = radio_main->GetValue() ? "AddListMenu \"MainMenu\"" : "AddOptionMenu \"OptionsMenu\"";
+  auto text = "OptionMenu " + quoted + eol + "{" + eol + "\tTitle " + quoted + eol + "}" + eol + eol + host + eol
+            + "{" + eol + "\tSubmenu " + quoted + ", " + quoted + eol + "}";
+
+  auto blocks = parseBlocks(text);
+  auto first = source_.definitions().size();
+  size_t done = 0;
+  for (auto& def : blocks) { if (!source_.insertDefinition(first + done, std::move(def))) break; done++; }
+  if (done < 2) { help_->setText("The starting blocks could not be put in this file"); return; }
+
+  // The page is what he came here to fill, so that is the block on screen
+  vector<size_t> run{ first, first + 1 };
+  block_ = first; have_selection_ = false; selected_ = LinePath{};
+  buildMenuList(); selectBlocks(run, block_); buildAddList(); buildTree(); apply();
+  help_->setText("Your page is the block on screen: add lines to it with Line. The other block only decides where the player finds it."); }
+
+void MenuConstructorDialog::onBlockDelete(wxCommandEvent&)
+{ deleteBlocks(); }void MenuConstructorDialog::moveBlock(int dir)
 { // Rebuilding the tree pulls focus into the line list, so a second Shift+Down that should have
   // moved the block again would land on a line instead
   KeepFocus focus;
