@@ -797,7 +797,7 @@ void MenuPreview::onDblClick(wxMouseEvent& e)
 
 void MenuPreview::onWheel(wxMouseEvent& e)
 {
-	// SHIFT+колесо меняет зум, обычное колесо двигает курсор по пунктам меню
+	// SHIFT+wheel changes the drawn size, the plain wheel moves the cursor through the menu
 	if (e.ShiftDown())
 	{
 		zoomBy(e.GetWheelRotation() > 0 ? 1 : -1);

@@ -1,4 +1,4 @@
-22
+33
 "Q picks up the brush and W the eraser - the Keyboard Shortcuts settings page lets you point them at other keys."
 "Hold ALT and drag with the right mouse button over a picture to change the brush size and how soft its edge is."
 "Hold ALT and roll the mouse wheel over a picture to change how opaque the brush paints."
@@ -11,6 +11,17 @@
 "A value field in the constructor says what the engine expects there - INT, FLOAT or a quoted STRING - before you type it."
 "Greyed entries in the constructor's Actions list are state actions the engine still takes but discourages."
 "Hover a sprite frame name in a state line to see the picture behind it; hold SHIFT to play the whole block."
+"SHIFT is the key to reach for first: Shift+Up/Down moves a block or a line, Shift+click picks a run of lines, Shift+wheel resizes the menu preview, Shift+Ctrl+Z redoes."
+"The Menu Constructor edits the text that is open, so Ctrl+Z in the editor takes its changes back and the window follows."
+"Ctrl+C and Ctrl+V in the Menu Constructor go both ways: a block copied from its list pastes into the text, and text copied in the editor pastes into the list."
+"The menu preview draws the menu the way the game does, with the engine's own line spacing, colour codes and LANGUAGE labels."
+"The plain wheel over the menu preview walks the menu one line at a time like the game's cursor, and the line it lands on is selected in the list and in the text."
+"A name field in the Menu Constructor offers what the archive really holds: its cvars, its TEXTCOLO ranges, its LANGUAGE labels, its own pictures."
+"The Menu Constructor reads the widget classes a mod writes in its own ZScript, so a mod's own line gets named fields as well."
+"Open Containing Folder sits on the entry list's right-click menu, its left toolbar and the Entry menu, for a project opened as a folder."
+"Settings > Extra Features has Import SLADE Settings, which pulls an old SLADE configuration into Argent Forge's own folder."
+"Settings > Extra Features hands AceZDL the path to Argent Forge so its 'Open with SLADE' starts this program, and keeps the path that was there before."
+"The Recent Files list on the Start page has its own font size under Settings > Extra Features."
 "A file holding changes that nobody has open is gold and slanted in the entry tree."
 "Closing an entry tab asks you nothing: the picture goes into the file, and the tree marks the file until it is saved."
 "Double-click an entry to open it in its own tab; the panel on the right keeps showing whatever is selected."

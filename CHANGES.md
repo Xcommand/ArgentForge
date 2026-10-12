@@ -3,6 +3,39 @@ Changes in this fork
 
 What we added on top of upstream SLADE, feature by feature. Kept short on purpose.
 
+New in 1.1.0
+------------
+
+This release is the Menu Constructor. The rest is smaller and listed after it.
+
+* A mod's menus can be edited without typing widget lines. The window opens on the MENUDEF you're
+  looking at, or finds the one the engine reads in that archive and offers to make one if there is
+  none. Its blocks are on the left, that block's lines in the middle, the arguments of the selected
+  line under them, and every change goes into the same text you have open, so the editor's Ctrl+Z is
+  the undo for the window too.
+* The lists the window offers are read out of your archive rather than out of a remembered
+  reference: the cvars it declares, its TEXTCOLO ranges, its LANGUAGE labels, the pictures inside it,
+  and the widget classes it writes itself in ZScript - so a mod's own menu line gets named fields
+  instead of bare text.
+* `Preview` draws the menu the way the engine does: the same line spacing, the same right-aligned
+  labels, the game's colour codes, and LANGUAGE labels resolved through the same two passes the game
+  makes, so a `$$SOMELABEL` shows the words a player reads.
+* SHIFT does the arranging. Shift+Up and Shift+Down move a block or a line, Shift+click picks a run
+  of lines, Shift plus the wheel over the preview sets how large it draws, Shift+Ctrl+Z redoes.
+  Ctrl+C and Ctrl+V carry a block or a line between the window and the text editor in both
+  directions, and Delete works in whichever of the two lists has the keyboard.
+* A project opened as a folder can be shown where it lives: `Open Containing Folder` is on the entry
+  list's right-click menu, on its left toolbar, and in the `Entry` menu.
+* AceZDL: `Settings > Extra Features` writes this program's path into the launcher's `Config.xml`, so
+  its "Open with SLADE" starts Argent Forge, and keeps the path that was there before so you can put
+  it back.
+* Argent Forge keeps its settings in its own folder now. `Settings > Extra Features > Import SLADE
+  Settings` pulls an existing SLADE configuration across once, and a first run with nothing
+  configured offers that import before the setup wizard.
+* The Start page's Recent Files list has a font size of its own under `Settings > Extra Features`, and
+  a fresh configuration starts on the dark editor scheme instead of a light one.
+* Nothing asks SLADE's server for anything any more, and the splash screen is our own artwork.
+
 Actor Constructor
 -----------------
 
@@ -281,6 +314,19 @@ parser reads rather than what someone remembered from a wiki.
   CRLF and LF, indentation, comments and the shapes the window has no row for included; the bytes that
   change are the ones in the line you edited.
 
+* The gestures in the window are the ones you already know from the editor. Ctrl+C and Ctrl+V take a
+  whole block from the block list or a run of lines from the tree and paste them back, in either
+  direction between this window and the text editor, so a menu copied from another mod arrives as
+  text and leaves as text. Shift+Up and Shift+Down move what is selected, Shift+click picks a run, and
+  Delete works in whichever of the two lists holds the keyboard. Undoing in the editor refreshes the
+  window, so a Ctrl+Z there never leaves a stale block on screen.
+
+* The preview is the engine's drawing, not a sketch of it. Colour codes that live in a LANGUAGE value
+  colour the text the way the game does, while a `\c` typed straight into a menu line stays the letters
+  it is to the engine; a LANGUAGE label is resolved through the two passes the game runs, so `$$KEY`
+  and an alias pointing at another alias both come out as the words a player reads. At 100% and at any
+  whole multiple the pixels stay hard, and smoothing only appears at the sizes that aren't whole.
+
 Graphics editor
 ---------------
 
@@ -394,6 +440,16 @@ Around the editor
   of SLADE stop writing over each other. Because that starts you off empty, a first run asks whether to
   pull your old settings in from `SLADE3`, and the same import sits under `Settings > Extra Features` if
   you say no and change your mind later.
+* A project that is a folder on disk can be opened where it lives. `Open Containing Folder` shows the
+  folder of whatever is selected in the system's file manager, from the entry list's right-click menu,
+  its left toolbar, or the `Entry` menu; inside an archive there is no folder to show, so the item
+  isn't offered there.
+* AceZDL can start Argent Forge on a mod. `Settings > Extra Features` writes this program's executable
+  into the launcher's `Config.xml`, which is what its "Open with SLADE" runs, and remembers the path
+  that was there so it can be restored. Only the one line of that file is touched: the launcher's own
+  settings, its line endings and its mod presets come back as they were.
+* The Recent Files list on the start page has a font size of its own under `Settings > Extra Features`,
+  and a configuration written from nothing starts on the dark editor scheme rather than a light one.
 * The text editor's `Colour Scheme` menu has two more entries: `Argent (Light)` and `Argent (Dark)`, next
   to SLADE's own pair, which stay. Whichever scheme you pick takes the start page's theme with it, so the
   `web_dark_theme` switch under Advanced is a result rather than something to remember, and the switch
