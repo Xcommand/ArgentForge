@@ -35,6 +35,10 @@ This release is the Menu Constructor. The rest is smaller and listed after it.
 * The Start page's Recent Files list has a font size of its own under `Settings > Extra Features`, and
   a fresh configuration starts on the dark editor scheme instead of a light one.
 * Nothing asks SLADE's server for anything any more, and the splash screen is our own artwork.
+* A mod with no menus is a starting point, not a wall. On an empty MENUDEF the window asks where the
+  first menu should hang - under the game's Options list for a handful of settings, or on the main
+  menu for a wall of them - and writes both blocks it takes to be seen in game: your page, and the
+  line that points at it. One Ctrl+Z in the editor takes the pair back.
 
 Actor Constructor
 -----------------
