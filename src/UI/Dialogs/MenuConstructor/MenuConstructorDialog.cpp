@@ -827,8 +827,16 @@ void MenuConstructorDialog::readLanguageFrom(Archive* ar)
 string MenuConstructorDialog::resolveLanguageKey(string_view text) const
 { if (text.empty() || text[0] != '$') return string(text);
   auto it = mod_language_.find(string(text));
-  if (it != mod_language_.end()) return processLanguageEscapes(it->second);
-  return string(text); }
+  if (it == mod_language_.end()) return string(text);
+  string value = processLanguageEscapes(it->second);
+  // A value that is itself `$$OTHER` is a pointer rather than text. The engine follows it when
+  // the label is asked for (stringtable.cpp:982), which is how an old .def alias reaches the
+  // spreadsheet entry: $GLMNU_TEXOPT -> $$GLTEXMNU_TITLE -> "Texture Options"
+  for (int hop = 0; hop < 8 && value.size() > 2 && value[0] == '$' && value[1] == '$'; hop++)
+  { auto next = mod_language_.find(value.substr(1));
+    if (next == mod_language_.end()) break;
+    value = processLanguageEscapes(next->second); }
+  return value; }
 
 // The widget classes this archive declares in its own ZScript. The engine builds the class name
 // out of the word in a menu line (OptionMenuItem<word>, ListMenuItem<word>) and reads that class'
