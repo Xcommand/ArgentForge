@@ -88,7 +88,7 @@ They get their own pages later; these are the ones you'll bump into in the first
   lists of the cvars, submenus, value tables, colours and LANGUAGE labels the game and this mod declare,
   and it writes the MENUDEF while you click and follows the text cursor the same way. A `Preview` button
   draws the menu the way the game would, so you can see what you're building. Menus mostly never have to
-  be typed out.
+  be typed out. [Building a menu](menu.md) is the whole page on it.
 * In the picture editor, Q and W pick the brush and the eraser, ALT with the wheel sets opacity, and
   ALT with the right button dragged over the picture sets size sideways and feather up and down. The
   numbers show themselves while you do it. SHIFT with the left button draws a straight line from the

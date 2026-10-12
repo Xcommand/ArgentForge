@@ -198,4 +198,4 @@ until you turn that repeat setting on.
 The other thing that works with no window open: while you're typing a state action, its arguments pop up
 over the line, so you don't have to remember which of the seven is `spawnofs_xy`.
 
-Next: [Drawing pictures](image-editor.md).
+Next: [Building a menu](menu.md).

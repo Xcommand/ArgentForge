@@ -8,6 +8,8 @@ one.
   tree into an editor and back onto disk.
 * [Making an actor](actor.md): DECORATE and ZScript mostly without typing them, and what the
   constructor won't touch.
+* [Building a menu](menu.md): the MENUDEF blocks, the keys that arrange them, and a preview that
+  draws the menu the way the game does.
 * [Drawing pictures](image-editor.md): the brush, the mouse gestures, and a texture that tiles without
   a seam.
 
