@@ -1420,12 +1420,14 @@ int MenuConstructorDialog::blockPosition()
 
 // The block's `Title "..."` directive. The engine draws this caption at the top when Position <= 0.
 // Optional second argument is the colour name; when absent the engine uses the menu's default
-// (red for OptionMenu). We return just the text here - colour is handled separately
+// (red for OptionMenu). We return just the text here - colour is handled separately.
+// The caption takes one localization pass, not the two an item label takes: no ZScript code localizes
+// it on the way, only the drawer does (MenuDelegateBase.DrawCaption, menucustomize.zs:31)
 string MenuConstructorDialog::blockTitle()
 { auto* def = currentDefinition(); if (!def) return "";
   for (auto& st : def->statements)
       if (strutil::equalCI(st.word, "title") && !st.args.empty())
-          return resolveLanguageKey(unquote(st.args[0].value));
+          return localizeOnce(unquote(st.args[0].value));
   return ""; }
 
 // The colour of the block's `Title "text", "color"` directive. When no colour is given the engine
