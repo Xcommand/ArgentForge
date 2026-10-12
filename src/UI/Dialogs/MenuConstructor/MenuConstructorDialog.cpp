@@ -926,15 +926,18 @@ void MenuConstructorDialog::applyCaption()
   if (!def || !st || !item.IsOk()) return;
   tree_lines_->SetItemText(item, wxString::FromUTF8(caption(*st, isValueTable(*def))));
   // The colour reads in the field where it is written, not in the tree: paint the value cell of
-  // the edited argument, so choosing a colour tints that value and nothing else. An invalid colour
-  // (no colour named, or a non-colour argument) resets the cell to the grid's default text colour
+  // the edited argument, so choosing a colour tints that value and nothing else. A row that names
+  // no colour goes back to the theme's own text colour, NOT to "unset": wxPropertyGrid answers an
+  // unset cell with its built-in default, which is black, and on a dark theme that reads as nothing
   if (auto* prop = grid_args_->GetSelectedProperty())
-  { prop->GetCell(1).SetFgCol(colourCellTint(prop->GetName(), st));
+  { auto tint = colourCellTint(prop->GetName(), st);
+    prop->GetCell(1).SetFgCol(tint.IsOk() ? tint : wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOWTEXT));
     grid_args_->Refresh(); }
 }
 
-// The colour a grid cell's text should show: the argument's own colour when it names one, or the
-// grid default (invalid colour) otherwise. Only the colour/range arguments are candidates
+// The colour a grid cell's text should show: the argument's own colour when it names one, or an
+// invalid colour for the caller to replace with the theme's text colour. Only the colour/range
+// arguments are candidates
 wxColour MenuConstructorDialog::colourCellTint(const wxString& name, const MenuStatement* st)
 { if (!name.StartsWith("arg")) return {};
   long idx = 0; if (!name.Mid(3).ToLong(&idx) || idx < 0 || (size_t)idx >= st->args.size()) return {};
