@@ -1040,6 +1040,11 @@ bool TextEntryPanel::applyMenuText(string_view text)
 	text_area_->ReplaceTarget(wxutil::strFromView(text));
 	text_area_->EndUndoAction();
 
+	// Replacing the whole document leaves the caret at the start of what was written, so
+	// without this every edit in the constructor scrolled the text to line 1. The same helper
+	// the actor side uses: find where the two versions part, and put the view on that line
+	centreEditedLine(0, current, text);
+
 	setModified();
 	return true;
 }

@@ -210,74 +210,12 @@ void MenuPreview::setSliderRail(const wxBitmap& rail)
 	Refresh();
 }
 
-// A menu string can change colour in the middle of a line: a backslash, 'c', then a selector.
-// '-' normal, '+' bold, '!' team chat, '*' chat, '[Name]' a TEXTCOLO range by name, and a letter
-// a range by its position in EColorRange (v_font.cpp:793-845 with the enum at v_font.h:39-71, so
-// `\cr` is DarkRed and `\cv` Cyan). The preview used to print the escape whole, which turned a
-// mod's colour-coded list into "\crZOMBIEMAN"
-std::vector<MenuPreview::Run> MenuPreview::splitEscapes(const wxString& text) const
-{
-	std::vector<Run> runs;
-	wxString         cur;
-	int              range = -1;
-	wxColour         ink;
-	auto             flush = [&]() {
-		if (!cur.empty())
-		{
-			runs.push_back({ cur, range, ink });
-			cur.clear();
-		}
-	};
-
-	for (size_t i = 0; i < text.size(); i++)
-	{
-		if (text[i] != L'\\' || i + 2 >= text.size() || (text[i + 1] != L'c' && text[i + 1] != L'C'))
-		{
-			cur += text[i];
-			continue;
-		}
-
-		const wchar_t sel = text[i + 2];
-		size_t        next = i + 3;
-
-		if (sel == L'[')
-		{
-			wxString name;
-			size_t   j = i + 3;
-			for (; j < text.size() && text[j] != L']'; j++) name += text[j];
-			if (j < text.size() && text[j] == L']') j++;
-			if (range_ink_ && !name.empty())
-			{
-				auto found = range_ink_(-1, name);
-				if (found.IsOk())
-					ink = found;
-			}
-			next = j;
-		}
-		else if (sel == L'-' || sel == L'+' || sel == L'!' || sel == L'*')
-		{
-			range = -1;
-			ink   = {};
-		}
-		else
-		{
-			const wchar_t low = (wchar_t)towlower(sel);
-			if (low >= L'a' && low <= L'z')
-			{
-				range = low - L'a';
-				ink   = {};
-			}
-			else
-				next = i + 1; // not a selector after all: leave the backslash on screen
-		}
-
-		flush();
-		i = next - 1;
-	}
-
-	flush();
-	return runs;
-}
+// A menu string is drawn exactly as the game draws it, escapes and all. The engine gives a
+// menu label no colour-code pass at all (optionmenuitems draw through DrawText, and
+// menudef.cpp:1150 hands the parser plain strings), so `\cX` reaches the screen as three
+// characters. A mod's own colour comes from the range argument the line already has.
+// The preview used to eat the escape and tint the rest, which made it prettier than the
+// game and lied about what a player would read.
 
 // One run of a string, glyph by glyph, at one zoom step
 int MenuPreview::drawRun(wxGCDC& gc, const wxString& text, int x, int y, const wxColour& colour, int scale)
@@ -311,20 +249,7 @@ void MenuPreview::drawGameText(wxGCDC& gc, const wxString& text, int x, int y, c
 		return;
 	}
 	int scale = unit();
-	int cx    = x;
-	for (auto& run : splitEscapes(text))
-	{
-		wxColour ink = colour;
-		if (run.ink.IsOk())
-			ink = run.ink;
-		else if (run.range >= 0 && range_ink_)
-		{
-			auto found = range_ink_(run.range, {});
-			if (found.IsOk())
-				ink = found;
-		}
-		cx = drawRun(gc, run.text, cx, y, ink, scale);
-	}
+	drawRun(gc, text, x, y, colour, scale);
 }
 
 int MenuPreview::gameTextWidth(const wxString& text) const
@@ -333,18 +258,17 @@ int MenuPreview::gameTextWidth(const wxString& text) const
 		return 0;
 	int scale = unit();
 	int w     = 0;
-	for (auto& run : splitEscapes(text))
-		for (auto uch : run.text)
+	for (auto uch : text)
+	{
+		auto it = font_char_widths_.find((int)uch);
+		if (it != font_char_widths_.end())
+			w += it->second * scale;
+		else
 		{
-			auto it = font_char_widths_.find((int)uch);
-			if (it != font_char_widths_.end())
-				w += it->second * scale;
-			else
-			{
-				auto sp = font_char_widths_.find(' ');
-				w += (sp != font_char_widths_.end() ? sp->second : 9) * scale;
-			}
+			auto sp = font_char_widths_.find(' ');
+			w += (sp != font_char_widths_.end() ? sp->second : 9) * scale;
 		}
+	}
 	return w;
 }
 
