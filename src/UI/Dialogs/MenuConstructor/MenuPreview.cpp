@@ -417,7 +417,6 @@ void MenuPreview::buildScreen()
 
 	screen_cache_ = screen;
 	screen_dirty_ = false;
-	scaled_w_ = scaled_h_ = -1; // the picture changed, so the copy sized for the window is stale
 }
 
 // Everything the engine would put on that screen: the backdrop first, then the menu over it.
@@ -686,18 +685,26 @@ void MenuPreview::onPaint(wxPaintEvent&)
 	if (!screen_cache_.IsOk())
 		return;
 
-	// One scaled copy per window size. This is the only place the zoom is fractional, and it is
-	// the same scale for the backdrop and for every glyph on top of it
-	if (!screen_scaled_.IsOk() || scaled_w_ != field.width || scaled_h_ != field.height)
-	{
-		screen_scaled_ = wxBitmap{
-			screen_cache_.ConvertToImage().Scale(field.width, field.height, wxIMAGE_QUALITY_NORMAL)};
-		scaled_w_ = field.width;
-		scaled_h_ = field.height;
-	}
-
 	wxGCDC gc{dc};
-	gc.DrawBitmap(screen_scaled_, field.x, field.y, false);
+	// Pixel art, so never resample it. Scaling the bitmap made every glyph edge a gradient at any
+	// window size that wasn't an exact multiple of the screen, and DPI rounding is rarely exact:
+	// that is why the first open looked soft and a drag bigger-then-back looked sharp. Drawing the
+	// 1:1 screen through a scale transform with interpolation off is hard-edged at every size, and
+	// the same on the first paint as on the twentieth
+	auto  sx = (double)field.width / screen_cache_.GetWidth(), sy = (double)field.height / screen_cache_.GetHeight();
+	auto* gctx = gc.GetGraphicsContext();
+	if (gctx)
+	{
+		gctx->SetInterpolationQuality(wxINTERPOLATION_NONE);
+		gctx->PushState();
+		gctx->Translate(field.x, field.y);
+		gctx->Scale(sx, sy);
+		gctx->DrawBitmap(screen_cache_, 0, 0, screen_cache_.GetWidth(), screen_cache_.GetHeight());
+		gctx->PopState();
+	}
+	else
+		gc.DrawBitmap(screen_cache_.ConvertToImage().Scale(field.width, field.height, wxIMAGE_QUALITY_NORMAL),
+		              field.x, field.y, false);
 
 	// The menu as it stands would not build. Said in the frame of the window rather than of the
 	// imitated screen, because it is about the file, not about what the game would show

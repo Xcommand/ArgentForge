@@ -150,10 +150,9 @@ private:
 	std::vector<wxPoint> laid_;
 	wxBitmap  background_;
 	// The screen as the engine would draw it, at that screen's own resolution: backdrop and all.
-	// The window then shows a scaled copy, so text and picture can never drift apart
+	// The window draws this bitmap through a scale transform, so text and picture can never drift
+	// apart and no resampled copy is ever kept
 	wxBitmap  screen_cache_;
-	wxBitmap  screen_scaled_;
-	int       scaled_w_ = -1, scaled_h_ = -1;
 	bool      screen_dirty_ = true;
 	// The backdrop stretched to the imitated screen, which is how the game shows it
 	wxBitmap  bg_screen_;
