@@ -738,6 +738,8 @@ void ArchivePanel::addMenus() const
 		menu_entry->AppendSeparator();
 		SAction::fromId("arch_entry_import")->addToMenu(menu_entry);
 		SAction::fromId("arch_entry_export")->addToMenu(menu_entry);
+		if (onDiskEntries())
+			SAction::fromId("arch_entry_openfolder")->addToMenu(menu_entry);
 #ifndef NO_LUA
 		menu_entry->AppendSeparator();
 		auto menu_scripts = new wxMenu();
