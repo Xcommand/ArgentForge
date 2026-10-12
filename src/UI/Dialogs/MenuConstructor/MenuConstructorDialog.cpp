@@ -909,7 +909,12 @@ void MenuConstructorDialog::showHelp()
                                                  : "These lines appear when the check above did not match"; }
   else {
       text = string(vocab.description("optionmenu", st->word));
-      if (text.empty()) text = fmt::format("{}: engine declares this widget", st->word);
+      // Say who declares it. "engine declares this widget" was a lie for a mod's own class, and
+      // the difference is exactly what he needs to know when the arguments have no names
+      if (text.empty())
+          text = mod_sigs_.count(st->word)
+               ? fmt::format("{}: this mod's own widget, read out of its ZScript", st->word)
+               : fmt::format("{}: nothing declares this widget, the line goes back as written", st->word);
       if (auto* prop = grid_args_->GetSelectedProperty()) { auto hint = wxString(prop->GetHelpString()).utf8_string();
         if (!hint.empty()) text += ". " + string(hint); } }
   if (auto* def_ptr = currentDefinition(); def_ptr && !isOptionMenu(*def_ptr) && !isValueTable(*def_ptr))
@@ -1567,16 +1572,19 @@ void MenuConstructorDialog::applySliderGlyphs()
 // What the preview says about its own font, in the line at the bottom of the window. A preview
 // that quietly fell back to the platform font looks like a preview that loaded the game's
 string MenuConstructorDialog::fontNote()
-{ if (game_font_chars_ > 0)
-      return fmt::format("font {} glyphs, lang {} keys", game_font_chars_, language_keys_);
-  if (!hex_font_read_) return "font: not read";
-  if (!hex_glyphs_.empty()) return "font: sheet failed";
+{ // How many widget classes this archive declared for itself: the number says whether the scan
+  // ran at all, which is the difference between "this mod has none" and "we never looked"
+  auto mods = fmt::format(", mod widgets {}", mod_sigs_.size());
+  if (game_font_chars_ > 0)
+      return fmt::format("font {} glyphs, lang {} keys{}", game_font_chars_, language_keys_, mods);
+  if (!hex_font_read_) return "font: not read" + mods;
+  if (!hex_glyphs_.empty()) return "font: sheet failed" + mods;
   // Say which file was asked for, because "not found" and "you never told me where the port is"
   // look identical otherwise and only one of them is fixable from this window
-  if (port_pk3_tried_.empty()) return "font: no port pk3 set (ZDoom PK3 Path)";
+  if (port_pk3_tried_.empty()) return "font: no port pk3 set (ZDoom PK3 Path)" + mods;
   auto slash = port_pk3_tried_.find_last_of("/\\");
-  return fmt::format("font: no newconsolefont.hex in {}",
-                     slash == string::npos ? port_pk3_tried_ : port_pk3_tried_.substr(slash + 1)); }
+  return fmt::format("font: no newconsolefont.hex in {}{}",
+                     slash == string::npos ? port_pk3_tried_ : port_pk3_tried_.substr(slash + 1), mods); }
 
 // The cursor in the game walks only lines it can land on. OptionMenuItem answers Selectable()
 // true (optionmenuitems.zs:120); StaticText and StaticTextSwitchable answer false (:760, :838),
