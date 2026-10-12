@@ -821,22 +821,28 @@ void MenuConstructorDialog::readLanguageFrom(Archive* ar)
       else value = right;
       mod_language_["$" + name] = value; } } }
 
-// Look up a $KEY in the archive's LANGUAGE; returns the value or the original text if not found.
-// The value comes back as the engine stores it, which means after its escape pass: a `\c` in a
-// label is one colour byte there, not two characters
-string MenuConstructorDialog::resolveLanguageKey(string_view text) const
-{ if (text.empty() || text[0] != '$') return string(text);
-  auto it = mod_language_.find(string(text));
-  if (it == mod_language_.end()) return string(text);
+// One pass of what the game does with a label: a leading '$' means "look this up in LANGUAGE", and a
+// miss hands back the name with the '$' gone (stringtable.cpp:1087). The value comes back as the engine
+// stores it, which means after its escape pass: a `\c` in a label is one colour byte there, not two
+// characters. A value that is itself `$$OTHER` is a pointer rather than text, and the engine follows it
+// here (stringtable.cpp:982): $GLMNU_TEXOPT -> $$GLTEXMNU_TITLE -> "Texture Options"
+string MenuConstructorDialog::localizeOnce(string_view text) const
+{ if (text.size() < 2 || text[0] != '$') return string(text);
+  string name = string(text.substr(1));
+  auto it = mod_language_.find("$" + name);
+  if (it == mod_language_.end()) return name;
   string value = processLanguageEscapes(it->second);
-  // A value that is itself `$$OTHER` is a pointer rather than text. The engine follows it when
-  // the label is asked for (stringtable.cpp:982), which is how an old .def alias reaches the
-  // spreadsheet entry: $GLMNU_TEXOPT -> $$GLTEXMNU_TITLE -> "Texture Options"
   for (int hop = 0; hop < 8 && value.size() > 2 && value[0] == '$' && value[1] == '$'; hop++)
   { auto next = mod_language_.find(value.substr(1));
     if (next == mod_language_.end()) break;
     value = processLanguageEscapes(next->second); }
   return value; }
+
+// A menu label goes through Localize twice: the item's own draw code does one (optionmenuitems.zs:77),
+// the drawer does the second (v_drawtext.cpp:412). So `$$KEY` is one '$' that survived the first pass,
+// and this is why a mod's `StaticText "$$OPTMNU_SOUND", 1` prints "Sound Options" in game
+string MenuConstructorDialog::resolveLanguageKey(string_view text) const
+{ return localizeOnce(localizeOnce(text)); }
 
 // The widget classes this archive declares in its own ZScript. The engine builds the class name
 // out of the word in a menu line (OptionMenuItem<word>, ListMenuItem<word>) and reads that class'

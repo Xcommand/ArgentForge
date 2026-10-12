@@ -442,7 +442,8 @@ private:
 	// Stored as key -> value so the preview can resolve $KEY to the actual text
 	std::map<string, string> mod_language_;
 	void              readArchiveLanguage();
-	// Look up a $KEY in the archive's LANGUAGE; returns the value or the original text if not found
+	// One pass of what the game does with a label; resolveLanguageKey runs it the twice the engine does
+	string localizeOnce(string_view text) const;
 	string            resolveLanguageKey(string_view text) const;
 	string                                 rangeColourFor(string_view name) const;
 
