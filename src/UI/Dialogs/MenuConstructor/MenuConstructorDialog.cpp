@@ -145,6 +145,14 @@ string unquote(string_view value)
 { if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
     return string(value.substr(1, value.size() - 2)); return string(value); }
 
+// What the menu scanner would have left of a quoted string: it drops a backslash only in front
+// of a quote (sc_man_scanner.re:485), so every other escape reaches the screen as written. For
+// display only - the file keeps its own bytes
+string unescapeString(string s)
+{ string out; for (size_t i = 0; i < s.size(); i++)
+  { if (s[i] == '\\' && i + 1 < s.size() && s[i + 1] == '"') { out += '"'; i++; continue; } out += s[i]; }
+  return out; }
+
 string quoteAs(const string& was, const string& now)
 { if (now.size() >= 2 && now.front() == '"' && now.back() == '"') return now;
   // A LANGUAGE reference ($KEY) has to be quoted, or the menu scanner splits the $ off it
@@ -805,11 +813,13 @@ void MenuConstructorDialog::readLanguageFrom(Archive* ar)
       else value = right;
       mod_language_["$" + name] = value; } } }
 
-// Look up a $KEY in the archive's LANGUAGE; returns the value or the original text if not found
+// Look up a $KEY in the archive's LANGUAGE; returns the value or the original text if not found.
+// The value comes back as the engine stores it, which means after its escape pass: a `\c` in a
+// label is one colour byte there, not two characters
 string MenuConstructorDialog::resolveLanguageKey(string_view text) const
 { if (text.empty() || text[0] != '$') return string(text);
   auto it = mod_language_.find(string(text));
-  if (it != mod_language_.end()) return it->second;
+  if (it != mod_language_.end()) return processLanguageEscapes(it->second);
   return string(text); }
 
 // The widget classes this archive declares in its own ZScript. The engine builds the class name
@@ -1275,8 +1285,8 @@ std::vector<MenuPreview::Row> MenuConstructorDialog::buildPreviewRows()
       // leads with its x and y, so taking args[0] would show a coordinate instead of the label
       string text;
       for (size_t a = 0; a < params.size() && a < st.args.size(); a++)
-          if (strutil::equalCI(params[a].type, "String")) { text = unquote(st.args[a].value); break; }
-      if (text.empty() && !st.args.empty()) text = unquote(st.args[0].value);
+          if (strutil::equalCI(params[a].type, "String")) { text = unescapeString(unquote(st.args[a].value)); break; }
+      if (text.empty() && !st.args.empty()) text = unescapeString(unquote(st.args[0].value));
       // Resolve $KEY references to their LANGUAGE values so the preview shows what the player sees
       text = resolveLanguageKey(text);
       // StaticText "" is a spacer in the game, not the widget name

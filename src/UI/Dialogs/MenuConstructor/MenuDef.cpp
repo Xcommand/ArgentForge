@@ -1274,6 +1274,64 @@ std::vector<string> parseLanguageKeys(string_view text)
 	return out;
 }
 
+// -----------------------------------------------------------------------------
+// The pass a LANGUAGE value goes through before the engine stores it
+// (FStringTable::ProcessEscapes, stringtable.cpp:684). Note that a backslash
+// before an unknown letter loses the backslash, and that '\c' becomes the single
+// colour escape byte rather than two characters - which is why a colour code in a
+// label works in game while the same two letters typed into a MENUDEF line do not.
+// -----------------------------------------------------------------------------
+string processLanguageEscapes(string_view text)
+{
+	string out;
+	for (size_t i = 0; i < text.size(); i++)
+	{
+		char c = text[i];
+		if (c != '\\')
+		{
+			out += c;
+			continue;
+		}
+		if (i + 1 >= text.size())
+			break;
+		char n = text[++i];
+		if (n == 'n')
+			out += '\n';
+		else if (n == 'r')
+			out += '\r';
+		else if (n == 't')
+			out += '\t';
+		else if (n == 'c')
+			out += '\034'; // TEXTCOLOR_ESCAPE, printf.h:35
+		else if (n == 'x')
+		{
+			int v = 0, digits = 0;
+			while (digits < 2 && i + 1 < text.size())
+			{
+				char  cc = text[i + 1];
+				int   d  = std::isdigit((unsigned char)cc) ? cc - '0' : -1;
+				if (d < 0)
+				{
+					char low = (char)std::tolower((unsigned char)cc);
+					if (low >= 'a' && low <= 'f') d = 10 + low - 'a';
+				}
+				if (d < 0)
+					break;
+				i++;
+				digits++;
+				v = (v << 4) + d;
+			}
+			if (v != 0)
+				out += (char)v; // the engine drops a zero byte
+		}
+		else if (n == '\n')
+			continue; // a line continuation
+		else
+			out += n;
+	}
+	return out;
+}
+
 bool isMenuConditional(string_view word)
 {
 	return isConditional(word);

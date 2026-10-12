@@ -121,6 +121,15 @@ private:
 	// The zoom in force: the wheel's, until the next window
 	int    zoom() const;
 
+	// A stretch of a menu string drawn in one colour, cut apart at the engine's colour escape
+	// byte (0x1C), which only LANGUAGE values ever hold: a MENUDEF line keeps its two characters
+	struct Run
+	{
+		wxString text;
+		int      range = -1;      // a range index from a letter selector; -1 keeps the line's colour
+		wxColour ink;             // a range resolved from a `[Name]' selector; valid wins over range
+	};
+	std::vector<Run> splitEscapes(const wxString& text) const;
 	// Draws a string glyph by glyph at one zoom step; returns the x after its last character
 	int drawRun(wxGCDC& gc, const wxString& text, int x, int y, const wxColour& colour, int scale);
 

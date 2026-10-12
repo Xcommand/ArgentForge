@@ -210,12 +210,75 @@ void MenuPreview::setSliderRail(const wxBitmap& rail)
 	Refresh();
 }
 
-// A menu string is drawn exactly as the game draws it, escapes and all. The engine gives a
-// menu label no colour-code pass at all (optionmenuitems draw through DrawText, and
-// menudef.cpp:1150 hands the parser plain strings), so `\cX` reaches the screen as three
-// characters. A mod's own colour comes from the range argument the line already has.
-// The preview used to eat the escape and tint the rest, which made it prettier than the
-// game and lied about what a player would read.
+// NUM_TEXT_COLORS, the bound the engine checks a letter selector against (v_font.h:70)
+static const int kNumTextColors = 29;
+
+// A colour change inside a menu string is one byte, 0x1C (TEXTCOLOR_ESCAPE, printf.h:35), and
+// only a LANGUAGE value ever holds it: the string table runs its values through
+// FStringTable::ProcessEscapes, which turns a `\c` in the file into that byte, while the menu
+// parser keeps the two characters and the player reads them. So a colour code written straight
+// into a MENUDEF line is dead, and the same code in a $LABEL works.
+//
+// The drawer then reads one selector after the escape (v_drawtext.cpp:104-112, and the table in
+// V_ParseFontColor, v_font.cpp:793-842): '-' normal, '+' bold, '!' team, '*' chat, '[Name]' a
+// TEXTCOLO range by name, and a letter its position in EColorRange, upper or lower case. A
+// selector it doesn't know is swallowed with the escape and changes nothing, which is also
+// mirrored here.
+std::vector<MenuPreview::Run> MenuPreview::splitEscapes(const wxString& text) const
+{
+	std::vector<Run> runs;
+	wxString         cur;
+	int              range = -1;
+	wxColour         ink;
+	auto             flush = [&]() {
+		if (!cur.empty())
+		{
+			runs.push_back({ cur, range, ink });
+			cur.clear();
+		}
+	};
+
+	for (size_t i = 0; i < text.size(); i++)
+	{
+		if (text[i] != L'\034')
+		{
+			cur += text[i];
+			continue;
+		}
+		flush();
+		if (i + 1 >= text.size())
+			break; // the engine ends the string on a bare escape
+		const wchar_t sel = text[++i];
+
+		if (sel == L'[')
+		{
+			wxString name;
+			size_t   j = i + 1;
+			for (; j < text.size() && text[j] != L']'; j++) name += text[j];
+			if (j < text.size()) j++;
+			if (range_ink_ && !name.empty())
+			{
+				auto found = range_ink_(-1, name);
+				if (found.IsOk()) ink = found;
+			}
+			i = j - 1;
+		}
+		else if (sel == L'-' || sel == L'+' || sel == L'!' || sel == L'*')
+		{
+			range = -1;
+			ink   = {};
+		}
+		else if ((sel >= L'A' && sel < L'A' + kNumTextColors) || (sel >= L'a' && sel < L'a' + kNumTextColors))
+		{
+			range = (int)((sel | 0x20) - L'a');
+			ink   = {};
+		}
+		// anything else: swallowed, colour unchanged
+	}
+
+	flush();
+	return runs;
+}
 
 // One run of a string, glyph by glyph, at one zoom step
 int MenuPreview::drawRun(wxGCDC& gc, const wxString& text, int x, int y, const wxColour& colour, int scale)
@@ -244,12 +307,29 @@ void MenuPreview::drawGameText(wxGCDC& gc, const wxString& text, int x, int y, c
 {
 	if (!font_sheet_.IsOk() || font_char_height_ <= 0)
 	{
+		// No game font: draw the text with the platform font, but still drop the escape bytes,
+		// which that font has no glyph for
+		wxString plain;
+		for (auto& run : splitEscapes(text)) plain += run.text;
 		gc.SetTextForeground(colour);
-		gc.DrawText(text, x, y);
+		gc.DrawText(plain, x, y);
 		return;
 	}
 	int scale = unit();
-	drawRun(gc, text, x, y, colour, scale);
+	int cx    = x;
+	for (auto& run : splitEscapes(text))
+	{
+		wxColour ink = colour;
+		if (run.ink.IsOk())
+			ink = run.ink;
+		else if (run.range >= 0 && range_ink_)
+		{
+			auto found = range_ink_(run.range, {});
+			if (found.IsOk())
+				ink = found;
+		}
+		cx = drawRun(gc, run.text, cx, y, ink, scale);
+	}
 }
 
 int MenuPreview::gameTextWidth(const wxString& text) const
@@ -258,17 +338,18 @@ int MenuPreview::gameTextWidth(const wxString& text) const
 		return 0;
 	int scale = unit();
 	int w     = 0;
-	for (auto uch : text)
-	{
-		auto it = font_char_widths_.find((int)uch);
-		if (it != font_char_widths_.end())
-			w += it->second * scale;
-		else
+	for (auto& run : splitEscapes(text))
+		for (auto uch : run.text)
 		{
-			auto sp = font_char_widths_.find(' ');
-			w += (sp != font_char_widths_.end() ? sp->second : 9) * scale;
+			auto it = font_char_widths_.find((int)uch);
+			if (it != font_char_widths_.end())
+				w += it->second * scale;
+			else
+			{
+				auto sp = font_char_widths_.find(' ');
+				w += (sp != font_char_widths_.end() ? sp->second : 9) * scale;
+			}
 		}
-	}
 	return w;
 }
 

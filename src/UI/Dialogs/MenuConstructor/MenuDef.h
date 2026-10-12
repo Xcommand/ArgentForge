@@ -208,6 +208,13 @@ std::vector<std::pair<string, string>> parseTextColours(string_view text);
 // the label says is the mod's own business
 std::vector<string> parseLanguageKeys(string_view text);
 
+// What the engine turns a LANGUAGE value into before it stores it (FStringTable::ProcessEscapes,
+// stringtable.cpp:684). `\n`, `\r`, `\t`, `\xHH` become that byte, `\c` becomes the colour escape
+// character 0x1C, and a backslash before anything else simply falls away. A MENUDEF string goes
+// through no such pass: its scanner only drops a backslash in front of a quote, so a `\c` typed
+// into a menu line reaches the screen as the two characters the author wrote.
+string processLanguageEscapes(string_view text);
+
 // One of the four words the menu parser reads as a conditional block: ifgame, ifnotgame,
 // ifoption, else (menudef.cpp:299-317, compared case-insensitively). Exported because the
 // window has to be able to write one, not only read them
