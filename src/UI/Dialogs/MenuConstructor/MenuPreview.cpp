@@ -45,6 +45,10 @@ CVAR(String, menucon_preview_screen, "640x480", CVar::Flag::Save)
 // which is what you want when checking whether the text itself reads right
 CVAR(Bool, menucon_preview_titlepic, true, CVar::Flag::Save)
 
+// How far that picture is pushed down, in percent. A title screen straight out of a base resource
+// is often brighter than the menu drawn over it, and this is the knob that makes both readable
+CVAR(Int, menucon_preview_shade, 0, CVar::Flag::Save)
+
 namespace
 {
 // The stand-in for when no game font was loaded. Built through wxFontInfo rather than by setting
@@ -404,7 +408,11 @@ int MenuPreview::unit() const
 // actually changed, so a repaint is one scaled blit
 void MenuPreview::buildScreen()
 {
-	if (!screen_dirty_ && screen_cache_.IsOk())
+	// The shading knob is set in the settings window, so the screen is rebuilt when it moves. It is
+	// clamped here exactly as it is in drawField, or the two would never agree and every repaint
+	// would rebuild
+	auto shade = std::clamp((int)menucon_preview_shade, 0, 100);
+	if (!screen_dirty_ && screen_cache_.IsOk() && screen_shade_ == shade)
 		return;
 
 	wxBitmap screen(screen_w_, screen_h_, 32);
@@ -417,6 +425,7 @@ void MenuPreview::buildScreen()
 
 	screen_cache_ = screen;
 	screen_dirty_ = false;
+	screen_shade_ = shade;
 }
 
 // Everything the engine would put on that screen: the backdrop first, then the menu over it.
@@ -429,11 +438,22 @@ void MenuPreview::drawField(wxGCDC& gc)
 	if (background_.IsOk())
 	{
 		// The engine stretches the title picture over the whole screen, not over the menu
-		if (!bg_screen_.IsOk() || bg_screen_w_ != screen_w_ || bg_screen_h_ != screen_h_)
+		auto shade = std::clamp((int)menucon_preview_shade, 0, 100);
+		if (!bg_screen_.IsOk() || bg_screen_w_ != screen_w_ || bg_screen_h_ != screen_h_ || bg_shade_ != shade)
 		{
-			bg_screen_ = wxBitmap{background_.ConvertToImage().Scale(screen_w_, screen_h_, wxIMAGE_QUALITY_NORMAL)};
+			auto img = background_.ConvertToImage().Scale(screen_w_, screen_h_, wxIMAGE_QUALITY_NORMAL);
+			// The pixels go down rather than a translucent sheet going over them, because a sheet
+			// would have to be laid again on every repaint and would dull the menu with it
+			if (shade > 0)
+			{
+				auto data = img.GetData();
+				for (size_t i = 0, n = (size_t)img.GetWidth() * img.GetHeight() * 3; i < n; i++)
+					data[i] = (unsigned char)((unsigned int)data[i] * (unsigned int)(100 - shade) / 100u);
+			}
+			bg_screen_ = wxBitmap{img};
 			bg_screen_w_ = screen_w_;
 			bg_screen_h_ = screen_h_;
+			bg_shade_    = shade;
 		}
 		gc.DrawBitmap(bg_screen_, 0, 0, false);
 	}

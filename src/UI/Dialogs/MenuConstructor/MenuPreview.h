@@ -154,9 +154,11 @@ private:
 	// apart and no resampled copy is ever kept
 	wxBitmap  screen_cache_;
 	bool      screen_dirty_ = true;
+	int       screen_shade_ = -1;
 	// The backdrop stretched to the imitated screen, which is how the game shows it
 	wxBitmap  bg_screen_;
 	int       bg_screen_w_ = -1, bg_screen_h_ = -1;
+	int       bg_shade_ = -1;
 	wxString  background_name_, note_, title_;
 	// The last status handed to the frame, so a repaint doesn't retitle the window for nothing
 	wxString  sent_status_;

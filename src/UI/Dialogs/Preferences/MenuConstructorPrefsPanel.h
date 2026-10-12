@@ -37,5 +37,6 @@ private:
 	int choice_screen_id_      = -1;
 	int spin_preview_scale_id_ = -1;
 	int check_titlepic_id_     = -1;
+	int spin_shade_id_         = -1;
 };
 } // namespace slade

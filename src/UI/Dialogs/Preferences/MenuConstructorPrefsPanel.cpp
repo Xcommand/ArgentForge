@@ -33,6 +33,7 @@ using namespace slade;
 EXTERN_CVAR(String, menucon_preview_screen)
 EXTERN_CVAR(Int, menucon_preview_scale)
 EXTERN_CVAR(Bool, menucon_preview_titlepic)
+EXTERN_CVAR(Int, menucon_preview_shade)
 
 
 // -----------------------------------------------------------------------------
@@ -73,6 +74,18 @@ MenuConstructorPrefsPanel::MenuConstructorPrefsPanel(wxWindow* parent) : PrefsPa
 	auto check_titlepic_ = new wxCheckBox(this, check_titlepic_id_, wxS("Draw a picture behind the menu"));
 	check_titlepic_->SetValue(menucon_preview_titlepic);
 
+	spin_shade_id_ = wxNewId();
+	auto spin_shade_ = new wxSpinCtrl(
+		this,
+		spin_shade_id_,
+		wxEmptyString,
+		wxDefaultPosition,
+		{ ui::scalePx(80), -1 },
+		wxSP_ARROW_KEYS,
+		0,
+		100,
+		(int)menucon_preview_shade);
+
 	wxutil::layoutVertically(
 		sizer,
 		vector<wxObject*>{
@@ -80,6 +93,7 @@ MenuConstructorPrefsPanel::MenuConstructorPrefsPanel(wxWindow* parent) : PrefsPa
 			wxutil::createLabelHBox(this, "Draw it as a screen:", choice_screen_),
 			wxutil::createLabelHBox(this, "Zoom (%):", spin_preview_scale_),
 			check_titlepic_,
+			wxutil::createLabelHBox(this, "Shade the picture (%):", spin_shade_),
 			new wxStaticText(
 				this,
 				-1,
@@ -87,7 +101,9 @@ MenuConstructorPrefsPanel::MenuConstructorPrefsPanel(wxWindow* parent) : PrefsPa
 				    "The engine picks the text size from the resolution, so a bigger screen shows\n"
 				    "more of the menu rather than bigger letters, except where it doubles it.\n"
 				    "The picture is the title screen the game would be sitting on, from the mod\n"
-				    "you have open or from the base resource; off leaves a flat dark.")) },
+				    "you have open or from the base resource; off leaves a flat dark.\n"
+				    "Shading pushes that picture toward black, for a title screen that is brighter\n"
+				    "than the menu drawn over it. It changes the preview, never the mod.")) },
 		wxSizerFlags(0).Expand().Border(wxALL, ui::padLarge()));
 }
 
@@ -129,5 +145,12 @@ void MenuConstructorPrefsPanel::applyPreferences()
 		auto* check = wxDynamicCast(FindWindow(check_titlepic_id_), wxCheckBox);
 		if (check)
 			menucon_preview_titlepic = check->IsChecked();
+	}
+
+	if (spin_shade_id_ >= 0)
+	{
+		auto* spin = wxDynamicCast(FindWindow(spin_shade_id_), wxSpinCtrl);
+		if (spin)
+			menucon_preview_shade = spin->GetValue();
 	}
 }
