@@ -78,6 +78,7 @@ public:
 	bool cutEntry();
 	bool pasteEntry() const;
 	bool openEntryExternal() const;
+	bool openContainingFolder() const;
 
 	// Other entry actions
 	bool gfxConvert() const;

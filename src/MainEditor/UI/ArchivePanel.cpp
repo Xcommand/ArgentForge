@@ -35,7 +35,10 @@
 #include "ArchivePanel.h"
 #include "App.h"
 #include <wx/datetime.h>
+#include <wx/filename.h>
+#include <wx/utils.h>
 #include "Archive/ArchiveDir.h"
+#include "Archive/Formats/DirArchive.h"
 #include "UI/Dialogs/MenuConstructor/MenuDef.h"
 #include "UI/Dialogs/MenuConstructor/MenuVocabulary.h"
 #include "Archive/ArchiveManager.h"
@@ -2467,6 +2470,40 @@ bool ArchivePanel::openEntryExternal() const
 }
 
 // -----------------------------------------------------------------------------
+// Shows the folder that holds the selection in the system file manager. Only a folder
+// project has one: an archive is a single file on disk, and unpacking it isn't this job
+// -----------------------------------------------------------------------------
+bool ArchivePanel::openContainingFolder() const
+{
+	auto archive = archive_.lock();
+	if (!dynamic_cast<DirArchive*>(archive.get()))
+		return true;
+
+	// The archive keeps the on-disk path of everything it read, and updates it on save and rename
+	string path;
+	if (auto selection = entry_tree_->selectedEntries(); !selection.empty())
+		path = selection[0]->exProps().getOr<string>("filePath", "");
+	else if (auto dirs = entry_tree_->selectedDirectories(); !dirs.empty())
+	{
+		if (auto direntry = dirs[0]->dirEntry())
+			path = direntry->exProps().getOr<string>("filePath", "");
+	}
+
+	// A folder added but not saved yet has no path of its own, so fall back to the project folder.
+	// GetPath of a file is the folder holding it, of a folder it is that folder itself
+	wxFileName fn{ wxString::FromUTF8(path) };
+	if (!fn.DirExists() && !fn.FileExists())
+		fn = wxFileName{ wxString::FromUTF8(archive->filename()) };
+	auto folder = fn.GetPath();
+
+	if (folder.empty() || !wxFileName::DirExists(folder))
+		return true;
+
+	wxLaunchDefaultApplication(folder);
+	return true;
+}
+
+// -----------------------------------------------------------------------------
 // Opens the Gfx Conversion dialog and sends selected entries to it
 // -----------------------------------------------------------------------------
 bool ArchivePanel::gfxConvert() const
@@ -3875,6 +3912,10 @@ bool ArchivePanel::handleAction(string_view id)
 	else if (id == "arch_entry_openext")
 		openEntryExternal();
 
+	// Entry->Open Containing Folder
+	else if (id == "arch_entry_openfolder")
+		openContainingFolder();
+
 #ifndef NO_LUA
 	// Entry->Run Script
 	else if (id == "arch_entry_script")
@@ -4247,6 +4288,9 @@ void ArchivePanel::onEntryListRightClick(wxDataViewEvent& e)
 	auto selection = entry_tree_->selectedEntries();
 	auto sel_dirs  = entry_tree_->selectedDirectories();
 
+	// Whether the file manager can be pointed at anything for this project
+	bool on_disk = dynamic_cast<DirArchive*>(archive.get()) != nullptr;
+
 	// Check what types exist in the selection
 	// TODO: This stuff is absolutely terrible, nicer system needed
 	bool gfx_selected        = false;
@@ -4363,9 +4407,16 @@ void ArchivePanel::onEntryListRightClick(wxDataViewEvent& e)
 	}
 
 	// Generate context menu
+	// A folder project has real files on disk, so the file manager has something to show. An archive
+	// is one file, and unpacking it isn't this menu item's job
 	wxMenu context;
 	if (!selection.empty())
 	{
+		if (on_disk)
+		{
+			SAction::fromId("arch_entry_openfolder")->addToMenu(&context, true);
+			context.AppendSeparator();
+		}
 		SAction::fromId("arch_entry_rename")->addToMenu(&context, true);
 		if (selection.size() > 1)
 			SAction::fromId("arch_entry_rename_each")->addToMenu(&context, true);
@@ -4392,6 +4443,11 @@ void ArchivePanel::onEntryListRightClick(wxDataViewEvent& e)
 	}
 	else if (!sel_dirs.empty())
 	{
+		if (on_disk)
+		{
+			SAction::fromId("arch_entry_openfolder")->addToMenu(&context, true);
+			context.AppendSeparator();
+		}
 		SAction::fromId("arch_entry_rename")->addToMenu(&context, true);
 		if (sel_dirs.size() > 1)
 			SAction::fromId("arch_entry_rename_each")->addToMenu(&context, true);
@@ -4411,6 +4467,11 @@ void ArchivePanel::onEntryListRightClick(wxDataViewEvent& e)
 	else
 	{
 		// No entry selected
+		if (on_disk)
+		{
+			SAction::fromId("arch_entry_openfolder")->addToMenu(&context, true);
+			context.AppendSeparator();
+		}
 		SAction::fromId("arch_entry_paste")->addToMenu(&context, true);
 		context.AppendSeparator();
 		SAction::fromId("arch_importfiles")->addToMenu(&context, true);
