@@ -966,6 +966,13 @@ void TextEntryPanel::openMenuConstructor()
 					return false;
 				text_area_->Redo();
 				return true;
+			},
+			[this]()
+			{
+				// The undo moved bytes under the window's own copy of the text, so this is
+				// where it gets them back. From the editor it happens on focus, but a Ctrl+Z
+				// done in the window never leaves it, so nothing else would notice
+				resyncMenuConstructor();
 			});
 
 		// Coming back to the window is the last chance before one of its controls

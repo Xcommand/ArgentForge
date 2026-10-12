@@ -73,11 +73,14 @@ public:
 	void setLineFunction(std::function<void(size_t)> line) { line_ = std::move(line); }
 
 	// Ctrl+Z and Ctrl+Y while the window has the keyboard: the undo belongs to the
-	// editor, but making him click over there for it would be silly
-	void setUndoFunctions(std::function<bool()> undo, std::function<bool()> redo)
+	// editor, but making him click over there for it would be silly. [resync] is how the
+	// window gets told to read the text again, because the undo moved bytes under it and
+	// every list it shows is a copy of them
+	void setUndoFunctions(std::function<bool()> undo, std::function<bool()> redo, std::function<void()> resync)
 	{
-		undo_ = std::move(undo);
-		redo_ = std::move(redo);
+		undo_  = std::move(undo);
+		redo_  = std::move(redo);
+		resync_ = std::move(resync);
 	}
 
 	// Shows the block the caret has ended up in
@@ -239,6 +242,8 @@ private:
 	void onAddLineChosen(wxCommandEvent& event);
 	void onDelete(wxCommandEvent& event);
 	void deleteLine();
+	// The block list's own Delete: the whole picked run, the way its moves work
+	void deleteBlocks();
 	void onMove(wxCommandEvent& event);
 	void onGridChanged(wxPropertyGridEvent& event);
 	void onGridSelected(wxPropertyGridEvent& event);
@@ -476,5 +481,6 @@ private:
 	std::function<void(size_t)>      line_   = nullptr;
 	std::function<bool()>            undo_   = nullptr;
 	std::function<bool()>            redo_   = nullptr;
+	std::function<void()>            resync_ = nullptr;
 };
 } // namespace slade

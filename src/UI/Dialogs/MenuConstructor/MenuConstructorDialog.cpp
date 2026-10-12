@@ -366,10 +366,12 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	panel_right_->Bind(wxEVT_SIZE, [this](wxSizeEvent&){showHelp();});
 
 	Bind(wxEVT_CHAR_HOOK, [this](wxKeyEvent& e) {
-		if (e.GetKeyCode() == 'Z' && e.ControlDown()) {
-			bool done = e.ShiftDown() ? (redo_ && redo_()) : (undo_ && undo_());
-			if (done) return; }
-		else if (e.GetKeyCode() == 'Y' && e.ControlDown() && redo_ && redo_()) return;
+		bool moved = false;
+		if (e.GetKeyCode() == 'Z' && e.ControlDown())
+			moved = e.ShiftDown() ? (redo_ && redo_()) : (undo_ && undo_());
+		else if (e.GetKeyCode() == 'Y' && e.ControlDown() && redo_)
+			moved = redo_();
+		if (moved) { if (resync_) resync_(); return; }
 		e.Skip(); });
 
 	Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent& e) {
@@ -425,7 +427,10 @@ void MenuConstructorDialog::refreshFrom(string_view text)
   auto index = std::min(block_, fresh.definitions().size() - 1);
   if (fresh.definitions()[index].text() == blockText()) return;
   source_ = std::move(fresh); block_ = index;
-  buildMenuList(); buildAddList(); buildTree(); }
+  buildMenuList(); buildAddList(); buildTree();
+  // The preview is part of what this window shows, so a text that came back from an undo
+  // has to redraw it too or the row he just undoes stays on screen
+  if (preview_) updatePreviewWindow(); }
 
 void MenuConstructorDialog::buildMenuList()
 { list_menus_->Clear();
@@ -941,10 +946,36 @@ void MenuConstructorDialog::insertLine(const string& word)
 void MenuConstructorDialog::deleteLine()
 { std::vector<MenuStatement>* siblings = nullptr; size_t row = 0;
   if (!currentStatement(&siblings, &row)) return;
-  siblings->erase(siblings->begin() + (long)row);
-  if (row >= siblings->size()) { if (siblings->empty()) { have_selection_ = false; selected_ = LinePath{}; }
-    else selected_.steps.back() = siblings->size() - 1; }
+  // The picked lines that live in this same list go as one, the way a move takes them: a line
+  // under another ifgame has a list of its own and is left where it is
+  vector<size_t> rows;
+  for (auto& path : selectedPaths())
+  { if (path.steps.size() != selected_.steps.size()) continue;
+    bool same_parent = true;
+    for (size_t d = 0; d + 1 < path.steps.size(); d++)
+        if (path.steps[d] != selected_.steps[d]) { same_parent = false; break; }
+    if (same_parent) rows.push_back(path.steps.back()); }
+  if (rows.empty()) rows.push_back(row);
+  std::sort(rows.begin(), rows.end());
+  rows.erase(std::unique(rows.begin(), rows.end()), rows.end());
+  // Descending, because taking one out shifts every number below it
+  for (size_t n = rows.size(); n > 0; n--) siblings->erase(siblings->begin() + (long)rows[n - 1]);
+  size_t gone_before = 0; for (auto r : rows) if (r < row) gone_before++;
+  if (siblings->empty()) { have_selection_ = false; selected_ = LinePath{}; }
+  else
+  { auto at = std::min(row - gone_before, siblings->size() - 1); selected_.steps.back() = at; }
   auto keep = selected_; if (!apply()) selected_ = keep; buildTree(); }
+
+// Delete in the block list: the whole picked run, in the same gesture the keys already move
+// and copy. Blocks go from the bottom up for the same reason a line does: taking one out
+// shifts every number below it
+void MenuConstructorDialog::deleteBlocks()
+{ if (source_.definitions().empty()) return;
+  auto picked = selectedBlocks(); if (picked.empty()) picked.push_back(block_);
+  for (size_t n = picked.size(); n > 0; n--) source_.removeDefinition(picked[n - 1]);
+  if (block_ >= source_.definitions().size()) block_ = source_.definitions().empty() ? 0 : source_.definitions().size() - 1;
+  have_selection_ = false; selected_ = LinePath{};
+  buildMenuList(); buildAddList(); buildTree(); apply(); }
 
 void MenuConstructorDialog::moveLine(int direction)
 { KeepFocus focus;	// same reason as in moveBlock: the tree rebuild must not take the keyboard away
@@ -1016,7 +1047,7 @@ void MenuConstructorDialog::pasteBlocks()
   string text; if (!fromClipboard(text)) { help_->setText("The clipboard holds nothing to paste"); return; }
   auto pasted = parseBlocks(text);
   if (pasted.empty()) { help_->setText("Nothing in the clipboard opens a menu block"); return; }
-  auto first = block_ + 1;
+  auto first = std::min(block_ + 1, source_.definitions().size());
   size_t done = 0;
   for (auto& def : pasted) { if (!source_.insertDefinition(first + done, std::move(def))) break; done++; }
   if (done == 0) { help_->setText("Those blocks could not be put in this file"); return; }
@@ -1688,10 +1719,7 @@ void MenuConstructorDialog::onBlockAdd(wxCommandEvent&)
   buildMenuList(); buildAddList(); buildTree(); apply(); }
 
 void MenuConstructorDialog::onBlockDelete(wxCommandEvent&)
-{ if (source_.definitions().empty() || !source_.removeDefinition(block_)) return;
-  if (block_ >= source_.definitions().size()) block_ = source_.definitions().empty() ? 0 : source_.definitions().size() - 1;
-  have_selection_ = false; selected_ = LinePath{};
-  buildMenuList(); buildAddList(); buildTree(); apply(); }
+{ deleteBlocks(); }
 
 void MenuConstructorDialog::moveBlock(int dir)
 { // Rebuilding the tree pulls focus into the line list, so a second Shift+Down that should have
@@ -1735,6 +1763,7 @@ void MenuConstructorDialog::onMenuKey(wxKeyEvent& e)
   { moveBlock(e.GetKeyCode() == WXK_UP ? -1 : 1); return; }
   if (ctrlChar(e, 'C')) { copyBlocks(); return; }
   if (ctrlChar(e, 'V')) { pasteBlocks(); return; }
+  if (e.GetKeyCode() == WXK_DELETE) { deleteBlocks(); return; }
   e.Skip(); }
 
 void MenuConstructorDialog::onAddLineChosen(wxCommandEvent&) {}
