@@ -18,6 +18,7 @@
 #include "General/ResourceManager.h"
 #include "Application/App.h"
 #include "Archive/Archive.h"
+#include "Archive/ArchiveDir.h"
 #include "Archive/ArchiveEntry.h"
 #include "Archive/ArchiveManager.h"
 #include "Archive/EntryType/EntryType.h"
@@ -74,6 +75,14 @@ class KeepFocus {
 public: KeepFocus() { had_ = wxWindow::FindFocus(); }
 ~KeepFocus() { if (had_) had_->SetFocus(); }
 private: wxWindow* had_ = nullptr; };
+
+// Every entry the archive holds, folders included. numEntries() counts recursively while
+// entryAt() indexes one directory, so a walk by number sees only what sits at the top and
+// misses everything a mod keeps under zscript/ - which is where its widget classes are
+vector<ArchiveEntry*> allArchiveEntries(Archive* ar)
+{ vector<ArchiveEntry*> out; if (!ar) return out;
+  if (auto* root = ar->dirAtPath("")) for (auto& e : root->allEntries()) if (e) out.push_back(e.get());
+  return out; }
 
 bool findLine(const std::vector<MenuStatement>& statements, const MenuStatement* target, vector<size_t>& steps)
 { for (size_t i = 0; i < statements.size(); i++) {
@@ -705,8 +714,8 @@ vector<string> MenuConstructorDialog::patchNames() const
 void MenuConstructorDialog::readArchivePatches()
 { mod_patches_.clear();
   if (!archive_) return;
-  for (unsigned i = 0; i < archive_->numEntries(); i++) { auto* e = archive_->entryAt(i);
-    if (!e || !e->type() || !e->type()->extraProps().contains("image")) continue;
+  for (auto* e : allArchiveEntries(archive_))
+  { if (!e->type() || !e->type()->extraProps().contains("image")) continue;
     mod_patches_.push_back(e->name()); } }
 
 // The LANGUAGE keys and values this archive declares, so a label/text/prompt can point at one as $KEY. The
@@ -775,9 +784,8 @@ void MenuConstructorDialog::readLanguageTable(const string& raw)
 
 void MenuConstructorDialog::readLanguageFrom(Archive* ar)
 { if (!ar) return;
-  for (unsigned i = 0; i < ar->numEntries(); i++) { auto* e = ar->entryAt(i);
-    if (!e) continue;
-    string nm = strutil::lower(e->name());
+  for (auto* e : allArchiveEntries(ar))
+  { string nm = strutil::lower(e->name());
     if (nm.size() < 8 || nm.compare(0, 8, "language") != 0 || (nm.size() > 8 && nm[8] != '.')) continue;
     const auto& mc = e->data();
     string raw((const char*)mc.data(), mc.size());
@@ -832,10 +840,10 @@ string MenuConstructorDialog::resolveLanguageKey(string_view text) const
 void MenuConstructorDialog::readArchiveWidgets()
 { mod_sigs_.clear(); mod_words_.clear(); archive_lumps_ = 0; archive_entries_ = 0;
   if (!archive_) return;
-  archive_entries_ = (int)archive_->numEntries();
+  auto entries = allArchiveEntries(archive_);
+  archive_entries_ = (int)entries.size();
   int no_data = 0, too_big = 0, binary = 0;
-  for (unsigned i = 0; i < archive_->numEntries(); i++) { auto* e = archive_->entryAt(i);
-    if (!e) continue; const auto& mc = e->data(); size_t n = mc.size();
+  for (auto* e : entries) { const auto& mc = e->data(); size_t n = mc.size();
     if (n == 0) no_data++;
     else if (n > (2u << 20)) too_big++;
     // Reject a compiled/binary lump off its first bytes before copying it: an archive is mostly
@@ -1707,9 +1715,11 @@ void MenuConstructorDialog::readArchiveCvars()
 { mod_cvars_.clear();
   if (!archive_) return;
   static const vector<string> types = { "bit", "bool", "color", "float", "int", "string", "actor" };
-  for (unsigned i = 0; i < archive_->numEntries(); i++)
-  { auto* e = archive_->entryAt(i);
-    if (!e || !strutil::equalCI(e->name(), "CVARINFO")) continue;
+  for (auto* e : allArchiveEntries(archive_))
+  { // The lump named CVARINFO, or any file SLADE recognised as one: a mod that ships its
+    // sources as CVarinfo.txt declares the same cvars and carries the same type
+    if (!strutil::equalCI(e->name(), "CVARINFO") && !(e->type() && strutil::equalCI(e->type()->name(), "cvarinfo")))
+      continue;
     const auto& mc = e->data();
     string raw((const char*)mc.data(), mc.size());
     string text;
@@ -2015,8 +2025,9 @@ vector<string> MenuConstructorDialog::rangeNames() const
 void MenuConstructorDialog::readArchiveRanges()
 { mod_ranges_.clear();
   if (!archive_) return;
-  for (unsigned i = 0; i < archive_->numEntries(); i++) { auto* e = archive_->entryAt(i);
-    if (!e || !strutil::equalCI(e->name(), "TEXTCOLO")) continue;
+  for (auto* e : allArchiveEntries(archive_))
+  { if (!strutil::equalCI(e->name(), "TEXTCOLO") && !(e->type() && strutil::equalCI(e->type()->name(), "textcolo")))
+      continue;
     const auto& mc = e->data(); string raw((const char*)mc.data(), mc.size());
     string text;
     for (size_t p = 0; p < raw.size(); p++) {
