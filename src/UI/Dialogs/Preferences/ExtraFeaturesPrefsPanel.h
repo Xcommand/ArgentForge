@@ -29,9 +29,12 @@
 #include <wx/spinctrl.h>
 
 class wxButton;
+class wxStaticText;
 
 namespace slade
 {
+class FileLocationPanel;
+
 class ExtraFeaturesPrefsPanel : public PrefsPanelBase
 {
 public:
@@ -51,8 +54,17 @@ private:
 	void init() override;
 	void applyPreferences() override;
 
+	// AceZDL: hand the launcher our executable path, and be able to give back what was there
+	void refreshAceZdl();
+	void setAceZdlLocation();
+	void restoreAceZdlLocation();
+
 	wxButton*          button_import_ = nullptr;
 	int                spin_recent_scale_id_ = -1;
 	int                recent_scale_value_ = 100;
+	FileLocationPanel* flp_acl_ = nullptr;
+	wxStaticText*      acl_state_ = nullptr;
+	wxButton*          button_acl_set_     = nullptr;
+	wxButton*          button_acl_restore_ = nullptr;
 };
 } // namespace slade
