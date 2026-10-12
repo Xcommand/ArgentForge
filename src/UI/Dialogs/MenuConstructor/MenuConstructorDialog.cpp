@@ -842,26 +842,16 @@ void MenuConstructorDialog::readArchiveWidgets()
   if (!archive_) return;
   auto entries = allArchiveEntries(archive_);
   archive_entries_ = (int)entries.size();
-  int no_data = 0, too_big = 0, binary = 0;
   for (auto* e : entries) { const auto& mc = e->data(); size_t n = mc.size();
-    if (n == 0) no_data++;
-    else if (n > (2u << 20)) too_big++;
+    if (n == 0 || n > (2u << 20)) continue;
+    const char* p = (const char*)mc.data();
     // Reject a compiled/binary lump off its first bytes before copying it: an archive is mostly
     // pictures and sounds, and copying each one just to find a null byte is the work that would
     // make opening the window crawl on a big mod
-    else if (memchr((const char*)mc.data(), 0, std::min<size_t>(n, 512))) binary++;
-    else
-    {
-    auto* p = (const char*)mc.data();
+    if (memchr(p, 0, std::min<size_t>(n, 512))) continue;
     archive_lumps_++;
-    string raw(p, n);
-    auto   found = parseModWidgets(raw);
-    // Temporary: the scan reports nothing on archives whose classes are plainly there, so say
-    // what it actually held in memory. Drop this once the numbers explain themselves.
-    log::info("menu widget scan: {} -> {} bytes, {} classes", e->name(), n, found.size());
-    for (auto& s : found) { mod_sigs_[s.word] = s.signature; mod_words_[s.word] = s.family; } } }
-  log::info("menu widget scan over: {} text, {} empty, {} over 2 MB, {} binary-headed",
-            archive_lumps_, no_data, too_big, binary); }
+    for (auto& s : parseModWidgets(string(p, n)))
+        { mod_sigs_[s.word] = s.signature; mod_words_[s.word] = s.family; } } }
 
 // How a line's arguments go: the archive's own widget class if it declared one, else the engine's
 // table. The window is only ever editing an OptionMenu body, so 'optionmenu' is the family here
