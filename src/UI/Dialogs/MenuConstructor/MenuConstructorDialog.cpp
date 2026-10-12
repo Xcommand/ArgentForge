@@ -916,6 +916,10 @@ void MenuConstructorDialog::showHelp()
       text += ". No new lines offered in this block type";
   // A name that answers to another block too isn't a second menu - say which way it goes, live
   if (!name_clash_.empty()) text += ". " + name_clash_;
+  // A name written in front of a value is the one shape the game can't read, and the window
+  // used to write it itself, so it says so on any line where it finds one
+  if (st && st->editable()) for (auto& a : st->args) if (!a.name.empty())
+      { text += ". The engine takes a widget's arguments by position, so the name in front of a value stops the menu loading"; break; }
   help_->setText(text);
   auto width = panel_right_->GetClientSize().GetWidth() - ui::pad() * 2;
   auto lines = help_->wrapTo(std::max(60, width));
@@ -951,7 +955,11 @@ void MenuConstructorDialog::insertLine(const string& word)
   else { st.word = word;
     auto params = signatureParams(signatureFor(word));
     size_t required = params.size(); for (size_t i = 0; i < params.size(); i++) { if (params[i].optional) { required = i; break; } }
-    for (size_t i = 0; i < required; i++) st.args.push_back({params[i].name, placeholderFor(params[i], i)}); }
+    // Positional, with no parameter name in front of the value: the engine reads a widget's
+    // arguments by position (menudef.cpp:1150-1157 does one MustGetString per Init parameter
+    // and nothing parses `name:` anywhere), so `StaticText label:"x"` is a string the game
+    // can't take. The names are for the grid's labels, not for the file
+    for (size_t i = 0; i < required; i++) st.args.push_back({ "", placeholderFor(params[i], i) }); }
   if (!list->empty()) { auto& n = (*list)[std::min(at, list->size() - 1)]; st.indent = n.indent.empty() ? "\t" : n.indent;
     st.eol = n.eol.empty() ? "\r\n" : n.eol; } else { st.indent = "\t"; st.eol = "\r\n"; }
   parent.push_back(at); list->insert(list->begin() + (long)at, std::move(st));
@@ -1290,7 +1298,10 @@ std::vector<MenuPreview::Row> MenuConstructorDialog::buildPreviewRows()
       // (no-default) Init params. Valid menus never ship like this, so this only lights up on a
       // line that genuinely won't load - half-built, or missing a value the class demands
       size_t required = 0; for (auto& p : params) { if (p.optional) break; required++; }
-      r.broken = !vt && !params.empty() && st.args.size() < required;
+      // The other way a widget line can't load: a value written as `name:value`. The engine
+      // matches arguments to Init parameters by position, so the name reaches the game as text
+      bool named = false; for (auto& a : st.args) if (!a.name.empty()) { named = true; break; }
+      r.broken = !vt && (!params.empty() && st.args.size() < required || named);
       // Every StaticText sits in the middle of the screen, not in the label column: its Init
       // passes center=true to the base (optionmenuitems.zs:738) and drawLabel then uses
       // (screen width - text width)/2 instead of the gutter (:80). The same goes for
