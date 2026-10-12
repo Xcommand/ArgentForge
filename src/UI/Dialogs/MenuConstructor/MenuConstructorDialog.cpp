@@ -29,6 +29,8 @@
 #include "Utility/StringUtils.h"
 
 #include <wx/bitmap.h>
+#include <wx/clipbrd.h>
+#include <wx/dataobj.h>
 #include <wx/mstream.h>
 #include <wx/button.h>
 #include <wx/choice.h>
@@ -156,8 +158,72 @@ wxTreeItemId findItem(wxTreeCtrl* tree, const wxTreeItemId& parent, const vector
           if (data->steps() == steps) return child;
       if (child.IsOk() && tree->HasChildren(child))
           if (auto deeper = findItem(tree, child, steps); deeper.IsOk()) return deeper; }
-  return {};
-}
+  return {}; }
+
+// The statement a path names, walking down through any branch it sits in
+MenuStatement* statementAt(MenuDefinition& def, const vector<size_t>& steps)
+{ std::vector<MenuStatement>* list = &def.statements;
+  for (size_t d = 0; d < steps.size(); d++) { auto index = steps[d];
+      if (index >= list->size()) return nullptr;
+      auto& st = (*list)[index];
+      if (d + 1 == steps.size()) return &st;
+      list = &st.children; }
+  return nullptr; }
+
+// Moves a line's own leading whitespace to [indent] and nothing else, so the paste keeps
+// the bytes the copied file wrote and only sits at the depth the neighbour uses
+void setIndent(MenuStatement& st, const string& indent)
+{ auto rewrap = [&indent](string& s) { size_t w = 0;
+      while (w < s.size() && (s[w] == ' ' || s[w] == '\t')) w++; s = indent + s.substr(w); };
+  st.indent = indent;
+  if (!st.raw.empty()) rewrap(st.raw);
+  if (!st.header.empty()) rewrap(st.header); }
+
+// Reads text with the vocabulary this window uses, in a source of its own that never goes
+// anywhere. Both the blocks and the lines a paste brings in come through here
+MenuSource readWith(string_view text)
+{ MenuSource probe;
+  probe.setVocabulary(MenuVocabulary::instance().blockWords(), MenuVocabulary::instance().menuWords());
+  probe.load(text); return probe; }
+
+// The blocks clipboard text opens, empty for text that opens none
+vector<MenuDefinition> parseBlocks(const string& text)
+{ auto probe = readWith(text);
+  if (probe.definitions().empty()) return {};
+  return std::move(probe.definitions()); }
+
+// Loose lines have no reader of their own, only a block's body does, so the fragment goes
+// inside a block nobody will save. A value table is wrapped as one, because its rows read
+// their arguments the other way round. The first line starts right behind the brace: a
+// newline of its own there would read as a blank line and get pasted along with the lines
+vector<MenuStatement> parseLines(const string& text, bool value_table, const string& eol)
+{ string wrap = (value_table ? "OptionValue paste" : "OptionMenu paste") + eol + "{" + text;
+  if (wrap.back() != '\n') wrap += eol;
+  wrap += "}" + eol;
+  auto probe = readWith(wrap);
+  if (probe.definitions().empty()) return {};
+  return std::move(probe.definitions()[0].statements); }
+
+// The clipboard is one object that has to be opened to touch, and it keeps whatever is
+// handed to SetData
+bool toClipboard(const string& text)
+{ if (text.empty() || !wxTheClipboard->Open()) return false;
+  wxTheClipboard->SetData(new wxTextDataObject(wxString::FromUTF8(text)));
+  wxTheClipboard->Flush(); wxTheClipboard->Close(); return true; }
+
+bool fromClipboard(string& text)
+{ if (!wxTheClipboard->Open()) return false;
+  bool ok = false;
+  if (wxTheClipboard->IsSupported(wxDF_UNICODETEXT))
+  { wxTextDataObject data; ok = wxTheClipboard->GetData(data);
+    if (ok) text = data.GetText().utf8_string(); }
+  wxTheClipboard->Close();
+  return ok && !text.empty(); }
+
+// Ctrl plus this letter and nothing else: Shift and Alt mean other things in these two lists
+bool ctrlChar(wxKeyEvent& e, int code)
+{ return (e.GetModifiers() & wxMOD_CONTROL) != 0 && !e.ShiftDown() && !e.AltDown()
+      && std::toupper((unsigned char)e.GetKeyCode()) == code; }
 } // namespace
 
 // =============================================================================
@@ -883,11 +949,7 @@ void MenuConstructorDialog::deleteLine()
 void MenuConstructorDialog::moveLine(int direction)
 { KeepFocus focus;	// same reason as in moveBlock: the tree rebuild must not take the keyboard away
   std::vector<MenuStatement>* siblings = nullptr; size_t row = 0;
-  if (!currentStatement(&siblings, &row))
-  { help_->setText(fmt::format(
-        "move {}: entered, but no line under selection (have {}, {} steps deep)",
-        direction, have_selection_, selected_.steps.size()));
-    return; }
+  if (!currentStatement(&siblings, &row)) return;
 
   // The selected lines that live in this same list. A line under another ifgame has its own
   // list, and trading across two of them would move the branch rather than the line
@@ -931,15 +993,68 @@ void MenuConstructorDialog::moveLine(int direction)
   for (size_t i = 0; i < group.size(); i++) group[i].steps.back() = pos[i];
 
   auto keep = selected_; selected_ = group[anchor];
-  bool took = apply();
-  if (!took) selected_ = keep;
-  buildTree(); selectPaths(group, selected_);
+  if (!apply()) selected_ = keep;
+  buildTree(); selectPaths(group, selected_); }
 
-  // Temporary receipt. A group that had nowhere to go looks exactly like a move that was
-  // never attempted, and these four numbers tell the two apart
-  help_->setText(fmt::format(
-      "move {}: tree held {} selected, group {}, row {} -> {}, apply {}",
-      direction, paths.size(), group.size(), row, pos[anchor], took ? "ok" : "refused")); }
+// =============================================================================
+// Ctrl+C and Ctrl+V, on whichever of the two lists has the keyboard
+// =============================================================================
+
+// A run of menus goes over with the blank line between it, so pasting it back gives the
+// spacing the file had rather than one block glued to the next
+void MenuConstructorDialog::copyBlocks()
+{ auto picked = selectedBlocks(); if (picked.empty()) picked.push_back(block_);
+  string text, eol = source_.lineEnding();
+  for (auto i : picked) { if (i >= source_.definitions().size()) continue;
+      if (!text.empty()) text += eol;
+      text += source_.definitions()[i].text(); }
+  toClipboard(text); }
+
+// The copied menus land after the one on screen, in the order they were picked
+void MenuConstructorDialog::pasteBlocks()
+{ KeepFocus focus;
+  string text; if (!fromClipboard(text)) { help_->setText("The clipboard holds nothing to paste"); return; }
+  auto pasted = parseBlocks(text);
+  if (pasted.empty()) { help_->setText("Nothing in the clipboard opens a menu block"); return; }
+  auto first = block_ + 1;
+  size_t done = 0;
+  for (auto& def : pasted) { if (!source_.insertDefinition(first + done, std::move(def))) break; done++; }
+  if (done == 0) { help_->setText("Those blocks could not be put in this file"); return; }
+  vector<size_t> run; for (size_t i = 0; i < done; i++) run.push_back(first + i);
+  block_ = first; have_selection_ = false; selected_ = LinePath{};
+  buildMenuList(); selectBlocks(run, block_); buildAddList(); buildTree(); apply(); }
+
+void MenuConstructorDialog::copyLines()
+{ auto paths = selectedPaths(); if (paths.empty() && have_selection_) paths.push_back(selected_);
+  if (paths.empty()) return;
+  auto* def = currentDefinition(); if (!def) return;
+  // The lines go over in the order the file holds them, not the order they were clicked
+  std::sort(paths.begin(), paths.end(), [](const LinePath& a, const LinePath& b) {
+      return std::lexicographical_compare(a.steps.begin(), a.steps.end(), b.steps.begin(), b.steps.end()); });
+  string text;
+  for (auto& path : paths) if (auto* st = statementAt(*def, path.steps)) text += st->text();
+  toClipboard(text); }
+
+// The lines land under the one on screen, in the branch it is in, so a copy from one
+// ifgame to another stays a copy of the same shape
+void MenuConstructorDialog::pasteLines()
+{ KeepFocus focus;
+  std::vector<MenuStatement>* siblings = nullptr; size_t row = 0;
+  auto* anchor = currentStatement(&siblings, &row);
+  if (!anchor) { help_->setText("Pick the line to paste under first"); return; }
+  string text; if (!fromClipboard(text)) { help_->setText("The clipboard holds nothing to paste"); return; }
+  auto* def = currentDefinition();
+  auto lines = parseLines(text, def && isValueTable(*def), source_.lineEnding());
+  if (lines.empty()) { help_->setText("Nothing in the clipboard is a menu line"); return; }
+  auto indent = anchor->indent;
+  for (auto& st : lines) if (st.kind != MenuStatement::Kind::Blank) setIndent(st, indent);
+  size_t at = row + 1, count = lines.size();
+  for (size_t i = 0; i < count; i++) siblings->insert(siblings->begin() + (long)(at + i), std::move(lines[i]));
+  vector<LinePath> group;
+  for (size_t i = 0; i < count; i++) { auto path = selected_; path.steps.back() = at + i; group.push_back(path); }
+  auto keep = selected_; selected_ = group.front(); have_selection_ = true;
+  if (!apply()) selected_ = keep;
+  buildTree(); selectPaths(group, selected_); }
 
 void MenuConstructorDialog::onMenuChosen(wxCommandEvent& e)
 { // Rebuilding the tree selects a line in it, and that selection takes the keyboard with it, so
@@ -968,6 +1083,8 @@ void MenuConstructorDialog::onLineChosen(wxTreeEvent&)
 
 void MenuConstructorDialog::onLineKey(wxKeyEvent& e)
 { if ((e.GetModifiers() & wxMOD_SHIFT) && (e.GetKeyCode() == WXK_UP || e.GetKeyCode() == WXK_DOWN)) { moveLine(e.GetKeyCode() == WXK_UP ? -1 : 1); return; }
+  if (ctrlChar(e, 'C')) { copyLines(); return; }
+  if (ctrlChar(e, 'V')) { pasteLines(); return; }
   if (e.GetKeyCode() == WXK_DELETE) { deleteLine(); return; } e.Skip(); }
 
 void MenuConstructorDialog::onAddChosen(wxCommandEvent&)
@@ -1580,7 +1697,6 @@ void MenuConstructorDialog::moveBlock(int dir)
 { // Rebuilding the tree pulls focus into the line list, so a second Shift+Down that should have
   // moved the block again would land on a line instead
   KeepFocus focus;
-  auto was = block_;
   auto picked = selectedBlocks();
   if (picked.empty()) picked.push_back(block_);
   if (std::find(picked.begin(), picked.end(), block_) == picked.end())
@@ -1606,11 +1722,7 @@ void MenuConstructorDialog::moveBlock(int dir)
 
   buildMenuList();
   selectBlocks(pos, anchor);
-  buildTree(); apply();
-
-  // The same receipt as a line move: the two numbers differ for a block that moved
-  help_->setText(fmt::format(
-      "move block {}: {} picked, anchor {} -> {}", dir, picked.size(), was, block_)); }
+  buildTree(); apply(); }
 
 void MenuConstructorDialog::onBlockMove(wxCommandEvent& e)
 { moveBlock(e.GetEventObject() == (wxObject*)block_down_ ? 1 : -1); }
@@ -1621,6 +1733,8 @@ void MenuConstructorDialog::onBlockMove(wxCommandEvent& e)
 void MenuConstructorDialog::onMenuKey(wxKeyEvent& e)
 { if ((e.GetModifiers() & wxMOD_SHIFT) && (e.GetKeyCode() == WXK_UP || e.GetKeyCode() == WXK_DOWN))
   { moveBlock(e.GetKeyCode() == WXK_UP ? -1 : 1); return; }
+  if (ctrlChar(e, 'C')) { copyBlocks(); return; }
+  if (ctrlChar(e, 'V')) { pasteBlocks(); return; }
   e.Skip(); }
 
 void MenuConstructorDialog::onAddLineChosen(wxCommandEvent&) {}

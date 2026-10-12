@@ -824,6 +824,56 @@ bool MenuSource::appendDefinition(string_view keyword, string_view name, bool pr
 }
 
 // -----------------------------------------------------------------------------
+// Puts a block the reader already made into the text as number [index]. The pieces
+// point at blocks by their place in the list, so everything from [index] up shifts,
+// and the blank lines are the added block's own business exactly as in
+// appendDefinition: taking it back out then gives the file back byte for byte
+// -----------------------------------------------------------------------------
+bool MenuSource::insertDefinition(size_t index, MenuDefinition def)
+{
+	if (index > definitions_.size() || !def.editable || def.head.empty())
+		return false;
+
+	auto eol = lineEnding();
+
+	// In front of the piece holding the block that is number [index] now, or after every
+	// piece when the file has no block that far
+	size_t at = pieces_.size();
+	if (index < definitions_.size())
+	{
+		at = 0;
+		while (at < pieces_.size() && pieces_[at].definition != (int)index) at++;
+		if (at == pieces_.size())
+			return false;
+	}
+
+	// A block squeezed between two others needs a blank line on each side and the file only
+	// has the one it had, so the new block goes in front of that blank line and keeps it as
+	// its trailing side. Its own leading line then lives inside the block, and taking the
+	// block back out leaves the borrowed blank line exactly where it was
+	size_t ins = at;
+	if (at > 0 && pieces_[at - 1].definition < 0 &&
+	    pieces_[at - 1].text.find_first_not_of(" \t\r\n") == string::npos)
+		ins = at - 1;
+
+	string before;
+	for (size_t p = 0; p < ins; p++)
+		before += pieces_[p].definition < 0 ? pieces_[p].text : definitions_[pieces_[p].definition].text();
+	if (!before.empty() && !endsBlankLine(before, eol))
+		def.head.insert(0, eol);
+
+	// No place in the text as it was read, same rule as a block we write from scratch
+	def.begin = def.end = string::npos;
+
+	for (auto& piece : pieces_)
+		if (piece.definition >= (int)index) piece.definition++;
+
+	definitions_.insert(definitions_.begin() + (long)index, std::move(def));
+	pieces_.insert(pieces_.begin() + (long)ins, { "", (int)index });
+	return true;
+}
+
+// -----------------------------------------------------------------------------
 // Takes a block out, along with the empty run that was keeping it off its neighbour,
 // so the file doesn't keep a hole where the block was
 // -----------------------------------------------------------------------------

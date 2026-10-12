@@ -271,6 +271,14 @@ private:
 	void moveLine(int direction);
 	void moveBlock(int direction);
 
+	// Ctrl+C and Ctrl+V, on whichever of the two lists has the keyboard: the block list works
+	// on whole menus, the line tree on the lines it names. Both go over as plain text, so a
+	// selection made in the editor itself pastes in here and one made here pastes out there
+	void copyBlocks();
+	void pasteBlocks();
+	void copyLines();
+	void pasteLines();
+
 	// The statement the tree is on, or null. [siblings] comes back as the list that
 	// holds it, which is what a move or a delete has to work on
 	MenuStatement* currentStatement(std::vector<MenuStatement>** siblings = nullptr, size_t* row = nullptr);

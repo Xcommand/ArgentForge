@@ -164,6 +164,11 @@ public:
 	// empty: the lines go in afterwards, one at a time, same as a new actor
 	bool appendDefinition(string_view keyword, string_view name, bool protect = false);
 
+	// Puts an already-read block into the text as definition [index], ahead of whatever was
+	// there, or at the end when the file has no block that far. This is how a copied menu comes
+	// back in: its own text was read by another source, and only the place is ours to choose
+	bool insertDefinition(size_t index, MenuDefinition def);
+
 	// Takes the block at [index] out of the text, along with the blank run that was
 	// keeping it off its neighbour
 	bool removeDefinition(size_t index);
