@@ -830,8 +830,9 @@ string MenuConstructorDialog::resolveLanguageKey(string_view text) const
 // ZScript hides under many spellings (.zs, .zsc, .zc, even .txt), so this walks by content rather
 // than by name or extension, skipping anything with a null byte (a compiled lump the engine skips too)
 void MenuConstructorDialog::readArchiveWidgets()
-{ mod_sigs_.clear(); mod_words_.clear();
+{ mod_sigs_.clear(); mod_words_.clear(); archive_lumps_ = 0; archive_entries_ = 0;
   if (!archive_) return;
+  archive_entries_ = (int)archive_->numEntries();
   for (unsigned i = 0; i < archive_->numEntries(); i++) { auto* e = archive_->entryAt(i);
     if (!e) continue; const auto& mc = e->data(); size_t n = mc.size();
     if (n == 0 || n > (2u << 20)) continue;
@@ -840,6 +841,7 @@ void MenuConstructorDialog::readArchiveWidgets()
     // pictures and sounds, and copying each one just to find a null byte is the work that would
     // make opening the window crawl on a big mod
     if (memchr(p, 0, std::min<size_t>(n, 512))) continue;
+    archive_lumps_++;
     string raw(p, n);
     for (auto& s : parseModWidgets(raw)) { mod_sigs_[s.word] = s.signature; mod_words_[s.word] = s.family; } } }
 
@@ -1209,8 +1211,13 @@ void MenuConstructorDialog::showPreviewWindow()
     int di = wxDisplay::GetFromWindow(this); if (di == wxNOT_FOUND) di = 0;
     wxRect area = wxDisplay(di).GetClientArea();
     int fw = ui::scalePx(640), fh = ui::scalePx(480);
-    preview_frame_->SetSize(area.x + std::max(0, (area.width - fw) / 2),
-                            area.y + std::max(0, (area.height - fh) / 2), fw, fh);
+    // The picture is the client area, so size that and let the caption hang outside it. Setting
+    // the outer size here made the first paint a hair smaller than the screen it imitates, and
+    // the picture only came right after a zoom step re-fit the window
+    preview_frame_->SetClientSize(fw, fh);
+    auto fsz = preview_frame_->GetSize();
+    preview_frame_->SetPosition({ area.x + std::max(0, (area.width - fsz.x) / 2),
+                                  area.y + std::max(0, (area.height - fsz.y) / 2) });
     preview_ = new MenuPreview(preview_frame_);
     // The preview resolves a colour escape through the same table the argument grid uses. The
     // order is the engine's EColorRange enum (v_font.h:39-71), not an alphabetised one, because
@@ -1584,7 +1591,7 @@ void MenuConstructorDialog::applySliderGlyphs()
 string MenuConstructorDialog::fontNote()
 { // How many widget classes this archive declared for itself: the number says whether the scan
   // ran at all, which is the difference between "this mod has none" and "we never looked"
-  auto mods = fmt::format(", mod widgets {}", mod_sigs_.size());
+  auto mods = fmt::format(", mod widgets {} of {}/{} lumps", mod_sigs_.size(), archive_lumps_, archive_entries_);
   if (game_font_chars_ > 0)
       return fmt::format("font {} glyphs, lang {} keys{}", game_font_chars_, language_keys_, mods);
   if (!hex_font_read_) return "font: not read" + mods;

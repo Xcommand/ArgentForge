@@ -450,6 +450,10 @@ private:
 	// the class name out of the word in the line and reads its Init(), so a mod's widget is
 	// as describable as an engine one and its fields can be typed instead of left as text
 	std::map<string, string> mod_sigs_;
+	// How many text lumps the widget scan actually read, and how many the archive holds at all,
+	// for the status line: `0 of 0/0` is an archive we never got, `0 of 0/323` is a scan that
+	// rejected every lump, `0 of 5/323` means only five lumps looked like text
+	int                      archive_lumps_ = 0, archive_entries_ = 0;
 	// The same classes by their own spelling, for the lists the window shows him
 	std::map<string, string> mod_words_;
 	void                     readArchiveWidgets();
