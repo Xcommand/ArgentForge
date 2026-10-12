@@ -495,6 +495,10 @@ void MenuConstructorDialog::selectPath(const LinePath& path)
   auto* data = item.IsOk() ? static_cast<LineItem*>(tree_lines_->GetItemData(item)) : nullptr;
   if (!data) { have_selection_ = false; selected_ = LinePath{}; return; }
   selected_.steps = data->steps(); have_selection_ = true;
+  // On a tree that allows several, Windows reads a programmatic select as "from the mark to
+  // here", exactly like Shift+click, so one row has to clear the rest first or a click in the
+  // preview paints the whole branch as picked
+  tree_lines_->UnselectAll();
   tree_lines_->SelectItem(item); tree_lines_->EnsureVisible(item); }
 
 // Everything under selection in the tree. A group is only as wide as the list it sits in: a
@@ -506,7 +510,9 @@ vector<MenuConstructorDialog::LinePath> MenuConstructorDialog::selectedPaths()
       if (auto* data = static_cast<LineItem*>(tree_lines_->GetItemData(items[i]))) out.push_back(LinePath{data->steps()});
   return out; }
 
-// Puts a group of lines back under selection, with [anchor] the one the arguments show
+// Puts a group of lines back under selection, with [anchor] the one the arguments show.
+// Windows reads a programmatic select as "from the mark to here", so the group is followed by
+// a pass that takes back the rows it widened through: a Ctrl-picked pair must stay a pair
 void MenuConstructorDialog::selectPaths(const vector<LinePath>& paths, const LinePath& anchor)
 { if (paths.empty()) return;
   rebuilding_ = true;
@@ -515,6 +521,15 @@ void MenuConstructorDialog::selectPaths(const vector<LinePath>& paths, const Lin
       if (!(path == anchor)) if (auto item = itemForPath(path); item.IsOk()) tree_lines_->SelectItem(item);
   if (auto keep = itemForPath(anchor); keep.IsOk())
   { tree_lines_->SelectItem(keep); tree_lines_->SetFocusedItem(keep); tree_lines_->EnsureVisible(keep); }
+  auto wanted = [&](const vector<size_t>& steps) { return steps == anchor.steps
+      || std::find_if(paths.begin(), paths.end(), [&](const LinePath& p) { return p.steps == steps; }) != paths.end(); };
+  if (tree_lines_->GetRootItem().IsOk())
+  { vector<wxTreeItemId> walk{ tree_lines_->GetRootItem() };
+    while (!walk.empty()) { auto parent = walk.back(); walk.pop_back(); wxTreeItemIdValue cookie;
+        for (auto child = tree_lines_->GetFirstChild(parent, cookie); child.IsOk(); child = tree_lines_->GetNextChild(parent, cookie))
+        { walk.push_back(child);
+          auto* data = static_cast<LineItem*>(tree_lines_->GetItemData(child));
+          if (tree_lines_->IsSelected(child) && (!data || !wanted(data->steps()))) tree_lines_->SelectItem(child, false); } } }
   selected_ = anchor; have_selection_ = true;
   rebuilding_ = false; }
 
