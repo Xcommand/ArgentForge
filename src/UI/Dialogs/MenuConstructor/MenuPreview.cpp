@@ -692,10 +692,14 @@ void MenuPreview::onPaint(wxPaintEvent&)
 	// 1:1 screen through a scale transform with interpolation off is hard-edged at every size, and
 	// the same on the first paint as on the twentieth
 	auto  sx = (double)field.width / screen_cache_.GetWidth(), sy = (double)field.height / screen_cache_.GetHeight();
+	// Hard pixels at 100% and at any whole multiple of the screen, where one game pixel is a
+	// square on the monitor. At a fractional factor nearest leaves columns that alternate 2 and
+	// 3 pixels wide, which reads as damage rather than as pixels, so those cases smooth instead
+	bool exact = std::abs(sx - std::lround(sx)) < 0.01 && std::abs(sy - std::lround(sy)) < 0.01;
 	auto* gctx = gc.GetGraphicsContext();
 	if (gctx)
 	{
-		gctx->SetInterpolationQuality(wxINTERPOLATION_NONE);
+		gctx->SetInterpolationQuality(exact || zoom() == 100 ? wxINTERPOLATION_NONE : wxINTERPOLATION_GOOD);
 		gctx->PushState();
 		gctx->Translate(field.x, field.y);
 		gctx->Scale(sx, sy);
