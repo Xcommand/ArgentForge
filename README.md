@@ -102,10 +102,6 @@ that is the whole payment. What genuinely helps instead:
   specific chore, and I can only see my own.
 * **Show what you made with it.** I'd like to know the thing got used.
 
-Most of the code in this fork was typed with an AI assistant, Qwen3.8-Flash, at the moment this was
-written. Every edit went under my direction, and nothing shipped that I hadn't read and checked line
-by line; the corpus of real mod files this is tested against is mine, and so is every decision about
-what the tool should do. If the AI part rules this out for you, skip it without hard feelings. The
 original SLADE is one click away, still published, still untouched, and nobody is making you use
 this. What I'd rather not spend on is arguing about it.
 
