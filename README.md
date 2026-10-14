@@ -46,6 +46,11 @@ this on top:
 * The **Actor Constructor**: a floating window that edits an actor's flags, properties and states
   and never steals your focus. It follows the text caret, so the actor you are looking at is the one
   you are editing.
+
+<img width="506" height="831" alt="image" src="https://github.com/user-attachments/assets/fbf17910-e52c-42e1-ba8a-4e5a5318a37f" /> <img width="827" height="864" alt="image" src="https://github.com/user-attachments/assets/1b23858b-b48c-4591-9f38-5e3784e49b38" /> <img width="506" height="831" alt="image" src="https://github.com/user-attachments/assets/b0896e5c-6b24-4886-98b5-0ff80476c969" /> 
+
+
+  
 * Flags and properties as a searchable, grouped tree with a note on each one, and tri-state
   `+FLAG` / `-FLAG` because DECORATE really does tell those apart.
 * A value field says what the engine wants there: `INT`, `FLOAT`, `"STRING"`, `"SOUND"`.
@@ -59,6 +64,8 @@ this on top:
   changes one line and leaves its indentation and line ending alone.
 
 **Code editor**
+
+https://github.com/user-attachments/assets/1d0dad59-58c8-456d-9585-999272cd2705
 * Rest the mouse on a state line and the picture it names opens above it; hold SHIFT and the
   whole block runs at Doom speed. It reads the text the way the engine takes it: `TNT1`, `####`,
   `----`, quoted frames, `RANDOM(a,b)`. Checked against every state line in the mod files on this
@@ -69,11 +76,17 @@ this on top:
   switches to match.
 
 **Image editor**
+
+<img width="412" height="473" alt="image" src="https://github.com/user-attachments/assets/88695a9a-9657-4ed6-ae4a-47e6429ee1e2" />
+
 * A brush picker: shape or dither, size up to 99 px, feather, blend mode. And brush presets that are
   plain files, so a brush worth keeping can be sent to someone.
 * Over the picture, ALT does the settings: the wheel for opacity, the right button dragged sideways
   for size and up and down for feather, with the numbers shown while the gesture runs. Q and W pick
   the brush and the eraser, on keys you can rebind.
+
+<img width="424" height="349" alt="image" src="https://github.com/user-attachments/assets/d44c50bd-3ca9-4da0-8c92-35d5daca3119" />
+  
 * SHIFT-click paints a straight line from where the last stroke ended; `Pixel perfect` draws a
   one-pixel diagonal as one pixel, corners included.
 * A stroke is now the line between two mouse events instead of a dot at each of them, so a fast hand
