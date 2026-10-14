@@ -77,7 +77,9 @@ https://github.com/user-attachments/assets/1d0dad59-58c8-456d-9585-999272cd2705
 
 **Image editor**
 
-<img width="412" height="473" alt="image" src="https://github.com/user-attachments/assets/88695a9a-9657-4ed6-ae4a-47e6429ee1e2" />
+
+https://github.com/user-attachments/assets/f490a357-4ce6-4358-9244-cde8b9b4d829
+
 
 * A brush picker: shape or dither, size up to 99 px, feather, blend mode. And brush presets that are
   plain files, so a brush worth keeping can be sent to someone.
