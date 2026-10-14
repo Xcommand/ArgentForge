@@ -117,7 +117,7 @@ that is the whole payment. What genuinely helps instead:
   specific chore, and I can only see my own.
 * **Show what you made with it.** I'd like to know the thing got used.
 
-original SLADE is one click away, still published, still untouched, and nobody is making you use
+Didn't like it? Well original SLADE is one click away, still published, still untouched, and nobody is making you use
 this. What I'd rather not spend on is arguing about it.
 
 It's GPLv2, same as SLADE. Feel free to fork the project under a name you like better and build it
