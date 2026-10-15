@@ -287,6 +287,10 @@ bool TextEntryPanel::loadEntry(ArchiveEntry* entry)
 // -----------------------------------------------------------------------------
 bool TextEntryPanel::writeEntry(ArchiveEntry& entry)
 {
+	// Before the whitespace trim, which would otherwise rewrite every line's tail and
+	// leave the jump numbers looking at a text that no longer matches the saved one
+	recalculateGotoOffsets();
+
 	// Trim whitespace
 	if (txed_trim_whitespace)
 		text_area_->trimWhitespace();
@@ -1405,12 +1409,19 @@ bool TextEntryPanel::insertActorAction(string_view action, string_view args)
 // -----------------------------------------------------------------------------
 // Puts the goto numbers right for the text as it stands, against the bytes the entry
 // was last read or saved with. The constructor fixes its own numbers as it goes; this
-// is for states added and taken away by hand
+// is for states added and taken away by hand, and it runs on its own when the text is
+// being written out, because a save is the last moment the two versions are both to
+// hand. Quiet when there's nothing to say
 // -----------------------------------------------------------------------------
 void TextEntryPanel::recalculateGotoOffsets()
 {
 	auto entry = entry_.lock();
 	if (!entry)
+		return;
+
+	// Only the two languages that write state lists can hold a 'goto Label+N'
+	auto language = text_area_->language();
+	if (!language || (language->id() != "decorate" && language->id() != "zscript"))
 		return;
 
 	MemChunk current;
@@ -1419,15 +1430,12 @@ void TextEntryPanel::recalculateGotoOffsets()
 
 	auto&  saved = entry->data();
 	string was((const char*)saved.data(), saved.size());
+	if (now == was)
+		return;
 
 	auto fixes = gotoRewrites(now, was);
 	if (fixes.edits.empty())
-	{
-		log::info(1, "Recalculate goto offsets: every jump already lands where it did");
-		if (fixes.skipped)
-			log::info(1, fmt::format("{} jump(s) point at a state the edit removed and can't be counted to", fixes.skipped));
 		return;
-	}
 
 	// Back to front, since a number written with more digits moves the ones after it
 	text_area_->BeginUndoAction();
@@ -1440,7 +1448,7 @@ void TextEntryPanel::recalculateGotoOffsets()
 	text_area_->EndUndoAction();
 	setModified();
 
-	log::info(1, fmt::format("Recalculate goto offsets: {} number(s) rewritten", fixes.edits.size()));
+	log::info(1, fmt::format("Goto offsets: {} number(s) recounted for the states that moved", fixes.edits.size()));
 	if (fixes.skipped)
 		log::info(1, fmt::format("{} jump(s) point at a state the edit removed and can't be counted to", fixes.skipped));
 }
