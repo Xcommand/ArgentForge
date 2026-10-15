@@ -925,7 +925,20 @@ bool TextEditorCtrl::openSpritePreview(int pos)
 	sprite_preview_->setBackgroundColour(ss_current->style("calltip")->background());
 	sprite_preview_->setTextColour(ss_current->style("calltip")->foreground());
 
-	return sprite_preview_->open(text, line, offset, preview_archive_, anchor);
+	// The lines he selected, so shift can play that span instead of the block under the
+	// mouse. A selection that stops at column nought of the next line doesn't drag it in
+	size_t sel_first = SIZE_MAX, sel_last = SIZE_MAX;
+	auto   sel_from  = GetSelectionStart();
+	auto   sel_to    = GetSelectionEnd();
+	if (sel_to > sel_from)
+	{
+		sel_first = (size_t)LineFromPosition(sel_from);
+		sel_last  = (size_t)LineFromPosition(sel_to);
+		if (sel_last > sel_first && PositionFromLine((int)sel_last) == sel_to)
+			sel_last--;
+	}
+
+	return sprite_preview_->open(text, line, offset, preview_archive_, anchor, sel_first, sel_last);
 }
 
 // -----------------------------------------------------------------------------

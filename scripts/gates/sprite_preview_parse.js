@@ -233,6 +233,29 @@ function stateBlock(lines, line, offset) {
 	return block;
 }
 
+// The lines he selected, played as one loop: the same reader, but the edges are the
+// selection instead of the braces around the hovered line
+function stateRange(lines, first, last, hover) {
+	const block = { frames: [], current: -1, loops: false };
+	if (first > last || last >= lines.length) return block;
+
+	let hit = -1;
+	for (let i = first; i <= last && block.frames.length < 256; i++) {
+		const before = block.frames.length;
+		const own = readStateLine(lines[i], block.frames);
+		if (!own.read) continue;
+		const off = /^[ \t]*/.exec(lines[i])[0].length + 1;
+		if (i === hover && own.hits.has(off)) hit = own.hits.get(off);
+		else if (block.current < 0 && block.frames.length > before) block.current = before;
+	}
+	if (hit >= 0) block.current = hit;
+	if (block.current < 0) { block.frames = []; return block; }
+
+	resolveKeptSprites(block.frames, earlierPicture(lines, first));
+	block.loops = true;
+	return block;
+}
+
 // --- census -------------------------------------------------------------
 // 'node sprite_preview_parse.js dump <file>' prints what the reading makes of one
 // file's state lines, which is how a block that looks wrong gets looked at
@@ -247,6 +270,18 @@ if (process.argv[2] === "dump") {
 			`${l + 1} [${block.current}] ${block.frames.map((f) => `${f.name}:${f.tics}`).join(" ")}`.slice(0, 200)
 		);
 	}
+	process.exit(0);
+}
+
+// 'node sprite_preview_parse.js span <file> <first> <last> [hover]' prints the loop a
+// selection of those lines would play, which is what the shift-across-states ask is
+if (process.argv[2] === "span") {
+	const lines = fs.readFileSync(process.argv[3], "latin1").split(/\r?\n/);
+	const first = Number(process.argv[4]) - 1, last = Number(process.argv[5]) - 1;
+	const hover = process.argv[6] ? Number(process.argv[6]) - 1 : first;
+	const block = stateRange(lines, first, last, hover);
+	console.log(`lines ${first + 1}..${last + 1}: ${block.frames.length} frames, current ${block.current}, loops ${block.loops}`);
+	block.frames.forEach((f, i) => console.log(`  ${i === block.current ? ">" : " "} ${i} ${f.name} tics ${f.tics}`));
 	process.exit(0);
 }
 

@@ -42,6 +42,10 @@ struct PreviewBlock
 // state frame
 PreviewBlock stateBlock(string_view text, size_t line, size_t offset);
 
+// Reads the lines [first]..[last] as one loop instead, which is what a selection
+// asks for: the frames of every state line in it, in order, wrapping at the ends
+PreviewBlock stateRange(string_view text, size_t first, size_t last, size_t hover, size_t offset);
+
 // The popup under the mouse that shows what a state line's sprite looks like.
 // Holding shift while it's open plays the whole block around that line, at the
 // speeds the script itself asks for
@@ -55,8 +59,11 @@ public:
 
 	// Opens above [anchor], which is the screen rectangle of the name being hovered
 	// and decides where the box goes. False when there's nothing to show, which is
-	// how the editor knows to leave the mouse be
-	bool open(string_view text, size_t line, size_t offset, const Archive* archive, const wxRect& anchor);
+	// how the editor knows to leave the mouse be. [select_first..select_last] is the
+	// line range he has selected, or SIZE_MAX when there is none: holding shift then
+	// plays that span as a loop instead of the block under the mouse
+	bool open(string_view text, size_t line, size_t offset, const Archive* archive, const wxRect& anchor,
+	          size_t select_first = SIZE_MAX, size_t select_last = SIZE_MAX);
 
 	// Stops showing anything, and stops the animation along with it
 	void dismiss();

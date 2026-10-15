@@ -763,6 +763,41 @@ PreviewBlock stateBlock(string_view text, size_t line, size_t offset)
 
 	return block;
 }
+
+// -----------------------------------------------------------------------------
+// The lines he picked, played as one loop. Same reader as a block, only the edges are
+// his selection instead of the braces around the hovered line, and it always loops:
+// that is the whole reason to pick a span
+// -----------------------------------------------------------------------------
+PreviewBlock stateRange(string_view text, size_t first, size_t last, size_t hover, size_t offset)
+{
+	PreviewBlock block;
+	auto         lines = textLines(text);
+	if (first > last || last >= lines.size())
+		return block;
+
+	int hit = -1;
+	for (size_t i = first; i <= last && block.frames.size() < MAX_BLOCK_FRAMES; i++)
+	{
+		int  one    = -1;
+		auto before = block.frames.size();
+		// Only the line the mouse rests on gives its own offset to the reader
+		readStateLine(lines[i], i == hover ? offset : string::npos, block.frames, one);
+
+		if (one >= 0)
+			hit = one;
+		else if (block.current < 0 && block.frames.size() > before)
+			block.current = (int)before;
+	}
+	if (hit >= 0)
+		block.current = hit;
+	if (block.current < 0)
+		return block;
+
+	resolveKeptPictures(block.frames, earlierPicture(lines, first));
+	block.loops = true;
+	return block;
+}
 } // namespace slade
 
 
@@ -797,9 +832,21 @@ SpritePreview::SpritePreview(wxWindow* parent) :
 // when there's nothing to show, which is how the editor knows to leave the mouse
 // be
 // -----------------------------------------------------------------------------
-bool SpritePreview::open(string_view text, size_t line, size_t offset, const Archive* archive, const wxRect& anchor)
+bool SpritePreview::open(string_view text, size_t line, size_t offset, const Archive* archive, const wxRect& anchor,
+                         size_t select_first, size_t select_last)
 {
 	auto block = stateBlock(text, line, offset);
+
+	// A selection that holds the hovered line plays what he picked rather than what the braces
+	// around it hold. An empty span leaves the block alone, so a stray selection can't blank the
+	// preview out from under the mouse
+	if (select_first <= line && line <= select_last)
+	{
+		auto span = stateRange(text, select_first, select_last, line, offset);
+		if (!span.isEmpty())
+			block = span;
+	}
+
 	if (block.isEmpty())
 	{
 		dismiss();
