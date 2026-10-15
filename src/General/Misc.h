@@ -51,6 +51,10 @@ namespace misc
 	};
 	WindowInfo getWindowInfo(string_view id);
 	void       setWindowInfo(string_view id, int width, int height, int left, int top);
+	// Whether [x,y] falls on a screen that is connected right now. A window closed while minimized
+	// reports (-32000,-32000), and a saved corner from a monitor that has since gone away both put a
+	// window where no mouse can reach it
+	bool pointOnDisplay(int x, int y);
 	void       readWindowInfo(Tokenizer& tz);
 	void       writeWindowInfo(SFile& file);
 } // namespace misc

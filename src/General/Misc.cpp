@@ -39,6 +39,7 @@
 #include "Utility/FileUtils.h"
 #include "Utility/StringUtils.h"
 #include "Utility/Tokenizer.h"
+#include <wx/display.h>
 
 using namespace slade;
 
@@ -569,6 +570,18 @@ misc::WindowInfo misc::getWindowInfo(string_view id)
 }
 
 // -----------------------------------------------------------------------------
+// Whether [x,y] is on a screen that exists right now
+// -----------------------------------------------------------------------------
+bool misc::pointOnDisplay(int x, int y)
+{
+	for (size_t i = 0; i < wxDisplay::GetCount(); i++)
+		if (wxDisplay(i).GetGeometry().Contains(x, y))
+			return true;
+
+	return false;
+}
+
+// -----------------------------------------------------------------------------
 // Sets the saved window info for [id]
 // -----------------------------------------------------------------------------
 void misc::setWindowInfo(string_view id, int width, int height, int left, int top)
@@ -584,9 +597,11 @@ void misc::setWindowInfo(string_view id, int width, int height, int left, int to
 				a.width = width;
 			if (height >= -1)
 				a.height = height;
-			if (left >= -1)
+			// The size is worth keeping even when the corner came from a minimized window or a
+			// monitor that has since been unplugged; the corner is not
+			if (left >= -1 && pointOnDisplay(left, top))
 				a.left = left;
-			if (top >= -1)
+			if (top >= -1 && pointOnDisplay(left, top))
 				a.top = top;
 			return;
 		}

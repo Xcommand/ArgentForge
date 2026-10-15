@@ -71,7 +71,12 @@ STopWindow::STopWindow(const string& title, const string& id, int x, int y, int 
 	if (!info.id.empty())
 	{
 		SetSize(info.width, info.height);
-		SetPosition(wxPoint(info.left, info.top));
+		// A corner that no connected screen holds would park the window where nothing can reach it,
+		// so it comes back centred instead and the next close writes a usable position
+		if (misc::pointOnDisplay(info.left, info.top))
+			SetPosition(wxPoint(info.left, info.top));
+		else
+			Centre();
 	}
 	else
 		misc::setWindowInfo(id_, width, height, x, y);
