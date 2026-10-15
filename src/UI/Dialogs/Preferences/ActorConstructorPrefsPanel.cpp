@@ -112,11 +112,21 @@ ActorConstructorPrefsPanel::ActorConstructorPrefsPanel(wxWindow* parent) : Prefs
 	choice_action_frame_->Set(
 		wxutil::arrayStringStd({ "TNT1 A, which draws nothing", "The frame above, same picture" }));
 
+	// The saved value goes back into these two like it does into every other control
+	// here. Left empty they don't just read wrong: pressing OK writes the default over
+	// what the settings file had, since an untouched choice reports no selection
+	int speed = 0;
+	for (int factor = std::max(1, (int)txed_sprite_preview_speed); factor > 1; factor >>= 1)
+		++speed;
+	choice_preview_speed_->SetSelection(std::min(speed, (int)choice_preview_speed_->GetCount() - 1));
+	choice_action_frame_->SetSelection(txed_action_keep_frame ? 1 : 0);
+
 	// Only worth asking about when the frame carries on from the one above, so it
 	// sits under that choice and goes grey with it
 	auto action_next = new wxBoxSizer(wxHORIZONTAL);
 	action_next->AddSpacer(ui::pad() * 4);
 	action_next->Add(cb_action_next_frame_, 0, wxALIGN_CENTER_VERTICAL);
+	cb_action_next_frame_->Enable(txed_action_keep_frame);
 	choice_action_frame_->Bind(
 		wxEVT_CHOICE,
 		[cb_action_next_frame_, choice_action_frame_](wxCommandEvent&)
