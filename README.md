@@ -106,7 +106,11 @@ and a line you didn't touch comes back byte for byte the way the mod wrote it.
 **Image editor**
 
 
-https://github.com/user-attachments/assets/f490a357-4ce6-4358-9244-cde8b9b4d829
+https://github.com/user-attachments/assets/f490a357-4ce6-4358-9244-cde8b9b4d829 
+
+
+https://github.com/user-attachments/assets/920bac56-24e0-409d-ab3a-e5c67e6cf328
+
 
 
 * A brush picker: shape or dither, size up to 99 px, feather, blend mode. And brush presets that are
