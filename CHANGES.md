@@ -3,6 +3,29 @@ Changes in this fork
 
 What we added on top of upstream SLADE, feature by feature. Kept short on purpose.
 
+New in 1.1.2
+------------
+
+This release is the sprite preview: what it plays, and how true it plays it.
+
+* Hold SHIFT and the preview plays the states you selected as one animation instead of only the
+  block under the mouse. Pick a run of state lines and the loop runs across all of them, each held
+  for the tics its own line asks for.
+* `Settings > Actor Constructor > Play across a 'goto' instead of stopping` lets that animation
+  follow the jump. A run that ends in `Goto ReadyKnife` carries on inside `ReadyKnife` rather than
+  turning over the same three frames. It follows up to sixteen jumps and stops when a chain comes
+  back to a state it already showed, so a circular script can't spin the popup forever.
+* The name under the picture says which state it belongs to, `FireExtRight: 7UNGZ0`, so the moment
+  the animation crosses into another state is visible rather than guessed. There's a setting to
+  have the bare picture name back.
+* Frame lengths are counted against the game clock now. Each frame used to start when the timer got
+  round to it, which added a few milliseconds every frame and left a long animation running
+  further and further behind the speed the script asks for.
+* Two Actor Constructor settings, `Playback speed` and `Frame to write in front of it`, came up
+  empty on opening and then wrote their default over your saved value as soon as you pressed OK.
+  Both show what's stored now.
+* From upstream SLADE: the gradient dialog has a button to swap its two colours.
+
 New in 1.1.1
 ------------
 

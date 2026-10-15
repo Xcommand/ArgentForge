@@ -85,7 +85,7 @@ bool            win_darkmode_enabled = false;
 
 // Our own line, counted from this fork's first release. SLADE's numbers are theirs
 // to use, not ours
-Version version_num{ 1, 1, 1, 0 };
+Version version_num{ 1, 1, 2, 0 };
 
 // Which SLADE we were cut from. Only the online update check can say anything about it
 Version upstream_version_num{ 3, 2, 12, 0 };

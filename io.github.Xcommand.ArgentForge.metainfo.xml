@@ -29,6 +29,18 @@
 		</p>
 	</description>
 	<releases>
+		<release date="2026-10-15" version="1.1.2">
+			<description>
+				<ul>
+					<li>Holding SHIFT over a sprite name plays the states you selected as one
+					animation, and can follow a 'goto' into the state it names.</li>
+					<li>The preview says which state each picture belongs to, and holds each frame
+					for its real length instead of drifting behind it.</li>
+					<li>Two Actor Constructor settings show the value you saved rather than coming up
+					empty and resetting it.</li>
+				</ul>
+			</description>
+		</release>
 		<release date="2026-10-15" version="1.1.1">
 			<description>
 				<ul>
