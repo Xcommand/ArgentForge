@@ -42,6 +42,8 @@
 #include "UI/WxUtils.h"
 #include "Utility/StringUtils.h"
 
+#include <map>
+
 using namespace slade;
 
 
@@ -56,6 +58,9 @@ CVAR(Int, txed_sprite_preview_speed, 1, CVar::Flag::Save)
 
 // Whether the preview plays across a 'goto' instead of stopping where the block does
 CVAR(Bool, txed_sprite_preview_goto, false, CVar::Flag::Save)
+
+// Whether the state a picture belongs to is written in front of its name
+CVAR(Bool, txed_sprite_preview_statename, true, CVar::Flag::Save)
 
 
 // -----------------------------------------------------------------------------
@@ -295,7 +300,7 @@ size_t statementEnd(const vector<Word>& words, size_t a)
 // the end of [frames], and [hit] becomes whichever of them the byte at [offset]
 // is part of
 // -----------------------------------------------------------------------------
-void readStateLine(string_view line, size_t offset, vector<PreviewFrame>& frames, int& hit)
+void readStateLine(string_view line, size_t offset, vector<PreviewFrame>& frames, int& hit, size_t line_no)
 {
 	auto words = lineWords(line);
 
@@ -347,6 +352,10 @@ void readStateLine(string_view line, size_t offset, vector<PreviewFrame>& frames
 			else
 				frames.push_back({ sprite + strutil::upper(string(1, letter)), tics });
 		}
+
+		// Which line each of these came from is what later finds the state name
+		for (size_t f = first; f < frames.size(); ++f)
+			frames[f].line = line_no;
 
 		// Anywhere on the sprite name is the first picture the line shows, and
 		// anywhere on its frames - the quotes around them included - is that letter
@@ -404,7 +413,7 @@ int braceDelta(const vector<Word>& words)
 // Reads a line above or below the one being previewed, adding what it shows to
 // [frames]. [loops] comes back true if the line was the block's own 'loop'
 // -----------------------------------------------------------------------------
-Neighbour readNeighbour(string_view line, vector<PreviewFrame>& frames, bool& loops, BlockWalk& walk)
+Neighbour readNeighbour(string_view line, size_t line_no, vector<PreviewFrame>& frames, bool& loops, BlockWalk& walk)
 {
 	auto   words  = lineWords(line);
 	int    delta  = braceDelta(words);
@@ -437,7 +446,7 @@ Neighbour readNeighbour(string_view line, vector<PreviewFrame>& frames, bool& lo
 		return Neighbour::End;
 
 	int  unused = -1;
-	readStateLine(line, SIZE_MAX, frames, unused);
+	readStateLine(line, SIZE_MAX, frames, unused, line_no);
 
 	// A line of nothing but braces is the code block one of the states' actions is
 	// written in. It belongs to the state above it, not to the end of the block
@@ -522,7 +531,7 @@ string earlierPicture(const vector<string_view>& lines, size_t line)
 
 		vector<PreviewFrame> frames;
 		int                  unused = -1;
-		readStateLine(lines[line - scan], SIZE_MAX, frames, unused);
+		readStateLine(lines[line - scan], SIZE_MAX, frames, unused, line - scan);
 
 		for (size_t f = frames.size(); f > 0; --f)
 		{
@@ -610,7 +619,7 @@ size_t jumpLanding(const vector<string_view>& lines, size_t label, int past)
 	for (size_t i = label; i < lines.size(); ++i)
 	{
 		frames.clear();
-		readStateLine(lines[i], SIZE_MAX, frames, unused);
+		readStateLine(lines[i], SIZE_MAX, frames, unused, i);
 
 		if (past < (int)frames.size())
 			return i;
@@ -686,7 +695,7 @@ void followJumps(const vector<string_view>& lines, size_t after, PreviewBlock& b
 		for (size_t i = land; i < lines.size(); ++i)
 		{
 			last = i;
-			if (readNeighbour(lines[i], block.frames, looped, walk) == Neighbour::End)
+			if (readNeighbour(lines[i], i, block.frames, looped, walk) == Neighbour::End)
 			{
 				ended = true;
 				break;
@@ -701,6 +710,59 @@ void followJumps(const vector<string_view>& lines, size_t after, PreviewBlock& b
 		if (!looped && !ended)
 			return;
 		block.loops = true;
+	}
+}
+
+// -----------------------------------------------------------------------------
+// The state a line is written under: the nearest 'Name:' above it, inside the same
+// actor. Lines of an action block are stepped over, since a 'default:' in code isn't
+// a state. A run with no label above it is the one the engine calls Spawn by default,
+// but nothing in the text says so, so it stays unnamed
+// -----------------------------------------------------------------------------
+string stateNameAbove(const vector<string_view>& lines, size_t line)
+{
+	int depth = 0;
+
+	for (size_t scan = 1; scan <= MAX_BLOCK_SCAN && scan <= line; ++scan)
+	{
+		auto words = lineWords(lines[line - scan]);
+		if (words.empty())
+			continue;
+
+		// Going up, a '}' means the code below it is inside a block
+		depth -= braceDelta(words);
+		if (depth > 0)
+			continue;
+
+		if (strutil::equalCI(words[0].text, "actor") || strutil::equalCI(words[0].text, "class"))
+			break;
+
+		if (words.size() == 2 && words[1].text == ":")
+			return string(words[0].text);
+	}
+
+	return {};
+}
+
+// -----------------------------------------------------------------------------
+// Names every picture of a run with the state it was written under. Done once the
+// whole run is together, jumps included, so a frame reached by a goto carries the
+// name of the state it landed in rather than the one the mouse was on
+// -----------------------------------------------------------------------------
+void nameStates(const vector<string_view>& lines, vector<PreviewFrame>& frames)
+{
+	std::map<size_t, string> by_line;
+
+	for (auto& frame : frames)
+	{
+		if (frame.line == SIZE_MAX)
+			continue;
+
+		auto named = by_line.find(frame.line);
+		if (named == by_line.end())
+			named = by_line.emplace(frame.line, stateNameAbove(lines, frame.line)).first;
+
+		frame.state = named->second;
 	}
 }
 
@@ -889,7 +951,7 @@ PreviewBlock stateBlock(string_view text, size_t line, size_t offset)
 
 	// The hovered line decides whether there's anything to look at at all
 	int hit = -1;
-	readStateLine(lines[line], offset, block.frames, hit);
+	readStateLine(lines[line], offset, block.frames, hit, line);
 	if (hit < 0)
 	{
 		block.frames.clear();
@@ -905,7 +967,7 @@ PreviewBlock stateBlock(string_view text, size_t line, size_t offset)
 	for (size_t scan = 1; scan <= MAX_BLOCK_SCAN && scan <= line; ++scan)
 	{
 		bool looped = false;
-		auto what   = readNeighbour(lines[line - scan], before, looped, upward);
+		auto what   = readNeighbour(lines[line - scan], line - scan, before, looped, upward);
 		if (what == Neighbour::End)
 			break;
 
@@ -923,7 +985,7 @@ PreviewBlock stateBlock(string_view text, size_t line, size_t offset)
 	{
 		bool    looped = false;
 		end_line       = line + scan;
-		if (readNeighbour(lines[end_line], block.frames, looped, downward) == Neighbour::End)
+		if (readNeighbour(lines[end_line], end_line, block.frames, looped, downward) == Neighbour::End)
 		{
 			block.loops = looped;
 			break;
@@ -938,6 +1000,7 @@ PreviewBlock stateBlock(string_view text, size_t line, size_t offset)
 	followJumps(lines, end_line, block);
 
 	resolveKeptPictures(block.frames, earlierPicture(lines, top));
+	nameStates(lines, block.frames);
 
 	return block;
 }
@@ -963,7 +1026,7 @@ PreviewBlock stateRange(string_view text, size_t first, size_t last, size_t hove
 		int  one    = -1;
 		auto before = block.frames.size();
 		// Only the line the mouse rests on gives its own offset to the reader
-		readStateLine(lines[i], i == hover ? offset : string::npos, block.frames, one);
+		readStateLine(lines[i], i == hover ? offset : string::npos, block.frames, one, i);
 
 		if (block.frames.size() > before)
 			last_frame = i;
@@ -981,6 +1044,7 @@ PreviewBlock stateRange(string_view text, size_t first, size_t last, size_t hove
 	followJumps(lines, last_frame, block);
 
 	resolveKeptPictures(block.frames, earlierPicture(lines, first));
+	nameStates(lines, block.frames);
 	block.loops = true;
 	return block;
 }
@@ -1099,7 +1163,7 @@ bool SpritePreview::open(string_view text, size_t line, size_t offset, const Arc
 	anchor_   = anchor;
 	mouse_    = wxGetMousePosition();
 	animate_  = false;
-	measure(pictures_);
+	measure();
 	place();
 	showFrame(block_.current);
 	wxPopupWindow::Show(true);
@@ -1142,6 +1206,24 @@ bool SpritePreview::animatable(int index) const
 }
 
 // -----------------------------------------------------------------------------
+// What's written under a picture: the lump it came from, with the state it belongs
+// to in front when the setting asks. That's how a run that jumped into another state
+// says so instead of just changing pictures
+// -----------------------------------------------------------------------------
+string SpritePreview::labelAt(int index) const
+{
+	if (index < 0 || index >= (int)pictures_.size())
+		return {};
+
+	string name = pictures_[index].lump;
+
+	if (txed_sprite_preview_statename && index < (int)block_.frames.size() && !block_.frames[index].state.empty())
+		return block_.frames[index].state + ": " + name;
+
+	return name;
+}
+
+// -----------------------------------------------------------------------------
 // Whether the pointer has moved away from where the preview opened
 // -----------------------------------------------------------------------------
 bool SpritePreview::mouseHasLeft() const
@@ -1169,7 +1251,7 @@ void SpritePreview::showFrame(int index)
 // widest picture or name, tall enough for the tallest picture. Frames of different
 // sizes stepping through it then leave the name underneath alone
 // -----------------------------------------------------------------------------
-void SpritePreview::measure(const vector<PreviewPicture>& pictures)
+void SpritePreview::measure()
 {
 	int name_w  = 0;
 	int name_h  = 0;
@@ -1179,17 +1261,19 @@ void SpritePreview::measure(const vector<PreviewPicture>& pictures)
 	wxMemoryDC dc;
 	dc.SetFont(GetFont());
 
-	for (auto& picture : pictures)
+	for (size_t i = 0; i < pictures_.size(); ++i)
 	{
-		if (!picture.found)
+		if (!pictures_[i].found)
 			continue;
 
-		auto size = picture.bitmap.GetSize();
+		auto size = pictures_[i].bitmap.GetSize();
 		widest    = std::max(widest, size.x);
 		tallest   = std::max(tallest, size.y);
 
+		// Measured off the same text that gets drawn, so a state name in front of
+		// the lump name can't run past the box
 		int w = 0, h = 0;
-		dc.GetTextExtent(wxString::FromUTF8(picture.lump), &w, &h);
+		dc.GetTextExtent(wxString::FromUTF8(labelAt((int)i)), &w, &h);
 		name_w = std::max(name_w, w);
 		name_h = std::max(name_h, h);
 	}
@@ -1322,7 +1406,7 @@ void SpritePreview::onPaint(wxPaintEvent& e)
 	auto   pad     = ui::scalePx(PREVIEW_PAD);
 	auto   gap     = ui::scalePx(PREVIEW_GAP);
 	auto   bmp     = picture.bitmap.GetSize();
-	auto   name    = wxString::FromUTF8(picture.lump);
+	auto   name    = wxString::FromUTF8(labelAt(shown_));
 	int    w       = 0, h = 0;
 	dc.GetTextExtent(name, &w, &h);
 

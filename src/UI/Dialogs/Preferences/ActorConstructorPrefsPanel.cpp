@@ -49,6 +49,7 @@ EXTERN_CVAR(Int, txed_sprite_preview_scale)
 EXTERN_CVAR(Bool, txed_sprite_preview_loop)
 EXTERN_CVAR(Int, txed_sprite_preview_speed)
 EXTERN_CVAR(Bool, txed_sprite_preview_goto)
+EXTERN_CVAR(Bool, txed_sprite_preview_statename)
 EXTERN_CVAR(Bool, txed_action_keep_frame)
 EXTERN_CVAR(Bool, txed_action_next_frame)
 EXTERN_CVAR(Int, txed_action_tics)
@@ -88,6 +89,10 @@ ActorConstructorPrefsPanel::ActorConstructorPrefsPanel(wxWindow* parent) : Prefs
 	cb_preview_goto_id_ = wxNewId();
 	auto cb_preview_goto_ = new wxCheckBox(this, cb_preview_goto_id_, wxS("Play across a 'goto' instead of stopping"));
 	cb_preview_goto_->SetValue((bool)txed_sprite_preview_goto);
+	cb_preview_statename_id_ = wxNewId();
+	auto cb_preview_statename_ =
+		new wxCheckBox(this, cb_preview_statename_id_, wxS("Write the state name in front of the picture name"));
+	cb_preview_statename_->SetValue((bool)txed_sprite_preview_statename);
 	choice_action_frame_id_ = wxNewId();
 	auto choice_action_frame_ = new wxChoice(this, choice_action_frame_id_, wxDefaultPosition, { ui::scalePx(240), -1 });
 	cb_action_next_frame_id_ = wxNewId();
@@ -144,6 +149,7 @@ ActorConstructorPrefsPanel::ActorConstructorPrefsPanel(wxWindow* parent) : Prefs
 			cb_preview_loop_,
 			wxutil::createLabelHBox(this, "Playback speed:", choice_preview_speed_),
 			cb_preview_goto_,
+			cb_preview_statename_,
 			new wxStaticText(this, -1, wxS("State action the constructor adds for you")),
 			wxutil::createLabelHBox(this, "Frame to write in front of it:", choice_action_frame_),
 			action_next,
@@ -189,6 +195,12 @@ void ActorConstructorPrefsPanel::applyPreferences()
 		auto* cb = wxDynamicCast(FindWindow(cb_preview_goto_id_), wxCheckBox);
 		if (cb)
 			txed_sprite_preview_goto = cb->GetValue();
+	}
+	if (cb_preview_statename_id_ >= 0)
+	{
+		auto* cb = wxDynamicCast(FindWindow(cb_preview_statename_id_), wxCheckBox);
+		if (cb)
+			txed_sprite_preview_statename = cb->GetValue();
 	}
 	if (choice_action_frame_id_ >= 0)
 	{

@@ -44,6 +44,7 @@ private:
 	int cb_preview_loop_id_      = -1;
 	int choice_preview_speed_id_ = -1;
 	int cb_preview_goto_id_      = -1;
+	int cb_preview_statename_id_ = -1;
 	int choice_action_frame_id_  = -1;
 	int cb_action_next_frame_id_ = -1;
 	int spin_action_tics_id_     = -1;

@@ -15,6 +15,11 @@ struct PreviewFrame
 {
 	string name;
 	int    tics = 1;
+	// The state this picture was written under, 'FireExtRight', once the run has been
+	// read whole
+	string state;
+	// Which line of the text asked for it, so the state above it can be found
+	size_t line = SIZE_MAX;
 };
 
 // What a sprite lookup turned up: the lump it came from, drawn at the size the
@@ -84,12 +89,15 @@ private:
 	// Whether the animation stops on the frame at [index] to show it
 	bool animatable(int index) const;
 	// The one box size the whole block gets drawn inside, and where the box goes
-	void measure(const vector<PreviewPicture>& pictures);
+	void measure();
 	void place();
 	// Whether there's a picture to draw at all: the window can be asked to paint
 	// before anything has been looked up, and between one block's pictures and
 	// the next's
 	bool havePicture() const { return shown_ >= 0 && shown_ < (int)pictures_.size(); }
+	// What's written under the picture at [index]: its lump name, with the state it
+	// belongs to in front when the settings ask for that
+	string labelAt(int index) const;
 
 	void onPaint(wxPaintEvent& e);
 	void onEraseBackground(wxEraseEvent& e);
