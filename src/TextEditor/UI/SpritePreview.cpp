@@ -1089,7 +1089,13 @@ void SpritePreview::onTick(wxTimerEvent& e)
 	// stretches that, because a fast animation is the one thing too quick to make out
 	// when the mouse is what's holding you there
 	auto hold = (long)(tics < 0 ? 1 : tics) * 1000 / TICS_PER_SECOND * wxMax(1, (int)txed_sprite_preview_speed);
-	if (app::runTimer() - frame_start_ < hold)
+
+	// The next frame is due a [hold] after the one before it was DUE, not after the
+	// tick that happened to get round to showing it. Counting from the tick adds
+	// whatever the timer was late by to every frame of the block, so a whole animation
+	// arrives progressively behind the game time it's supposed to read as
+	long due = frame_start_ + hold;
+	if (app::runTimer() < due)
 		return;
 
 	// A frame there's no picture for is stepped over rather than shown blank
@@ -1098,9 +1104,15 @@ void SpritePreview::onTick(wxTimerEvent& e)
 		++next;
 
 	if (next < (int)pictures_.size())
+	{
 		showFrame(next);
+		frame_start_ = due;
+	}
 	else if (block_.loops || txed_sprite_preview_loop)
+	{
 		showFrame(firstPicture());
+		frame_start_ = due;
+	}
 }
 
 // -----------------------------------------------------------------------------
