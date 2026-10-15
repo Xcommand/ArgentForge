@@ -50,6 +50,27 @@ struct GotoRepair
 	size_t skipped   = 0; // jumps left alone: their label or their target state is gone
 };
 
+// One number that needs writing, where it sits in [text] and what it should say
+struct GotoRewrite
+{
+	size_t byte;
+	size_t len;
+	string value;
+};
+
+// The numbers that need writing, plus the jumps that couldn't be fixed because the edit took
+// their label or their target away
+struct GotoRewrites
+{
+	vector<GotoRewrite> edits;
+	size_t              skipped = 0;
+};
+
+// The numbers in [text] that would have to change for every jump to land on the state its twin
+// in [was] landed on. Handed out rather than applied, so a caller that is editing a live text
+// buffer can make the insert and these writes one undo step
+GotoRewrites gotoRewrites(string_view text, string_view was);
+
 // Rewrites the goto numbers in [text] so every jump lands on the state it landed on in [was],
 // the same text before the edit being compensated. Nothing else in [text] moves
 GotoRepair renumberGotos(string& text, string_view was);

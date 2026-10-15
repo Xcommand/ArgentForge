@@ -598,22 +598,14 @@ vector<int> alignStates(const vector<StateSlot>& was, const vector<StateSlot>& n
 // landed on. A jump whose label or whose target the edit removed is left alone and
 // counted: the file has to say so, a number can't bring a state back
 // -----------------------------------------------------------------------------
-GotoRepair renumberGotos(string& text, string_view was)
+GotoRewrites gotoRewrites(string_view text, string_view was)
 {
-	GotoRepair out;
+	GotoRewrites out;
 
 	auto before = readStateActors(was);
 	auto after  = readStateActors(text);
 	if (before.empty() || after.empty())
 		return out;
-
-	struct Rewrite
-	{
-		size_t byte;
-		size_t len;
-		string value;
-	};
-	vector<Rewrite> rewrites;
 
 	for (const auto& old_actor : before)
 	{
@@ -634,8 +626,8 @@ GotoRepair renumberGotos(string& text, string_view was)
 			if (g.from < 0 || g.from >= (int)fwd.size() || fwd[g.from] < 0)
 				continue;
 
-			int jb = fwd[g.base], jt = fwd[g.target];
-			if (jb < 0 || jt < 0)
+			int jt = fwd[g.target];
+			if (jt < 0)
 			{
 				out.skipped++;
 				continue;
@@ -655,24 +647,35 @@ GotoRepair renumberGotos(string& text, string_view was)
 				}
 				int want = std::max(0, jt - h.base);
 				if (h.offset != want && h.number != string::npos)
-				{
-					rewrites.push_back({ h.number, h.digits, std::to_string(want) });
-					out.rewritten++;
-				}
+					out.edits.push_back({ h.number, h.digits, std::to_string(want) });
 				break;
 			}
 		}
 	}
 
-	// Back to front: writing one number can change how many bytes it holds, and the
-	// ones after it were found by their position in the text as it was
-	std::sort(rewrites.begin(), rewrites.end(), [](const Rewrite& a, const Rewrite& b)
+	// Back to front: writing one number can change how many bytes it holds, and the ones
+	// after it were found by their position in the text as it was
+	std::sort(out.edits.begin(), out.edits.end(), [](const GotoRewrite& a, const GotoRewrite& b)
 	{
 		return a.byte > b.byte;
 	});
-	for (const auto& r : rewrites)
+
+	return out;
+}
+
+// -----------------------------------------------------------------------------
+// The same, applied to [text] where it's just a string rather than a live buffer
+// -----------------------------------------------------------------------------
+GotoRepair renumberGotos(string& text, string_view was)
+{
+	GotoRepair out;
+	auto       fixes = gotoRewrites(text, was);
+
+	for (const auto& r : fixes.edits)
 		text.replace(r.byte, r.len, r.value);
 
+	out.rewritten = fixes.edits.size();
+	out.skipped   = fixes.skipped;
 	return out;
 }
 } // namespace slade

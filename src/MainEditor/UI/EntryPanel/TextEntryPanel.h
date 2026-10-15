@@ -47,6 +47,7 @@ private:
 
 	// Opens the actor constructor for the definition the cursor is on
 	void openActorConstructor();
+	void recalculateGotoOffsets();
 
 	// Opens the menu constructor over the menus in this text
 	void openMenuConstructor();

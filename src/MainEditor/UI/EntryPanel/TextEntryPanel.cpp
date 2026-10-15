@@ -43,6 +43,7 @@
 #include "TextEditor/UI/FindReplacePanel.h"
 #include "TextEditor/UI/TextEditorCtrl.h"
 #include "UI/Dialogs/ActorConstructor/ActorConstructor.h"
+#include "UI/Dialogs/ActorConstructor/StateGotos.h"
 #include "UI/Dialogs/ActorConstructor/ActorConstructorDialog.h"
 #include "UI/Dialogs/ActorConstructor/ActorVocabulary.h"
 #include "UI/Dialogs/MenuConstructor/MenuConstructorDialog.h"
@@ -174,6 +175,7 @@ TextEntryPanel::TextEntryPanel(wxWindow* parent) : EntryPanel(parent, "text")
 	SAction::fromId("ptxt_jump_to_line")->addToMenu(menu_custom_);
 	SAction::fromId("ptxt_actorconstructor")->addToMenu(menu_custom_);
 	SAction::fromId("ptxt_menuconstructor")->addToMenu(menu_custom_);
+	SAction::fromId("ptxt_recalc_gotos")->addToMenu(menu_custom_);
 
 	// 'Code Folding' submenu
 	auto menu_fold = new wxMenu();
@@ -410,6 +412,10 @@ bool TextEntryPanel::handleEntryPanelAction(string_view id)
 	// Menu Constructor
 	else if (id == "ptxt_menuconstructor")
 		openMenuConstructor();
+
+	// Recalculate goto offsets
+	else if (id == "ptxt_recalc_gotos")
+		recalculateGotoOffsets();
 
 	// Find+Replace
 	else if (id == "ptxt_find_replace")
@@ -1342,14 +1348,35 @@ bool TextEntryPanel::insertActorAction(string_view action, string_view args)
 		return false;
 	}
 
-	// One undo step, so the call goes away whole
+	// A state line put in here moves every jump that counts over it, so those numbers go
+	// in the same undo step as the line and one Ctrl+Z takes both back
+	string updated = text;
+	updated.insert(offset, insert);
+	auto fixes = gotoRewrites(updated, text);
+
 	text_area_->BeginUndoAction();
 	text_area_->SetTargetStart((long)offset);
 	text_area_->SetTargetEnd((long)offset);
 	text_area_->ReplaceTarget(wxutil::strFromView(insert));
+
+	// Back to front, and after the line itself: the numbers were found in the text with
+	// the line already in it, and a write can change how many bytes its number holds
+	for (const auto& e : fixes.edits)
+	{
+		text_area_->SetTargetStart((long)e.byte);
+		text_area_->SetTargetEnd((long)(e.byte + e.len));
+		text_area_->ReplaceTarget(wxutil::strFromView(e.value));
+	}
 	text_area_->EndUndoAction();
 
 	setModified();
+
+	// Any number rewritten above the new line has shifted where the call now sits
+	size_t shift = 0;
+	for (const auto& e : fixes.edits)
+		if (e.byte < offset)
+			shift += e.value.size() - e.len;
+	offset += shift;
 
 	// Show where it landed, with the stand-in parameter names picked out so the
 	// next thing typed replaces them
@@ -1359,7 +1386,7 @@ bool TextEntryPanel::insertActorAction(string_view action, string_view args)
 	auto  select = to != string::npos && from != string::npos && to > from + 1;
 	text_area_->SetSelection(
 		(long)(select ? offset + from + 1 : after), (long)(select ? offset + to : after));
-	centreLine(lineAtOffset(text, offset));
+	centreLine(lineAtOffset(updated, offset));
 
 	// The window is still holding the actor as it was before the line appeared, so
 	// read it back: applying a flag after this would write the older shape over the
@@ -1373,6 +1400,49 @@ bool TextEntryPanel::insertActorAction(string_view action, string_view args)
 	}
 
 	return true;
+}
+
+// -----------------------------------------------------------------------------
+// Puts the goto numbers right for the text as it stands, against the bytes the entry
+// was last read or saved with. The constructor fixes its own numbers as it goes; this
+// is for states added and taken away by hand
+// -----------------------------------------------------------------------------
+void TextEntryPanel::recalculateGotoOffsets()
+{
+	auto entry = entry_.lock();
+	if (!entry)
+		return;
+
+	MemChunk current;
+	text_area_->getRawText(current);
+	string now((const char*)current.data(), current.size());
+
+	auto&  saved = entry->data();
+	string was((const char*)saved.data(), saved.size());
+
+	auto fixes = gotoRewrites(now, was);
+	if (fixes.edits.empty())
+	{
+		log::info(1, "Recalculate goto offsets: every jump already lands where it did");
+		if (fixes.skipped)
+			log::info(1, fmt::format("{} jump(s) point at a state the edit removed and can't be counted to", fixes.skipped));
+		return;
+	}
+
+	// Back to front, since a number written with more digits moves the ones after it
+	text_area_->BeginUndoAction();
+	for (const auto& e : fixes.edits)
+	{
+		text_area_->SetTargetStart((long)e.byte);
+		text_area_->SetTargetEnd((long)(e.byte + e.len));
+		text_area_->ReplaceTarget(wxutil::strFromView(e.value));
+	}
+	text_area_->EndUndoAction();
+	setModified();
+
+	log::info(1, fmt::format("Recalculate goto offsets: {} number(s) rewritten", fixes.edits.size()));
+	if (fixes.skipped)
+		log::info(1, fmt::format("{} jump(s) point at a state the edit removed and can't be counted to", fixes.skipped));
 }
 
 // -----------------------------------------------------------------------------
