@@ -1117,6 +1117,30 @@ void TextEntryPanel::selectMenuLine(size_t offset)
 // Points the menu constructor at the block the caret has moved into while he types
 // in the editor
 // -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// Moves the editor to a string the language window picked, without taking the keyboard
+// off that window
+// -----------------------------------------------------------------------------
+void TextEntryPanel::selectLanguageString(size_t offset)
+{
+	if (!language_constructor_)
+		return;
+
+	text_area_->SetSelection(offset, offset);
+	centreLine(lineAtOffset(language_constructor_->sourceText(), offset));
+}
+
+// -----------------------------------------------------------------------------
+// Points the language window at the definition the caret has moved into
+// -----------------------------------------------------------------------------
+void TextEntryPanel::followLanguageCaret()
+{
+	if (!language_constructor_ || !language_constructor_->IsShown())
+		return;
+
+	language_constructor_->followCaret((size_t)text_area_->GetCurrentPos());
+}
+
 void TextEntryPanel::followMenuCaret()
 {
 	if (!menu_constructor_ || !menu_constructor_->IsShown())
@@ -1463,6 +1487,11 @@ void TextEntryPanel::openLanguageConstructor()
 				if (e.GetActive())
 					resyncLanguageConstructor();
 				e.Skip();
+			});
+		language_constructor_->setSelectFunction(
+			[this](size_t offset)
+			{
+				selectLanguageString(offset);
 			});
 	}
 
@@ -1817,6 +1846,7 @@ void TextEntryPanel::onUpdateUI(wxStyledTextEvent& e)
 	{
 		followEditorCaret();
 		followMenuCaret();
+		followLanguageCaret();
 	}
 
 	e.Skip();

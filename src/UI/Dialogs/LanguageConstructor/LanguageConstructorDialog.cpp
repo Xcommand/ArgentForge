@@ -28,13 +28,53 @@ namespace
 {
 // The first column is the key, so the language columns start after it
 const int key_column = 0;
+
+// A copy for comparing: the table is ordered the way the engine reads names, without
+// regard to case, so 'TXT_door' and 'TXT_DOOR' sit together
+string fold(string_view text)
+{
+	string out(text);
+	for (auto& c : out)
+		if (c >= 'A' && c <= 'Z')
+			c += 32;
+	return out;
+}
+
+// -----------------------------------------------------------------------------
+// Re-selecting a row hands the keyboard to the list, which is the last thing a window
+// that follows another one should do. This puts back whatever had it afterwards
+// -----------------------------------------------------------------------------
+class KeepFocus
+{
+public:
+	KeepFocus() :
+		had_(wxWindow::FindFocus()) {}
+
+	~KeepFocus()
+	{
+		// Nothing here destroys a window, so the pointer captured on the way in is
+		// still the control that had the keys
+		if (had_ && wxWindow::FindFocus() != had_)
+			had_->SetFocus();
+	}
+
+private:
+	wxWindow* had_;
+};
 } // namespace
 
 
 // -----------------------------------------------------------------------------
 //
 // -----------------------------------------------------------------------------
-LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) : wxDialog(parent, wxID_ANY, wxS("Language Constructor"))
+LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
+	wxDialog(
+		parent,
+		wxID_ANY,
+		wxS("Language Constructor"),
+		wxDefaultPosition,
+		wxDefaultSize,
+		wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER)
 {
 	auto sizer = new wxBoxSizer(wxVERTICAL);
 
@@ -43,13 +83,16 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) : wxDialo
 
 	list_ = new wxListCtrl(this, wxID_ANY, wxDefaultPosition, { ui::scalePx(760), ui::scalePx(400) }, wxLC_REPORT | wxLC_SINGLE_SEL);
 
-	text_key_   = new wxTextCtrl(this, wxID_ANY, "", wxDefaultPosition, { ui::scalePx(220), -1 });
-	text_value_ = new wxTextCtrl(this, wxID_ANY, "", wxDefaultPosition, { ui::scalePx(380), -1 });
+	text_key_   = new wxTextCtrl(this, wxID_ANY, "", wxDefaultPosition, { ui::scalePx(220), -1 }, wxTE_PROCESS_ENTER);
+	text_value_ =
+		new wxTextCtrl(this, wxID_ANY, "", wxDefaultPosition, { ui::scalePx(380), -1 }, wxTE_PROCESS_ENTER);
 	btn_add_    = new wxButton(this, wxID_ANY, wxS("Add"));
 
 	auto top = new wxBoxSizer(wxHORIZONTAL);
 	top->Add(text_filter_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, ui::pad());
 	top->Add(counts_, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, ui::padLarge());
+
+	note_ = new wxStaticText(this, wxID_ANY, "");
 
 	auto bottom = new wxBoxSizer(wxHORIZONTAL);
 	bottom->Add(new wxStaticText(this, wxID_ANY, wxS("New string")), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, ui::pad());
@@ -59,19 +102,27 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) : wxDialo
 
 	sizer->Add(top, 0, wxEXPAND | wxALL, ui::padLarge());
 	sizer->Add(list_, 1, wxEXPAND | wxLEFT | wxRIGHT, ui::padLarge());
+	sizer->Add(note_, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, ui::pad());
 	sizer->Add(bottom, 0, wxEXPAND | wxALL, ui::padLarge());
 
 	SetSizer(sizer);
 	SetMinSize({ ui::scalePx(620), ui::scalePx(360) });
+	SetSize({ ui::scalePx(900), ui::scalePx(560) });
 
 	text_filter_->Bind(wxEVT_TEXT, &LanguageConstructorDialog::onFilterChanged, this);
 	list_->Bind(wxEVT_LIST_ITEM_ACTIVATED, &LanguageConstructorDialog::onItemActivated, this);
 	list_->Bind(wxEVT_LIST_ITEM_SELECTED, &LanguageConstructorDialog::onItemSelected, this);
+	list_->Bind(wxEVT_LIST_COL_CLICK, &LanguageConstructorDialog::onColClicked, this);
 	btn_add_->Bind(wxEVT_BUTTON, &LanguageConstructorDialog::onBtnAdd, this);
+
+	// Enter in either field is the same verb as the button, not a third thing
+	text_key_->Bind(wxEVT_TEXT_ENTER, [this](wxCommandEvent&)
+	{ addFromFields(); });
+	text_value_->Bind(wxEVT_TEXT_ENTER, [this](wxCommandEvent&)
+	{ addFromFields(); });
 	Bind(wxEVT_CLOSE_WINDOW, &LanguageConstructorDialog::onCloseWindow, this);
 
 	restoreGeometry();
-	Fit();
 }
 
 // -----------------------------------------------------------------------------
@@ -106,6 +157,11 @@ void LanguageConstructorDialog::buildRows()
 {
 	updating_ = true;
 
+	// A refill must not move the keyboard or drop the row he is working on: an edit, a
+	// keystroke in the filter and a sort all come through here
+	KeepFocus keep;
+	string  selected = string(keyAt(list_->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED)));
+
 	string filter = text_filter_ ? text_filter_->GetValue().utf8_str() : "";
 
 	by_key_.clear();
@@ -114,12 +170,11 @@ void LanguageConstructorDialog::buildRows()
 	{
 		if (!entry.parsed)
 			continue;
+
+		// The last write of a label wins, which is what the engine does with it too
 		for (const auto& lang : (entry.langs.empty() ? vector<string>{ "" } : entry.langs))
-		{
-			auto& slot = by_key_[entry.label][lang];
-			if (!slot)
-				slot = &entry;
-		}
+			by_key_[entry.label][lang] = &entry;
+
 		if (std::find(keys_.begin(), keys_.end(), entry.label) == keys_.end())
 			keys_.push_back(entry.label);
 	}
@@ -131,12 +186,36 @@ void LanguageConstructorDialog::buildRows()
 		{
 			bool hit = strutil::containsCI(keys_[i], filter);
 			for (const auto& lang : languages_)
-				if (auto* e = source_.entry(keys_[i], lang))
-					hit |= strutil::containsCI(e->text(), filter);
+				if (auto* entry = cell(keys_[i], lang))
+					hit |= strutil::containsCI(entry->text(), filter);
 			if (!hit)
 				continue;
 		}
 		shown_.push_back((long)i);
+	}
+
+	// The order he picked by clicking a header. A stable sort keeps the file's own order
+	// underneath it, so rows with the same text don't swap between one refill and the next
+	if (!shown_.empty() && sort_column_ < (long)languages_.size() + 1)
+	{
+		string language = sort_column_ > key_column ? languages_[std::min((size_t)sort_column_ - 1, languages_.size() - 1)] : string();
+		std::stable_sort(shown_.begin(), shown_.end(), [&](long left, long right)
+		{
+			string a, b;
+			if (sort_column_ == key_column)
+			{
+				a = fold(keys_[left]);
+				b = fold(keys_[right]);
+			}
+			else
+			{
+				auto* ea = cell(keys_[left], language);
+				auto* eb = cell(keys_[right], language);
+				a = fold(ea ? ea->text() : string());
+				b = fold(eb ? eb->text() : string());
+			}
+			return sort_up_ ? a < b : a > b;
+		});
 	}
 
 	list_->DeleteAllItems();
@@ -146,8 +225,20 @@ void LanguageConstructorDialog::buildRows()
 		list_->InsertItem((long)row, wxString::FromUTF8(key));
 		for (size_t c = 0; c < languages_.size(); ++c)
 		{
-			auto* entry = source_.entry(key, languages_[c]);
+			auto* entry = cell(key, languages_[c]);
 			list_->SetItem((long)row, (int)c + 1, entry ? wxString::FromUTF8(entry->text()) : wxEmptyString);
+		}
+	}
+
+	if (!selected.empty())
+	{
+		for (size_t row = 0; row < shown_.size(); ++row)
+		{
+			if (keys_[shown_[row]] != selected)
+				continue;
+			list_->SetItemState((long)row, wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED, wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED);
+			list_->EnsureVisible((long)row);
+			break;
 		}
 	}
 
@@ -158,7 +249,13 @@ void LanguageConstructorDialog::buildRows()
 			(int)languages_.size(),
 			languages_.size() == 1 ? "" : "s"));
 	if (btn_add_)
-		btn_add_->SetLabel(languages_.empty() ? wxString::FromUTF8("Add") : wxString::FromUTF8("Add to " + languages_[0]));
+	{
+		// The column he was looking at keeps its place across a refill, so a string added
+		// after an edit still goes where he meant it
+		if (add_language_.empty() || std::find(languages_.begin(), languages_.end(), add_language_) == languages_.end())
+			add_language_ = languages_.empty() ? "default" : languages_[0];
+		btn_add_->SetLabel(wxString::FromUTF8("Add to " + add_language_));
+	}
 
 	updating_ = false;
 }
@@ -170,12 +267,22 @@ string_view LanguageConstructorDialog::keyAt(long row) const
 	return keys_[shown_[row]];
 }
 
+const LanguageEntry* LanguageConstructorDialog::cell(string_view key, string_view language) const
+{
+	auto found = by_key_.find(string(key));
+	if (found == by_key_.end())
+		return nullptr;
+
+	auto lang = found->second.find(string(language));
+	return lang == found->second.end() ? nullptr : lang->second;
+}
+
 const LanguageEntry* LanguageConstructorDialog::cellEntry(long row, long column) const
 {
 	auto key = keyAt(row);
 	if (key.empty() || column <= key_column || column > (long)languages_.size())
 		return nullptr;
-	return source_.entry(key, languages_[column - 1]);
+	return cell(key, languages_[column - 1]);
 }
 
 string LanguageConstructorDialog::selectedLanguage(long column) const
@@ -183,6 +290,35 @@ string LanguageConstructorDialog::selectedLanguage(long column) const
 	if (column <= key_column || column > (long)languages_.size())
 		return languages_.empty() ? "" : languages_[0];
 	return languages_[column - 1];
+}
+
+// -----------------------------------------------------------------------------
+// Writes the reason something didn't happen under the table, where it stays while he
+// reads it. Anything that quietly does nothing gets guessed at for an evening
+// -----------------------------------------------------------------------------
+void LanguageConstructorDialog::say(string_view what)
+{
+	if (note_)
+		note_->SetLabel(wxString::FromUTF8(what));
+}
+
+// -----------------------------------------------------------------------------
+// Orders the rows by a header he clicked, and flips back on the second click
+// -----------------------------------------------------------------------------
+void LanguageConstructorDialog::sortByColumn(long column)
+{
+	if (column < 0 || column > (long)languages_.size())
+		return;
+
+	if (sort_column_ == column)
+		sort_up_ = !sort_up_;
+	else
+	{
+		sort_column_ = column;
+		sort_up_     = true;
+	}
+
+	buildRows();
 }
 
 // -----------------------------------------------------------------------------
@@ -263,10 +399,17 @@ void LanguageConstructorDialog::endCellEdit(bool keep)
 		entry->setText(value);
 	}
 	else if (!value.empty())
-		source_.addString(key, language, value);
+	{
+		if (!source_.addString(key, language, value))
+		{
+			say("That key is already defined under " + language + ", so nothing was added");
+			return;
+		}
+	}
 	else
 		return;
 
+	say("");
 	applyChange();
 }
 
@@ -279,14 +422,21 @@ void LanguageConstructorDialog::addFromFields()
 	string value = text_value_->GetValue().utf8_str();
 
 	if (key.empty())
+	{
+		say("Type the key first - the table adds a string by name");
 		return;
+	}
 
-	string language = languages_.empty() ? "" : languages_[0];
-	if (!source_.addString(key, language, value.empty() ? " " : value))
+	string language = add_language_.empty() ? (languages_.empty() ? "default" : languages_[0]) : add_language_;
+	if (!source_.addString(key, language, value))
+	{
+		say("'" + key + "' is already defined under " + language + ", so nothing was added");
 		return;
+	}
 
 	text_key_->Clear();
 	text_value_->Clear();
+	say("");
 	applyChange();
 }
 
@@ -335,15 +485,72 @@ void LanguageConstructorDialog::onItemActivated(wxListEvent& e)
 
 void LanguageConstructorDialog::onItemSelected(wxListEvent& e)
 {
+	if (updating_)
+		return;
+
 	// The button names the language of the column he last looked at, which is the one
 	// an added string most likely belongs to
-	if (btn_add_ && !languages_.empty())
-		btn_add_->SetLabel(wxString::FromUTF8("Add to " + selectedLanguage(e.GetColumn())));
+	if (!languages_.empty())
+	{
+		add_language_ = selectedLanguage(e.GetColumn());
+		if (btn_add_)
+			btn_add_->SetLabel(wxString::FromUTF8("Add to " + add_language_));
+	}
+
+	auto key = keyAt(e.GetIndex());
+	if (key.empty() || !select_)
+		return;
+
+	size_t offset = 0;
+	if (stringOffset(key, selectedLanguage(e.GetColumn()), offset))
+		select_(offset);
+}
+
+// -----------------------------------------------------------------------------
+// Selects the row that holds the definition the editor's caret is in. The keyboard
+// stays where it was: this window follows the text, it never pulls the text along
+// -----------------------------------------------------------------------------
+void LanguageConstructorDialog::followCaret(size_t offset)
+{
+	if (offset == string::npos)
+		return;
+
+	const LanguageEntry* nearest = nullptr;
+	for (const auto& entry : source_.entries())
+	{
+		if (!entry.parsed)
+			continue;
+		if (entry.begin > offset)
+			break;
+		if (!nearest || entry.begin >= nearest->begin)
+			nearest = &entry;
+	}
+
+	if (!nearest)
+		return;
+
+	for (size_t row = 0; row < shown_.size(); ++row)
+	{
+		if (keys_[shown_[row]] != nearest->label)
+			continue;
+
+		updating_ = true;
+		KeepFocus   keep;
+		list_->SetItemState((long)row, wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED, wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED);
+		list_->EnsureVisible((long)row);
+		updating_ = false;
+		return;
+	}
 }
 
 void LanguageConstructorDialog::onBtnAdd(wxCommandEvent& e)
 {
 	addFromFields();
+}
+
+void LanguageConstructorDialog::onColClicked(wxListEvent& e)
+{
+	sortByColumn(e.GetColumn());
 }
 
 void LanguageConstructorDialog::onCloseWindow(wxCloseEvent& e)
@@ -367,6 +574,9 @@ void LanguageConstructorDialog::restoreGeometry()
 	if (saved.id.empty())
 		return;
 
+	// The size he dragged it to is part of what's remembered, so nothing here fits the
+	// window down to its contents afterwards
+
 	wxPoint topleft{ saved.left, saved.top };
 	for (size_t i = 0; i < wxDisplay::GetCount(); ++i)
 	{
@@ -377,6 +587,10 @@ void LanguageConstructorDialog::restoreGeometry()
 			return;
 		}
 	}
+
+	// The corner is in the settings but on no screen: come back where it can be seen, so
+	// a stale entry heals rather than staying broken
+	Centre();
 }
 
 void LanguageConstructorDialog::saveGeometry()

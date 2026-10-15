@@ -73,6 +73,11 @@ private:
 	bool applyLanguageText(string_view text);
 	void resyncLanguageConstructor();
 
+	// Moves the editor to a string the window picked, and points the window at the
+	// definition the caret has moved into
+	void selectLanguageString(size_t offset);
+	void followLanguageCaret();
+
 	// Whether this lump is one the engine reads as LANGUAGE, whatever it's named on disk
 	bool isLanguageLump() const;
 

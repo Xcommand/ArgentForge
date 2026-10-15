@@ -180,7 +180,13 @@ string LanguageEntry::text() const
 
 bool LanguageEntry::setText(string_view text)
 {
-	if (!parsed || value_end < value_begin || value_end > end || value_begin < begin)
+	if (!parsed || value_end < value_begin || value_begin < begin)
+		return false;
+
+	// For a string the file doesn't have yet, the entry covers no bytes and [raw] is the
+	// whole line that will be inserted, so the value's place is measured inside it
+	size_t limit = begin == end ? raw.size() : end - begin;
+	if (value_end - begin > limit)
 		return false;
 
 	// The value's place inside the statement, taken out and written back. The bytes the
@@ -312,16 +318,30 @@ bool LanguageSource::load(string_view text)
 
 string LanguageSource::serialize() const
 {
-	string out = text_;
-
-	// Back to front, so a statement that came back longer or shorter can't move the
-	// bytes of the ones after it
-	for (auto it = entries_.rbegin(); it != entries_.rend(); ++it)
+	// What changed, and where it goes in the text as it was read. An added string is
+	// appended to the list but belongs in the middle of the file, so the list has to be
+	// ordered before it's written back: replacing from the end only works if you really
+	// do come from the end. Two additions at the same place keep the order they were
+	// asked for, which means writing the later one first
+	vector<std::pair<size_t, const LanguageEntry*>> changed;
+	for (size_t i = 0; i < entries_.size(); ++i)
 	{
-		if (!it->parsed || it->raw == string(text_.substr(it->begin, it->end - it->begin)))
+		const auto& entry = entries_[i];
+		if (!entry.parsed || entry.raw == string(text_.substr(entry.begin, entry.end - entry.begin)))
 			continue;
-		out.replace(it->begin, it->end - it->begin, it->raw);
+		changed.push_back({ i, &entry });
 	}
+
+	std::sort(changed.begin(), changed.end(), [](const auto& a, const auto& b)
+	{
+		if (a.second->begin != b.second->begin)
+			return a.second->begin > b.second->begin;
+		return a.first > b.first;
+	});
+
+	string out = text_;
+	for (const auto& change : changed)
+		out.replace(change.second->begin, change.second->end - change.second->begin, change.second->raw);
 
 	return out;
 }
@@ -382,8 +402,10 @@ bool LanguageSource::setString(string_view label, string_view language, string_v
 
 // -----------------------------------------------------------------------------
 // Adds a line to the end of the block that declares [language], written with that
-// block's own indentation and line ending. It comes in as an entry that covers no
-// bytes of the original text, which is what makes it an insertion at that place
+// block's own indentation and line ending. The new text is carried as a statement that
+// covers no bytes of what was read, so the text the lump came in as stays untouched:
+// the window compares its copy with the editor's, and a reader that had already eaten
+// its own addition would look like somebody else's edit
 // -----------------------------------------------------------------------------
 bool LanguageSource::addString(string_view label, string_view language, string_view text)
 {
@@ -401,32 +423,29 @@ bool LanguageSource::addString(string_view label, string_view language, string_v
 		eol    = spot->second.eol;
 		at     = spot->second.end;
 	}
-	else
-	{
-		// A language the lump doesn't open a block for yet: its own header goes in first
-		eol    = eolAt(text_, at);
-		string header = eol + "[" + string(language) + "]" + eol;
-		at = text_.size();
-		text_.insert(at, header);
-		shiftEntries(at, header.size());
-	}
 
-	string line   = eol + indent + string(label) + " = " + quoted(text) + ";";
-	text_.insert(at, line);
-	shiftEntries(at, line.size());
+	// A language the lump doesn't open a block for yet gets its header with the line
+	string line = eol + indent + string(label) + " = " + quoted(text) + ";";
+	if (spot == spots_.end())
+		line = eol + "[" + string(language) + "]" + line;
 
 	LanguageEntry add;
 	add.label       = string(label);
 	add.langs       = language.empty() ? vector<string>{} : vector<string>{ string(language) };
 	add.parsed      = true;
-	add.begin       = at + eol.size() + indent.size();
-	add.end         = at + line.size();
-	add.value_begin = add.begin + add.label.size() + 3;
-	add.value_end   = add.end - 1;
-	add.raw         = string(text_.substr(add.begin, add.end - add.begin));
+	add.begin       = at;
+	add.end         = at;
+	add.value_begin = at + (spot == spots_.end() ? eol.size() + 2 + language.size() + 1 : 0) + eol.size() + indent.size()
+	              + label.size() + 3;
+	add.value_end = at + line.size() - 1;
+	add.raw       = line;
+
 	entries_.push_back(std::move(add));
 
-	spots_[string(language)].end = at + line.size();
+	// The spot stays where the file ends that block, in the file's own coordinates: the
+	// next addition goes to the same place and the writer keeps them in the order asked
+	if (spot == spots_.end())
+		spots_[string(language)].end = at;
 	return true;
 }
 

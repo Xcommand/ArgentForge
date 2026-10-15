@@ -1,5 +1,7 @@
 #pragma once
 
+#include <deque>
+
 namespace slade
 {
 // One string a LANGUAGE lump defines. The engine reads these as
@@ -56,8 +58,11 @@ public:
 	string serialize() const;
 	bool   modified() const;
 
-	const vector<LanguageEntry>& entries() const { return entries_; }
-	vector<LanguageEntry>&       entries() { return entries_; }
+	// A deque, because adding a string must not move the ones already handed out: a
+	// caller holding a definition to copy its text across languages would otherwise be
+	// reading freed memory
+	const std::deque<LanguageEntry>& entries() const { return entries_; }
+	std::deque<LanguageEntry>&       entries() { return entries_; }
 
 	// The text as it was read, so a caller can point the editor at the bytes a string
 	// sits on
@@ -106,7 +111,7 @@ private:
 	};
 
 	string                  text_;
-	vector<LanguageEntry>   entries_;
+	std::deque<LanguageEntry> entries_;
 	std::map<string, BlockSpot> spots_;
 };
 } // namespace slade

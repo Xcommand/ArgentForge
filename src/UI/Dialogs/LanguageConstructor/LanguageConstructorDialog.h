@@ -44,6 +44,14 @@ public:
 	// Whether the lump turned out to hold any strings at all
 	bool hasStrings() const { return !source_.entries().empty(); }
 
+	// Shows the row that holds the definition the caret has landed on. The keyboard stays
+	// where it was: the window follows the editor, never the other way round
+	void followCaret(size_t offset);
+
+	// What to call to move the editor to the line a picked string is written on, without
+	// taking the focus off this window
+	void setSelectFunction(std::function<void(size_t)> select) { select_ = std::move(select); }
+
 	// Hides the window without closing it for good, remembering where it stood
 	void putAway();
 
@@ -61,6 +69,10 @@ private:
 	// The string a cell holds, or null when the lump doesn't define it in that language
 	const LanguageEntry* cellEntry(long row, long column) const;
 
+	// The definition of [key] under [language], from the lookup built with the rows. The
+	// lump can hold a thousand of them, so a cell is not something to search for
+	const LanguageEntry* cell(string_view key, string_view language) const;
+
 	// Puts a field over the cell so it can be changed there, and takes it back again -
 	// keeping what was typed for false
 	void editCell(long row, long column);
@@ -68,6 +80,13 @@ private:
 
 	// Adds the key and text in the bottom fields to the language the button names
 	void addFromFields();
+
+	// Says why something didn't happen, in the window's own space where it stays read-
+	// able. An action that does nothing quietly costs a session of guessing
+	void say(string_view what);
+
+	// Puts the table's rows in the order of [column], and the arrow on that header
+	void sortByColumn(long column);
 
 	// Writes the whole lump back through the panel after one change
 	void applyChange();
@@ -85,7 +104,7 @@ private:
 
 	void onFilterChanged(wxCommandEvent& e);
 	void onItemActivated(wxListEvent& e);
-	void onItemSelected(wxListEvent& e);
+	void onItemSelected(wxListEvent& e);	void onColClicked(wxListEvent& e);
 	void onBtnAdd(wxCommandEvent& e);
 	void onCloseWindow(wxCloseEvent& e);
 
@@ -96,6 +115,7 @@ private:
 	wxButton*   btn_add_     = nullptr;
 	wxStaticText* counts_    = nullptr;
 
+	wxStaticText* note_      = nullptr;
 	wxTextCtrl* edit_cell_ = nullptr;
 	long        edit_row_  = -1;
 	long        edit_col_  = -1;
@@ -106,6 +126,14 @@ private:
 	bool updating_ = false;
 
 	std::function<bool(string_view)> apply_;
+	std::function<void(size_t)>      select_;
+
+	// Which header the rows are ordered by, and which way
+	long sort_column_ = 0;
+	bool sort_up_     = true;
+
+	// Which language the Add button writes into: the column he last looked at
+	string add_language_;
 
 	static constexpr string_view window_id_ = "language_constructor";
 };
