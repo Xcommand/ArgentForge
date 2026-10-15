@@ -1,4 +1,4 @@
-34
+35
 "Q picks up the brush and W the eraser - the Keyboard Shortcuts settings page lets you point them at other keys."
 "Hold ALT and drag with the right mouse button over a picture to change the brush size and how soft its edge is."
 "Hold ALT and roll the mouse wheel over a picture to change how opaque the brush paints."
@@ -11,6 +11,7 @@
 "A value field in the constructor says what the engine expects there - INT, FLOAT or a quoted STRING - before you type it."
 "Greyed entries in the constructor's Actions list are state actions the engine still takes but discourages."
 "Hover a sprite frame name in a state line to see the picture behind it; hold SHIFT to play the whole block."
+"Select two or three states first and SHIFT plays exactly what you picked, in a loop, at the tics each line asks for."
 "SHIFT is the key to reach for first: Shift+Up/Down moves a block or a line, Shift+click picks a run of lines, Shift+wheel resizes the menu preview, Shift+Ctrl+Z redoes."
 "The Menu Constructor edits the text that is open, so Ctrl+Z in the editor takes its changes back and the window follows."
 "Ctrl+C and Ctrl+V in the Menu Constructor go both ways: a block copied from its list pastes into the text, and text copied in the editor pastes into the list."
