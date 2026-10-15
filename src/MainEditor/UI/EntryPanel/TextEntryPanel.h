@@ -6,6 +6,7 @@ namespace slade
 {
 class ActorConstructorDialog;
 class MenuConstructorDialog;
+class LanguageConstructorDialog;
 class ActorDefinition;
 class ActorSource;
 struct NewActorSpec;
@@ -65,6 +66,15 @@ private:
 
 	// Makes the menu constructor read the text again after typing in the editor
 	void resyncMenuConstructor();
+
+	// Opens the language constructor over the strings in this text, and writes what it
+	// changes back the same way the menu one does
+	void openLanguageConstructor();
+	bool applyLanguageText(string_view text);
+	void resyncLanguageConstructor();
+
+	// Whether this lump is one the engine reads as LANGUAGE, whatever it's named on disk
+	bool isLanguageLump() const;
 
 	// Points the menu constructor at whatever lump just came into the panel
 	void updateMenuConstructor();
@@ -152,6 +162,9 @@ private:
 
 	// The menu constructor, same arrangement: one per panel, up alongside the text
 	MenuConstructorDialog* menu_constructor_ = nullptr;
+
+	// The language constructor, one per panel as well
+	LanguageConstructorDialog* language_constructor_ = nullptr;
 
 	// True while the panel is feeding text to the menu constructor, so the change
 	// the editor is about to announce doesn't bounce back as a reload

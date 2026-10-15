@@ -47,6 +47,7 @@
 #include "UI/Dialogs/ActorConstructor/ActorConstructorDialog.h"
 #include "UI/Dialogs/ActorConstructor/ActorVocabulary.h"
 #include "UI/Dialogs/MenuConstructor/MenuConstructorDialog.h"
+#include "UI/Dialogs/LanguageConstructor/LanguageConstructorDialog.h"
 #include "UI/Dialogs/Preferences/EditingPrefsPanel.h"
 #include "UI/Dialogs/Preferences/PreferencesDialog.h"
 #include "Utility/StringUtils.h"
@@ -138,6 +139,12 @@ TextEntryPanel::TextEntryPanel(wxWindow* parent) : EntryPanel(parent, "text")
 		"properties",
 		"Edit menus in this lump without typing them out",
 		true);
+	group_constructor->addActionButton(
+		"ptxt_languageconstructor",
+		"Language Constructor",
+		"properties",
+		"Edit this lump's LANGUAGE strings as a table of keys by language",
+		true);
 	toolbar_->addGroup(group_constructor);
 
 	// Add 'Text Language' choice to toolbar
@@ -176,6 +183,7 @@ TextEntryPanel::TextEntryPanel(wxWindow* parent) : EntryPanel(parent, "text")
 	SAction::fromId("ptxt_actorconstructor")->addToMenu(menu_custom_);
 	SAction::fromId("ptxt_menuconstructor")->addToMenu(menu_custom_);
 	SAction::fromId("ptxt_recalc_gotos")->addToMenu(menu_custom_);
+	SAction::fromId("ptxt_languageconstructor")->addToMenu(menu_custom_);
 
 	// 'Code Folding' submenu
 	auto menu_fold = new wxMenu();
@@ -421,6 +429,10 @@ bool TextEntryPanel::handleEntryPanelAction(string_view id)
 	else if (id == "ptxt_recalc_gotos")
 		recalculateGotoOffsets();
 
+	// Language Constructor
+	else if (id == "ptxt_languageconstructor")
+		openLanguageConstructor();
+
 	// Find+Replace
 	else if (id == "ptxt_find_replace")
 		text_area_->showFindReplacePanel();
@@ -502,6 +514,8 @@ void TextEntryPanel::toolbarButtonClick(const string& action_id)
 		openActorConstructor();
 	else if (action_id == "ptxt_menuconstructor")
 		openMenuConstructor();
+	else if (action_id == "ptxt_languageconstructor")
+		openLanguageConstructor();
 }
 
 // -----------------------------------------------------------------------------
@@ -1404,6 +1418,126 @@ bool TextEntryPanel::insertActorAction(string_view action, string_view args)
 	}
 
 	return true;
+}
+
+// -----------------------------------------------------------------------------
+// Whether the engine would read this lump as a LANGUAGE. Inside an archive the lump is
+// named LANGUAGE; a folder project writes it as 'LANGUAGE.txt' or 'language.enu', so the
+// part before the extension is what counts
+// -----------------------------------------------------------------------------
+bool TextEntryPanel::isLanguageLump() const
+{
+	auto entry = entry_.lock();
+	return entry && strutil::equalCI(entry->nameNoExt(), "language");
+}
+
+// -----------------------------------------------------------------------------
+// Opens the language constructor over the strings in this text. One window per panel,
+// reused for whichever lump is asked for; every edit it makes goes back into the text
+// as it happens, so the editor's undo is the only undo there is
+// -----------------------------------------------------------------------------
+void TextEntryPanel::openLanguageConstructor()
+{
+	if (loading_entry_)
+		return;
+
+	MemChunk mc;
+	text_area_->getRawText(mc);
+	string text((const char*)mc.data(), mc.size());
+
+	if (!language_constructor_)
+	{
+		language_constructor_ = new LanguageConstructorDialog(this);
+		language_constructor_->setApplyFunction(
+			[this](string_view out)
+			{
+				return applyLanguageText(out);
+			});
+
+		// Coming back to the window is the last chance before one of its controls writes,
+		// so its copy gets made fresh again here
+		language_constructor_->Bind(
+			wxEVT_ACTIVATE,
+			[this](wxActivateEvent& e)
+			{
+				if (e.GetActive())
+					resyncLanguageConstructor();
+				e.Skip();
+			});
+	}
+
+	if (!language_constructor_->loadText(text) && !isLanguageLump())
+	{
+		wxMessageBox(
+			wxS("This text has no LANGUAGE strings in it, and isn't a lump named LANGUAGE.\n\n"
+			    "The engine reads strings from a lump called LANGUAGE; this one isn't it."),
+			wxS("Language Constructor"),
+			wxICON_INFORMATION,
+			this);
+		return;
+	}
+
+	if (auto entry = entry_.lock())
+	{
+		string title = "Language Constructor - " + entry->name();
+		if (auto* arch = entry->parent())
+			title += " in " + arch->filename(false);
+		language_constructor_->SetTitle(wxString::FromUTF8(title));
+	}
+
+	language_constructor_->Show(true);
+	language_constructor_->Raise();
+	language_constructor_->SetFocus();
+}
+
+// -----------------------------------------------------------------------------
+// Writes the whole language text the constructor made back over the editor, as one undo
+// step. Refuses, and re-reads the window, when the editor moved under it
+// -----------------------------------------------------------------------------
+bool TextEntryPanel::applyLanguageText(string_view text)
+{
+	if (loading_entry_)
+		return false;
+
+	MemChunk mc;
+	text_area_->getRawText(mc);
+	string current((const char*)mc.data(), mc.size());
+
+	// The window holds a copy of the whole text, so it may only go over text that still
+	// matches what it was copied from; anything typed in the editor since would come back
+	// out with the rewrite
+	if (language_constructor_ && current != string(language_constructor_->sourceText()))
+	{
+		language_constructor_->adopt(current);
+		return false;
+	}
+
+	text_area_->BeginUndoAction();
+	text_area_->SetTargetStart(0);
+	text_area_->SetTargetEnd(text_area_->GetLength());
+	text_area_->ReplaceTarget(wxutil::strFromView(text));
+	text_area_->EndUndoAction();
+
+	centreEditedLine(0, current, text);
+
+	setModified();
+	return true;
+}
+
+// -----------------------------------------------------------------------------
+// Points the language constructor at the text as it is now, after typing in the editor
+// -----------------------------------------------------------------------------
+void TextEntryPanel::resyncLanguageConstructor()
+{
+	if (!language_constructor_ || !language_constructor_->IsShown())
+		return;
+
+	MemChunk mc;
+	text_area_->getRawText(mc);
+	string current((const char*)mc.data(), mc.size());
+
+	if (current != string(language_constructor_->sourceText()))
+		language_constructor_->adopt(current);
 }
 
 // -----------------------------------------------------------------------------
