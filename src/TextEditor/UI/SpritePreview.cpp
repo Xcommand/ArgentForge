@@ -54,6 +54,9 @@ CVAR(Int, txed_sprite_preview_scale, 200, CVar::Flag::Save)
 CVAR(Bool, txed_sprite_preview_loop, false, CVar::Flag::Save)
 CVAR(Int, txed_sprite_preview_speed, 1, CVar::Flag::Save)
 
+// Whether the preview plays across a 'goto' instead of stopping where the block does
+CVAR(Bool, txed_sprite_preview_goto, false, CVar::Flag::Save)
+
 
 // -----------------------------------------------------------------------------
 //
@@ -533,6 +536,175 @@ string earlierPicture(const vector<string_view>& lines, size_t line)
 }
 
 // -----------------------------------------------------------------------------
+// The label a 'goto' names and how many states to count past it, read out of the
+// words of a line: 'Goto ReadyKnife', 'Goto Spawn+2', and either written after a
+// state on the line that state is written on
+// -----------------------------------------------------------------------------
+bool lineJump(const vector<Word>& words, string& label, int& past)
+{
+	for (size_t a = 0; a + 1 < words.size(); ++a)
+	{
+		if (!strutil::equalCI(words[a].text, "goto"))
+			continue;
+
+		const auto& name = words[a + 1].text;
+		if (name.empty() || (!isalpha((unsigned char)name[0]) && name[0] != '_'))
+			continue;
+
+		label = strutil::upper(name);
+		past  = 0;
+		if (a + 3 < words.size() && words[a + 2].text == "+" && isDuration(words[a + 3].text))
+			past = durationTics(words[a + 3].text);
+		return true;
+	}
+
+	return false;
+}
+
+// -----------------------------------------------------------------------------
+// The line a label names, looked for inside the actor the jump is written in: its
+// own header above, the next one below. A label outside that belongs to a class it
+// inherits from, and there's nothing here to show for it
+// -----------------------------------------------------------------------------
+size_t labelLine(const vector<string_view>& lines, size_t from, string_view label)
+{
+	auto header = [&](size_t i)
+	{
+		auto words = lineWords(lines[i]);
+		return !words.empty() && (strutil::equalCI(words[0].text, "actor") || strutil::equalCI(words[0].text, "class"));
+	};
+
+	size_t lo = 0, hi = lines.size();
+	for (size_t i = from + 1; i-- > 0;)
+		if (header(i))
+		{
+			lo = i;
+			break;
+		}
+	for (size_t i = from + 1; i < lines.size(); ++i)
+		if (header(i))
+		{
+			hi = i;
+			break;
+		}
+
+	for (size_t i = lo; i < hi; ++i)
+	{
+		auto words = lineWords(lines[i]);
+		if (words.size() == 2 && words[1].text == ":" && strutil::equalCI(words[0].text, label))
+			return i;
+	}
+
+	return SIZE_MAX;
+}
+
+// -----------------------------------------------------------------------------
+// The line a 'Label+N' lands on: [past] states after the labelled one, counted the
+// way the engine counts them - one per frame letter
+// -----------------------------------------------------------------------------
+size_t jumpLanding(const vector<string_view>& lines, size_t label, int past)
+{
+	vector<PreviewFrame> frames;
+	int                  unused = -1;
+
+	for (size_t i = label; i < lines.size(); ++i)
+	{
+		frames.clear();
+		readStateLine(lines[i], SIZE_MAX, frames, unused);
+
+		if (past < (int)frames.size())
+			return i;
+		past -= (int)frames.size();
+	}
+
+	return SIZE_MAX;
+}
+
+// -----------------------------------------------------------------------------
+// The jump that ends a run of states: the first 'goto' on or after [after]. False
+// when the run falls into another label, closes the block, or ends at a state that
+// just stops, because then there's nothing it says to follow
+// -----------------------------------------------------------------------------
+bool jumpAfter(const vector<string_view>& lines, size_t after, string& label, int& past)
+{
+	for (size_t scan = 0; scan <= MAX_BLOCK_SCAN && after + scan < lines.size(); ++scan)
+	{
+		auto words = lineWords(lines[after + scan]);
+		if (words.empty())
+			continue;
+
+		if (lineJump(words, label, past))
+			return true;
+
+		const auto& first = words[0].text;
+		if (words.size() == 2 && words[1].text == ":")
+			return false;
+		if (first == "}")
+			return false;
+		if (strutil::equalCI(first, "stop") || strutil::equalCI(first, "wait") || strutil::equalCI(first, "fail")
+		    || strutil::equalCI(first, "loop"))
+			return false;
+	}
+
+	return false;
+}
+
+// -----------------------------------------------------------------------------
+// With the goto setting on, the run carries on wherever its jumps lead: the states
+// after each label it lands on, until a chain stops, or comes back to a line it
+// already played. The pictures of a jumped-to state are looked up like any other,
+// so this only decides which lines end up in the list
+// -----------------------------------------------------------------------------
+void followJumps(const vector<string_view>& lines, size_t after, PreviewBlock& block)
+{
+	if (!txed_sprite_preview_goto)
+		return;
+
+	vector<size_t> played;
+	size_t         at = after;
+
+	for (int hop = 0; hop < 16 && block.frames.size() < MAX_BLOCK_FRAMES; ++hop)
+	{
+		string label;
+		int    past = 0;
+		if (!jumpAfter(lines, at, label, past))
+			return;
+
+		auto named = labelLine(lines, at, label);
+		if (named == SIZE_MAX)
+			return;
+
+		auto land = jumpLanding(lines, named, past);
+		if (land == SIZE_MAX || std::find(played.begin(), played.end(), land) != played.end())
+			return;
+		played.push_back(land);
+
+		BlockWalk walk;
+		size_t    last   = land;
+		bool      ended  = false;
+		bool      looped = false;
+		for (size_t i = land; i < lines.size(); ++i)
+		{
+			last = i;
+			if (readNeighbour(lines[i], block.frames, looped, walk) == Neighbour::End)
+			{
+				ended = true;
+				break;
+			}
+			if (block.frames.size() >= MAX_BLOCK_FRAMES)
+				break;
+		}
+
+		// A run that ends at 'stop' is the end of the animation; one that ends at a
+		// jump is a turn around, which is what looping the list shows
+		at = last;
+		if (!looped && !ended)
+			return;
+		block.loops = true;
+	}
+}
+
+// -----------------------------------------------------------------------------
 // The lines of [text], with the ends of theirs taken off
 // -----------------------------------------------------------------------------
 vector<string_view> textLines(string_view text)
@@ -746,10 +918,12 @@ PreviewBlock stateBlock(string_view text, size_t line, size_t offset)
 	block.frames.insert(block.frames.begin(), before.rbegin(), before.rend());
 	block.current += (int)before.size();
 
+	size_t end_line = line;
 	for (size_t scan = 1; scan <= MAX_BLOCK_SCAN && line + scan < lines.size(); ++scan)
 	{
-		bool looped = false;
-		if (readNeighbour(lines[line + scan], block.frames, looped, downward) == Neighbour::End)
+		bool    looped = false;
+		end_line       = line + scan;
+		if (readNeighbour(lines[end_line], block.frames, looped, downward) == Neighbour::End)
 		{
 			block.loops = looped;
 			break;
@@ -758,6 +932,10 @@ PreviewBlock stateBlock(string_view text, size_t line, size_t offset)
 		if (block.frames.size() >= MAX_BLOCK_FRAMES)
 			break;
 	}
+
+	// Before the borrowed pictures are settled, so a state reached by a jump keeps
+	// the sprite the one before it showed just like one the block itself holds
+	followJumps(lines, end_line, block);
 
 	resolveKeptPictures(block.frames, earlierPicture(lines, top));
 
@@ -777,12 +955,18 @@ PreviewBlock stateRange(string_view text, size_t first, size_t last, size_t hove
 		return block;
 
 	int hit = -1;
+	// The jump that ends the run is written after its last state, so that's where the
+	// look for it starts, not at the bottom edge of the selection
+	size_t last_frame = first;
 	for (size_t i = first; i <= last && block.frames.size() < MAX_BLOCK_FRAMES; i++)
 	{
 		int  one    = -1;
 		auto before = block.frames.size();
 		// Only the line the mouse rests on gives its own offset to the reader
 		readStateLine(lines[i], i == hover ? offset : string::npos, block.frames, one);
+
+		if (block.frames.size() > before)
+			last_frame = i;
 
 		if (one >= 0)
 			hit = one;
@@ -793,6 +977,8 @@ PreviewBlock stateRange(string_view text, size_t first, size_t last, size_t hove
 		block.current = hit;
 	if (block.current < 0)
 		return block;
+
+	followJumps(lines, last_frame, block);
 
 	resolveKeptPictures(block.frames, earlierPicture(lines, first));
 	block.loops = true;

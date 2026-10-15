@@ -233,16 +233,107 @@ function stateBlock(lines, line, offset) {
 	return block;
 }
 
+// --- following a goto ----------------------------------------------------
+// The same walk the port does when 'Play across a goto' is on: the run ends at its
+// jump, and the play list carries on at the state that jump names
+
+// 'Goto ReadyKnife' or 'Goto Spawn+2', on its own line or after a state on one
+function lineJump(words) {
+	for (let a = 0; a + 1 < words.length; a++) {
+		if (!equalCI(words[a].text, "goto")) continue;
+		const name = words[a + 1].text;
+		if (!/^[A-Za-z_]/.test(name)) continue;
+		let past = 0;
+		if (a + 3 < words.length && words[a + 2].text === "+" && isDuration(words[a + 3].text))
+			past = durationTics(words[a + 3].text);
+		return { label: name, past };
+	}
+	return null;
+}
+
+// The line a label names, inside the actor the jump sits in: its own header above,
+// the next one below. A label outside that is the parent's, nothing to draw
+function labelLine(lines, from, label) {
+	const header = (i) => {
+		const words = lineWords(lines[i]);
+		return words.length && ["actor", "class"].some((k) => equalCI(words[0].text, k));
+	};
+	let lo = 0, hi = lines.length;
+	for (let i = from; i >= 0; i--) if (header(i)) { lo = i; break; }
+	for (let i = from + 1; i < lines.length; i++) if (header(i)) { hi = i; break; }
+	for (let i = lo; i < hi; i++) {
+		const words = lineWords(lines[i]);
+		if (words.length === 2 && words[1].text === ":" && equalCI(words[0].text, label)) return i;
+	}
+	return -1;
+}
+
+// The line a 'Label+N' lands on: N states past the labelled one, one per frame letter
+function jumpLanding(lines, label, past) {
+	for (let i = label; i < lines.length; i++) {
+		const frames = [];
+		readStateLine(lines[i], frames);
+		if (past < frames.length) return i;
+		past -= frames.length;
+	}
+	return -1;
+}
+
+// The jump that ends a run: the first goto on or after [after], unless the run falls
+// into another label, closes the block, or stops
+function jumpAfter(lines, after) {
+	for (let scan = 0; scan <= 256 && after + scan < lines.length; scan++) {
+		const words = lineWords(lines[after + scan]);
+		if (!words.length) continue;
+		const jump = lineJump(words);
+		if (jump) return jump;
+		const first = words[0].text;
+		if (words.length === 2 && words[1].text === ":") return null;
+		if (first === "}") return null;
+		if (["stop", "wait", "fail", "loop"].some((k) => equalCI(first, k))) return null;
+	}
+	return null;
+}
+
+function followJumps(lines, after, block) {
+	const played = [];
+	let at = after;
+
+	for (let hop = 0; hop < 16 && block.frames.length < 256; hop++) {
+		const jump = jumpAfter(lines, at);
+		if (!jump) return;
+		const named = labelLine(lines, at, jump.label);
+		if (named < 0) return;
+		const land = jumpLanding(lines, named, jump.past);
+		if (land < 0 || played.includes(land)) return;
+		played.push(land);
+
+		const walk = { inside: 0, upward: false };
+		let last = land, ended = false, looped = false;
+		for (let i = land; i < lines.length; i++) {
+			last = i;
+			const n = readNeighbour(lines[i], block.frames, walk);
+			if (n.kind === "end") { ended = true; looped = n.loops; break; }
+			if (block.frames.length >= 256) break;
+		}
+		at = last;
+		if (!looped && !ended) return;
+		block.loops = true;
+	}
+}
+
 // The lines he selected, played as one loop: the same reader, but the edges are the
 // selection instead of the braces around the hovered line
-function stateRange(lines, first, last, hover) {
+function stateRange(lines, first, last, hover, follow = false) {
 	const block = { frames: [], current: -1, loops: false };
 	if (first > last || last >= lines.length) return block;
 
 	let hit = -1;
+	let last_frame = first;
 	for (let i = first; i <= last && block.frames.length < 256; i++) {
 		const before = block.frames.length;
 		const own = readStateLine(lines[i], block.frames);
+		if (block.frames.length > before) last_frame = i;
 		if (!own.read) continue;
 		const off = /^[ \t]*/.exec(lines[i])[0].length + 1;
 		if (i === hover && own.hits.has(off)) hit = own.hits.get(off);
@@ -251,6 +342,7 @@ function stateRange(lines, first, last, hover) {
 	if (hit >= 0) block.current = hit;
 	if (block.current < 0) { block.frames = []; return block; }
 
+	if (follow) followJumps(lines, last_frame, block);
 	resolveKeptSprites(block.frames, earlierPicture(lines, first));
 	block.loops = true;
 	return block;
@@ -281,6 +373,17 @@ if (process.argv[2] === "span") {
 	const hover = process.argv[6] ? Number(process.argv[6]) - 1 : first;
 	const block = stateRange(lines, first, last, hover);
 	console.log(`lines ${first + 1}..${last + 1}: ${block.frames.length} frames, current ${block.current}, loops ${block.loops}`);
+	block.frames.forEach((f, i) => console.log(`  ${i === block.current ? ">" : " "} ${i} ${f.name} tics ${f.tics}`));
+	process.exit(0);
+}
+
+// 'chain <file> <first> <last>' is the same selection with the goto setting on: the
+// play list carries on wherever the run's jump leads, which is what the port does
+if (process.argv[2] === "chain") {
+	const lines = fs.readFileSync(process.argv[3], "latin1").split(/\r?\n/);
+	const first = Number(process.argv[4]) - 1, last = Number(process.argv[5]) - 1;
+	const block = stateRange(lines, first, last, first, true);
+	console.log(`lines ${first + 1}..${last + 1} followed across goto: ${block.frames.length} frames, loops ${block.loops}`);
 	block.frames.forEach((f, i) => console.log(`  ${i === block.current ? ">" : " "} ${i} ${f.name} tics ${f.tics}`));
 	process.exit(0);
 }
