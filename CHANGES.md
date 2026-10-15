@@ -3,6 +3,13 @@ Changes in this fork
 
 What we added on top of upstream SLADE, feature by feature. Kept short on purpose.
 
+New in 1.1.1
+------------
+
+* A window closed while minimized, or on a monitor that has since been unplugged, used to come back
+  at a corner nobody can reach: the taskbar showed it, the screen didn't. Such a corner is refused
+  now, both when it is saved and when it is read back, and the window opens centred instead.
+
 New in 1.1.0
 ------------
 

@@ -75,6 +75,34 @@ https://github.com/user-attachments/assets/1d0dad59-58c8-456d-9585-999272cd2705
 * A script lump with no extension and no type is worked out from its text, and the language dropdown
   switches to match.
 
+**Menus, drawn as the game draws them**
+
+The **Menu Constructor**: a floating window over the MENUDEF text you already have open. Its blocks
+are on the left, that block's lines in the middle, the arguments of the selected line under them. It
+writes your text rather than a copy of it, so the editor's Ctrl+Z is the undo for the window as well,
+and a line you didn't touch comes back byte for byte the way the mod wrote it.
+
+<img width="713" height="447" alt="The Menu Constructor with its preview open on a mod's MENUDEF" src="https://github.com/Xcommand/ArgentForge/releases/download/v1.1.0/menu-constructor.png" />
+
+* `Preview` draws the menu the way the engine does: the same line spacing, labels right-aligned to the
+  gutter the engine works out for itself, the game's colour codes, and LANGUAGE labels resolved through
+  the same two passes the game makes, so a `$$SOMELABEL` shows the words a player reads rather than
+  the tag. It imitates a screen you pick, because the engine takes the text size from the resolution,
+  and a knob dims the title picture behind the menu when that picture fights the text. A line the
+  engine would stop loading on isn't drawn at all, and the window says why.
+* The lists read your archive instead of a remembered reference: the cvars it declares, its TEXTCOLO
+  ranges, its LANGUAGE labels, the pictures inside it, and the widget classes it writes in its own
+  ZScript, whose `Init()` becomes that line's named fields.
+* SHIFT is the key to reach for: Shift+Up and Shift+Down move a block or a line, Shift+click picks a
+  run of them, Shift plus the wheel over the preview sets how large it draws, Shift+Ctrl+Z redoes.
+  Ctrl+C and Ctrl+V carry a block or a line between the window and the text editor in both directions,
+  and Delete works in whichever of the two lists has the keyboard.
+* An empty MENUDEF is a starting point rather than a dead end. The window asks where your first menu
+  should hang, under the game's Options list or on the main menu, and writes both blocks it takes to
+  be seen in game: the page, and the line that points at it.
+
+<img width="525" height="397" alt="Where the first menu of a mod hangs" src="https://github.com/Xcommand/ArgentForge/releases/download/v1.1.0/start-a-menu.png" /> <img width="476" height="576" alt="The archive's own cvar names offered under a field" src="https://github.com/Xcommand/ArgentForge/releases/download/v1.1.0/name-offers.png" />
+
 **Image editor**
 
 
@@ -104,7 +132,15 @@ https://github.com/user-attachments/assets/f490a357-4ce6-4358-9244-cde8b9b4d829
   italic in the tree, so nothing stays pending quietly.
 * The start page speaks for this build. Its news and tips come from beside the program, not from
   whatever SLADE last posted online.
-* The settings this fork adds live in their own branch of the preferences tree.
+* The settings this fork adds live in their own branch of the preferences tree, and in their own
+  folder on disk, so an install of this and an install of SLADE stop writing over each other. A first
+  run offers to pull an old SLADE configuration across, and the same import sits under
+  `Settings > Extra Features`.
+* `Open Containing Folder` shows where a selection lives, from the entry list's right-click menu, its
+  left toolbar or the `Entry` menu. It is there for a project opened as a folder, which is how most
+  mod source trees sit on disk these days.
+* AceZDL can open a mod with this editor: `Settings > Extra Features` writes the path into the
+  launcher's `Config.xml` and keeps the one that was there, so it can be put back.
 
 ### Supporting this fork
 

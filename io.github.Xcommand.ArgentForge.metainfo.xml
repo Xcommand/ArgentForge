@@ -29,6 +29,14 @@
 		</p>
 	</description>
 	<releases>
+		<release date="2026-10-15" version="1.1.1">
+			<description>
+				<ul>
+					<li>A window that had been closed minimized, or on a monitor that has since gone,
+					no longer comes back where nobody can see it.</li>
+				</ul>
+			</description>
+		</release>
 		<release date="2026-10-13" version="1.1.0">
 			<description>
 				<ul>
