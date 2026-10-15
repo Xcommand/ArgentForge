@@ -35,6 +35,7 @@
 #include "ArchivePanel.h"
 #include "App.h"
 #include <wx/datetime.h>
+#include <wx/display.h>
 #include <wx/filename.h>
 #include <wx/utils.h>
 #include "Archive/ArchiveDir.h"
@@ -4882,7 +4883,16 @@ void ArchivePanel::onEntryListActivated(wxDataViewEvent& e)
 
 				// Attempt to open map
 				if (mapeditor::window()->openMap(info))
+				{
 					mapeditor::window()->Show();
+					// "It opens but I can't see it" is only answerable by where it put itself, so the
+					// receipt goes to the log along with how many screens wx can see right now
+					auto rect = mapeditor::window()->GetRect();
+					log::info(1, fmt::format("Map window shown at {}x{}+{}+{}, iconized={}, shown={}, screens={}",
+					                 rect.GetWidth(), rect.GetHeight(), rect.GetX(), rect.GetY(),
+					                 (int)mapeditor::window()->IsIconized(), (int)mapeditor::window()->IsShown(),
+					                 (int)wxDisplay::GetCount()));
+				}
 				else
 				{
 					mapeditor::window()->Hide();

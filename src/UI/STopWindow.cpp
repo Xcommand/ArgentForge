@@ -32,6 +32,7 @@
 // -----------------------------------------------------------------------------
 #include "Main.h"
 #include "STopWindow.h"
+#include "General/Log.h"
 #include "General/Misc.h"
 #include "General/SAction.h"
 #include "SToolBar/SToolBar.h"
@@ -72,11 +73,15 @@ STopWindow::STopWindow(const string& title, const string& id, int x, int y, int 
 	{
 		SetSize(info.width, info.height);
 		// A corner that no connected screen holds would park the window where nothing can reach it,
-		// so it comes back centred instead and the next close writes a usable position
+		// so it comes back centred instead and the next close writes a usable position. The log says
+		// which corner it refused, because "it opened somewhere I can't see" is otherwise a guess
 		if (misc::pointOnDisplay(info.left, info.top))
 			SetPosition(wxPoint(info.left, info.top));
-		else
+		else {
+			log::info(1, fmt::format(
+				"Window '{}': saved corner {},{} is on no screen, centring instead", id_, info.left, info.top));
 			Centre();
+		}
 	}
 	else
 		misc::setWindowInfo(id_, width, height, x, y);

@@ -570,12 +570,13 @@ misc::WindowInfo misc::getWindowInfo(string_view id)
 }
 
 // -----------------------------------------------------------------------------
-// Whether [x,y] is on a screen that exists right now
+// Whether [x,y] is on a screen that exists right now. The client area, not the full
+// geometry: a corner under the taskbar is on the monitor but out of reach
 // -----------------------------------------------------------------------------
 bool misc::pointOnDisplay(int x, int y)
 {
 	for (size_t i = 0; i < wxDisplay::GetCount(); i++)
-		if (wxDisplay(i).GetGeometry().Contains(x, y))
+		if (wxDisplay(i).GetClientArea().Contains(x, y))
 			return true;
 
 	return false;
