@@ -618,4 +618,48 @@ bool LanguageBook::addString(string_view name, string_view label, string_view la
 		return false;
 	return source->addString(label, language, text);
 }
+
+// -----------------------------------------------------------------------------
+// The primary file gets the text as written; the ones picked as 'additional' get the
+// same text as a placeholder, each under the language its own file declares. A label a
+// file already has is left alone: its translation is somebody else's work
+// -----------------------------------------------------------------------------
+int LanguageBook::addAcross(
+	string_view primary, string_view language, string_view label, string_view text, const vector<string>& also)
+{
+	int wrote = 0;
+	if (addString(primary, label, language, text))
+		++wrote;
+
+	for (const auto& name : also)
+	{
+		if (strutil::equalCI(name, primary))
+			continue;
+		auto source = lump(name);
+		if (!source)
+			continue;
+
+		// 'LANGUAGE.ita' is Italian whatever the row was being added under
+		auto        own  = source->languages();
+		string_view into = own.empty() ? language : string_view(own[0]);
+		if (!source->entry(label, into) && source->addString(label, into, text))
+			++wrote;
+	}
+	return wrote;
+}
+
+const LanguageEntry* LanguageBook::inLump(string_view name, string_view label) const
+{
+	auto source = lump(name);
+	if (!source)
+		return nullptr;
+
+	for (const auto& lang : source->languages())
+	{
+		if (auto e = source->entry(label, lang))
+			return e;
+	}
+	// A lump with no header at all answers to the empty language
+	return source->entry(label, "");
+}
 } // namespace slade

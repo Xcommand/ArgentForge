@@ -158,6 +158,18 @@ public:
 	// when it already writes that label under that language
 	bool addString(string_view name, string_view label, string_view language, string_view text);
 
+	// Writes a new string into [primary] under [language], and the same text into every
+	// lump of [also] as a placeholder. Each of those keeps it in the language it declares
+	// for itself, because that's what its file is: 'LANGUAGE.ita' holds Italian. A copy
+	// that nobody has translated shows what it should become rather than an empty cell
+	int addAcross(
+		string_view primary, string_view language, string_view label, string_view text,
+		const vector<string>& also);
+
+	// The lump's own definition of [label], in whichever language the file declares. What
+	// a table compares against to know a copy is still a placeholder
+	const LanguageEntry* inLump(string_view name, string_view label) const;
+
 private:
 	vector<std::unique_ptr<LanguageSource>> lumps_;
 	vector<string>                          names_;
