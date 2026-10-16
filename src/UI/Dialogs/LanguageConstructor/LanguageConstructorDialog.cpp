@@ -144,11 +144,10 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 // -----------------------------------------------------------------------------
 bool LanguageConstructorDialog::loadLumps(const vector<LanguageLump>& lumps, string_view current)
 {
-	read_    = lumps;
 	current_ = string(current);
 
 	book_.clear();
-	for (const auto& lump : read_)
+	for (const auto& lump : lumps)
 		book_.open(lump.name, lump.text);
 
 	// The dropdown keeps its pick across a refill, and falls back to the file on screen

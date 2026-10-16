@@ -37,6 +37,7 @@
 #include "MainEditor/MainEditor.h"
 #include "MainEditor/UI/ArchivePanel.h"
 #include "Archive/Archive.h"
+#include "Archive/ArchiveDir.h"
 #include "MainEditor/UI/MainWindow.h"
 #include "MainEditor/UI/StartPage.h"
 #include "TextEditor/TextLanguage.h"
@@ -1465,6 +1466,34 @@ bool TextEntryPanel::isLanguageLump() const
 }
 
 // -----------------------------------------------------------------------------
+// A folder's own entry stands for the folder rather than for a file in it, so it isn't a
+// lump the engine could read strings from
+// -----------------------------------------------------------------------------
+static bool isFolderEntry(ArchiveEntry* entry)
+{
+	auto* dir = entry->parentDir();
+	return dir && dir->dirEntry() == entry;
+}
+
+// -----------------------------------------------------------------------------
+// The lump a table id stands for. The ids were numbered against the whole entry tree, so
+// the tree is flattened the same way here; a name that no longer matches means the files
+// moved, and a write that can't prove which lump it means doesn't happen
+// -----------------------------------------------------------------------------
+ArchiveEntry* TextEntryPanel::languageEntryAt(Archive* arch, unsigned index)
+{
+	if (!arch || index == no_file)
+		return nullptr;
+
+	vector<ArchiveEntry*> files;
+	arch->putEntryTreeAsList(files);
+
+	if (index >= files.size())
+		return nullptr;
+	return files[index];
+}
+
+// -----------------------------------------------------------------------------
 // Every LANGUAGE lump of this entry's archive, in the order the archive holds them, which
 // is the order the engine reads them. The lump being edited comes from the editor, so
 // typing that isn't saved yet shows in the table. Each one gets an id: an archive can hold
@@ -1491,10 +1520,15 @@ vector<LanguageLump> TextEntryPanel::languageLumps()
 		return out;
 	}
 
-	for (unsigned i = 0; i < arch->numEntries(); ++i)
+	// The whole tree, not just the root: a folder project keeps its files in subfolders,
+	// and numEntries counts those while entryAt only indexes the root directory
+	vector<ArchiveEntry*> files;
+	arch->putEntryTreeAsList(files);
+
+	for (size_t i = 0; i < files.size(); ++i)
 	{
-		auto* each = arch->entryAt(i);
-		if (!each || !strutil::equalCI(each->nameNoExt(), "language"))
+		auto* each = files[i];
+		if (!each || isFolderEntry(each) || !strutil::equalCI(each->nameNoExt(), "language"))
 			continue;
 
 		string id   = each->name();
@@ -1513,7 +1547,7 @@ vector<LanguageLump> TextEntryPanel::languageLumps()
 		     ++n)
 			id = each->name() + " (" + std::to_string(n + 2) + ")";
 
-		language_files_.emplace_back(id, i, text, string(each->name()));
+		language_files_.emplace_back(id, static_cast<unsigned>(i), text, string(each->name()));
 		out.push_back({ id, text });
 	}
 	return out;
@@ -1537,7 +1571,11 @@ bool TextEntryPanel::createLanguageLump(string_view code, string& id)
 		return false;
 
 	string name = arch->isTreeless() ? "LANGUAGE" : "LANGUAGE." + string(code);
-	auto   added = arch->addNewEntry(name, arch->entryIndex(entry.get()) + 1, nullptr);
+
+	// Beside the file he was looking at, in that file's own folder
+	auto*    dir   = entry->parentDir();
+	unsigned at    = arch->entryIndex(entry.get(), dir);
+	auto     added = arch->addNewEntry(name, at + 1, dir);
 	if (!added)
 		return false;
 
@@ -1548,7 +1586,19 @@ bool TextEntryPanel::createLanguageLump(string_view code, string& id)
 
 	// The table reads the archive again, which is where the new file's id comes from
 	languageLumps();
-	auto index = arch->entryIndex(added.get());
+
+	vector<ArchiveEntry*> files;
+	arch->putEntryTreeAsList(files);
+	unsigned index = no_file;
+	for (size_t i = 0; i < files.size(); ++i)
+	{
+		if (files[i] == added.get())
+		{
+			index = static_cast<unsigned>(i);
+			break;
+		}
+	}
+
 	for (const auto& one : language_files_)
 	{
 		if (std::get<1>(one) != index)
@@ -1652,7 +1702,7 @@ bool TextEntryPanel::applyLanguageText(string_view lump, string_view text)
 	auto  edited = entry_.lock();
 	auto* arch   = edited ? edited->parent() : nullptr;
 	auto  index  = std::get<1>(*at);
-	auto* entry  = (index == no_file || !arch) ? nullptr : arch->entryAt(index);
+	auto* entry  = languageEntryAt(arch, index);
 
 	// The lump on screen goes through the editor, so its undo covers it
 	if (index == no_file || (edited && entry == edited.get()))

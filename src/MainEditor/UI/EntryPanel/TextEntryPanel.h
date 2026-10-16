@@ -82,6 +82,9 @@ private:
 	// reports the id the table gave it
 	bool createLanguageLump(string_view code, string& id);
 
+	// The lump a table id stands for, resolved through the archive's whole entry tree
+	ArchiveEntry* languageEntryAt(Archive* arch, unsigned index);
+
 	// Moves the editor to a string the window picked, and points the window at the
 	// definition the caret has moved into. The id says which of the archive's LANGUAGE
 	// files the string was read from, which isn't necessarily this one

@@ -176,9 +176,8 @@ private:
 	// Every LANGUAGE lump of the archive, read in the order the engine loads them
 	LanguageBook book_;
 
-	// Which of those the text editor is showing, and the texts as they came in
-	string               current_;
-	vector<LanguageLump> read_;
+	// Which of those the text editor is showing
+	string current_;
 
 	// True while the widgets are being refilled, so they don't react to it
 	bool updating_ = false;
