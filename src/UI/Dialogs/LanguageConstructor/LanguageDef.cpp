@@ -508,6 +508,13 @@ bool LanguageBook::has(string_view name) const
 	return by_name_.find(string(name)) != by_name_.end();
 }
 
+void LanguageBook::clear()
+{
+	lumps_.clear();
+	names_.clear();
+	by_name_.clear();
+}
+
 const LanguageSource* LanguageBook::lump(string_view name) const
 {
 	return const_cast<LanguageBook*>(this)->lump(name);
@@ -576,6 +583,16 @@ vector<string> LanguageBook::keys() const
 // The last lump that writes the string is the one the game reads, because a later
 // LANGUAGE file overwrites what an earlier one defined
 const LanguageEntry* LanguageBook::entry(string_view label, string_view language) const
+{
+	for (size_t at = lumps_.size(); at-- > 0;)
+	{
+		if (auto e = lumps_[at]->entry(label, language))
+			return e;
+	}
+	return nullptr;
+}
+
+LanguageEntry* LanguageBook::entry(string_view label, string_view language)
 {
 	for (size_t at = lumps_.size(); at-- > 0;)
 	{

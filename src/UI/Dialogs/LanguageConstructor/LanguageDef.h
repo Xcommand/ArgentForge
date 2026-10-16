@@ -115,6 +115,13 @@ private:
 	std::map<string, BlockSpot> spots_;
 };
 
+// One LANGUAGE file of an archive, as the text it holds
+struct LanguageLump
+{
+	string name;
+	string text;
+};
+
 // Every LANGUAGE lump of one archive, read in the order the archive loads them. A mod
 // keeps its translations in separate files ('LANGUAGE.enu', 'language.gearbox'), so a
 // table of the whole archive's languages has to look at all of them at once and send
@@ -126,6 +133,12 @@ public:
 	// read before, so a reload keeps one copy per file. Any definition handed out from
 	// that lump is gone afterwards
 	LanguageSource& open(string_view name, string_view text);
+
+	// Forgets every lump, so a window can read the archive again from scratch
+	void clear();
+
+	// The lump names, in the order they were opened: what a caller writes each lump back to
+	const vector<string>& lumpNames() const { return names_; }
 
 	bool has(string_view name) const;
 
@@ -145,6 +158,7 @@ public:
 	// The definition the game ends up with. A later lump overwrites an earlier one
 	// (TMap::Insert, tarray.h:1410), so the last write is the one that counts
 	const LanguageEntry* entry(string_view label, string_view language) const;
+	LanguageEntry*       entry(string_view label, string_view language);
 
 	// Where the winning definition sits: its lump's name and its offset in it, so
 	// picking a row can move the editor to the right file. False when none has it

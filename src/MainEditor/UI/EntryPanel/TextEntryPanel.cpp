@@ -1121,11 +1121,20 @@ void TextEntryPanel::selectMenuLine(size_t offset)
 // Moves the editor to a string the language window picked, without taking the keyboard
 // off that window
 // -----------------------------------------------------------------------------
-void TextEntryPanel::selectLanguageString(size_t offset)
+void TextEntryPanel::selectLanguageString(string_view lump, size_t offset)
 {
 	if (!language_constructor_)
 		return;
 
+	// The editor shows one file at a time, so a string from one of the others can't be
+	// scrolled to from here. Saying so beats a row that looks like it did nothing
+	if (lump != language_constructor_->currentLump())
+	{
+		language_constructor_->note("That string is written in " + string(lump) + ", not in the lump this panel is showing");
+		return;
+	}
+
+	language_constructor_->note("");
 	text_area_->SetSelection(offset, offset);
 	centreLine(lineAtOffset(language_constructor_->sourceText(), offset));
 }
@@ -1456,30 +1465,81 @@ bool TextEntryPanel::isLanguageLump() const
 }
 
 // -----------------------------------------------------------------------------
-// Opens the language constructor over the strings in this text. One window per panel,
-// reused for whichever lump is asked for; every edit it makes goes back into the text
-// as it happens, so the editor's undo is the only undo there is
+// Every LANGUAGE lump of this entry's archive, in the order the archive holds them, which
+// is the order the engine reads them. The lump being edited comes from the editor, so
+// typing that isn't saved yet shows in the table. Each one gets an id: an archive can hold
+// two lumps called LANGUAGE, and a write must not have to guess which one a column meant
+// -----------------------------------------------------------------------------
+vector<LanguageLump> TextEntryPanel::languageLumps()
+{
+	language_files_.clear();
+	vector<LanguageLump> out;
+
+	auto entry = entry_.lock();
+	if (!entry)
+		return out;
+
+	MemChunk mc;
+	text_area_->getRawText(mc);
+	string editing((const char*)mc.data(), mc.size());
+
+	auto* arch = entry->parent();
+	if (!arch)
+	{
+		language_files_.emplace_back("LANGUAGE", no_file, editing, string(entry->name()));
+		out.push_back({ "LANGUAGE", editing });
+		return out;
+	}
+
+	for (unsigned i = 0; i < arch->numEntries(); ++i)
+	{
+		auto* each = arch->entryAt(i);
+		if (!each || !strutil::equalCI(each->nameNoExt(), "language"))
+			continue;
+
+		string id   = each->name();
+		string text;
+		if (each == entry.get())
+			text = editing;
+		else
+		{
+			auto& data = each->data();
+			text.assign((const char*)data.data(), data.size());
+		}
+
+		// Two lumps with the same name still need two ids
+		for (size_t n = 0; std::any_of(out.begin(), out.end(), [&](const LanguageLump& one)
+		     { return one.name == id; });
+		     ++n)
+			id = each->name() + " (" + std::to_string(n + 2) + ")";
+
+		language_files_.emplace_back(id, i, text, string(each->name()));
+		out.push_back({ id, text });
+	}
+	return out;
+}
+
+// -----------------------------------------------------------------------------
+// Opens the language constructor over the archive's strings. One window per panel,
+// reused for whichever lump is asked for; what it changes goes back into the file the
+// string lives in, and into the editor's undo when that file is the one being edited
 // -----------------------------------------------------------------------------
 void TextEntryPanel::openLanguageConstructor()
 {
 	if (loading_entry_)
 		return;
 
-	MemChunk mc;
-	text_area_->getRawText(mc);
-	string text((const char*)mc.data(), mc.size());
-
 	if (!language_constructor_)
 	{
 		language_constructor_ = new LanguageConstructorDialog(this);
 		language_constructor_->setApplyFunction(
-			[this](string_view out)
+			[this](string_view lump, string_view out)
 			{
-				return applyLanguageText(out);
+				return applyLanguageText(lump, out);
 			});
 
 		// Coming back to the window is the last chance before one of its controls writes,
-		// so its copy gets made fresh again here
+		// so its copies get made fresh again here
 		language_constructor_->Bind(
 			wxEVT_ACTIVATE,
 			[this](wxActivateEvent& e)
@@ -1489,13 +1549,17 @@ void TextEntryPanel::openLanguageConstructor()
 				e.Skip();
 			});
 		language_constructor_->setSelectFunction(
-			[this](size_t offset)
+			[this](string_view lump, size_t offset)
 			{
-				selectLanguageString(offset);
+				selectLanguageString(lump, offset);
 			});
 	}
 
-	if (!language_constructor_->loadText(text) && !isLanguageLump())
+	auto entry  = entry_.lock();
+	auto lumps  = languageLumps();
+	auto current = entry ? entry->name() : "LANGUAGE";
+
+	if (!language_constructor_->loadLumps(lumps, current) && !isLanguageLump())
 	{
 		wxMessageBox(
 			wxS("This text has no LANGUAGE strings in it, and isn't a lump named LANGUAGE.\n\n"
@@ -1506,7 +1570,7 @@ void TextEntryPanel::openLanguageConstructor()
 		return;
 	}
 
-	if (auto entry = entry_.lock())
+	if (entry)
 	{
 		string title = "Language Constructor - " + entry->name();
 		if (auto* arch = entry->parent())
@@ -1520,53 +1584,101 @@ void TextEntryPanel::openLanguageConstructor()
 }
 
 // -----------------------------------------------------------------------------
-// Writes the whole language text the constructor made back over the editor, as one undo
-// step. Refuses, and re-reads the window, when the editor moved under it
+// Writes one lump the constructor changed. The one being edited goes through the editor,
+// as one undo step; the others go back into the archive, but only while their bytes are
+// still what the table read - anything else would come over somebody's unsaved work
 // -----------------------------------------------------------------------------
-bool TextEntryPanel::applyLanguageText(string_view text)
+bool TextEntryPanel::applyLanguageText(string_view lump, string_view text)
 {
 	if (loading_entry_)
 		return false;
 
-	MemChunk mc;
-	text_area_->getRawText(mc);
-	string current((const char*)mc.data(), mc.size());
+	auto at = std::find_if(language_files_.begin(), language_files_.end(), [&](const auto& one)
+	{ return std::get<0>(one) == lump; });
+	if (at == language_files_.end())
+		return false;
 
-	// The window holds a copy of the whole text, so it may only go over text that still
-	// matches what it was copied from; anything typed in the editor since would come back
-	// out with the rewrite
-	if (language_constructor_ && current != string(language_constructor_->sourceText()))
+	auto  edited = entry_.lock();
+	auto* arch   = edited ? edited->parent() : nullptr;
+	auto  index  = std::get<1>(*at);
+	auto* entry  = (index == no_file || !arch) ? nullptr : arch->entryAt(index);
+
+	// The lump on screen goes through the editor, so its undo covers it
+	if (index == no_file || (edited && entry == edited.get()))
 	{
-		language_constructor_->adopt(current);
+		// The window holds a copy of the whole text, so it may only go over text that still
+		// matches what it was copied from; anything typed since would come back out
+		MemChunk mc;
+		text_area_->getRawText(mc);
+		string current((const char*)mc.data(), mc.size());
+
+		if (language_constructor_ && current != string(language_constructor_->sourceText()))
+		{
+			resyncLanguageConstructor();
+			return false;
+		}
+
+		text_area_->BeginUndoAction();
+		text_area_->SetTargetStart(0);
+		text_area_->SetTargetEnd(text_area_->GetLength());
+		text_area_->ReplaceTarget(wxutil::strFromView(text));
+		text_area_->EndUndoAction();
+
+		centreEditedLine(0, current, text);
+
+		setModified();
+		std::get<2>(*at) = string(text);
+		return true;
+	}
+
+	// The place in the archive may have moved since the table read it; a write that can't
+	// prove which lump it means is a write that doesn't happen
+	if (!entry || !strutil::equalCI(entry->name(), std::get<3>(*at)))
+	{
+		if (language_constructor_)
+			language_constructor_->note("That file isn't where the table read it, so nothing was written");
 		return false;
 	}
 
-	text_area_->BeginUndoAction();
-	text_area_->SetTargetStart(0);
-	text_area_->SetTargetEnd(text_area_->GetLength());
-	text_area_->ReplaceTarget(wxutil::strFromView(text));
-	text_area_->EndUndoAction();
+	auto& data = entry->data();
+	if (string((const char*)data.data(), data.size()) != std::get<2>(*at))
+	{
+		if (language_constructor_)
+			language_constructor_->note("That file changed since the table read it, so nothing was written");
+		return false;
+	}
 
-	centreEditedLine(0, current, text);
+	entry->importMem(text.data(), text.size());
+	std::get<2>(*at) = string(text);
 
-	setModified();
+	if (auto* owner = entry->parent())
+	{
+		owner->setModified(true);
+		owner->entryStateChanged(entry);
+	}
 	return true;
 }
 
 // -----------------------------------------------------------------------------
-// Points the language constructor at the text as it is now, after typing in the editor
+// Points the language constructor at the archive's files as they are now, after typing in
+// the editor or a change on disk
 // -----------------------------------------------------------------------------
 void TextEntryPanel::resyncLanguageConstructor()
 {
 	if (!language_constructor_ || !language_constructor_->IsShown())
 		return;
 
+	auto entry   = entry_.lock();
+	auto lumps   = languageLumps();
+	auto current = entry ? entry->name() : "LANGUAGE";
+
 	MemChunk mc;
 	text_area_->getRawText(mc);
-	string current((const char*)mc.data(), mc.size());
+	string editing((const char*)mc.data(), mc.size());
 
-	if (current != string(language_constructor_->sourceText()))
-		language_constructor_->adopt(current);
+	if (language_constructor_->currentLump() != current
+	|| editing != string(language_constructor_->sourceText()))
+		language_constructor_->adopt(lumps, current);
 }
 
 // -----------------------------------------------------------------------------

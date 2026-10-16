@@ -7,6 +7,7 @@ namespace slade
 class ActorConstructorDialog;
 class MenuConstructorDialog;
 class LanguageConstructorDialog;
+struct LanguageLump;
 class ActorDefinition;
 class ActorSource;
 struct NewActorSpec;
@@ -70,12 +71,17 @@ private:
 	// Opens the language constructor over the strings in this text, and writes what it
 	// changes back the same way the menu one does
 	void openLanguageConstructor();
-	bool applyLanguageText(string_view text);
+	bool applyLanguageText(string_view lump, string_view text);
 	void resyncLanguageConstructor();
 
+	// Every LANGUAGE lump of this entry's archive, as text, with an id each. The table
+	// shows them all; an edit goes back to the file the string lives in
+	vector<LanguageLump> languageLumps();
+
 	// Moves the editor to a string the window picked, and points the window at the
-	// definition the caret has moved into
-	void selectLanguageString(size_t offset);
+	// definition the caret has moved into. The id says which of the archive's LANGUAGE
+	// files the string was read from, which isn't necessarily this one
+	void selectLanguageString(string_view lump, size_t offset);
 	void followLanguageCaret();
 
 	// Whether this lump is one the engine reads as LANGUAGE, whatever it's named on disk
@@ -170,6 +176,12 @@ private:
 
 	// The language constructor, one per panel as well
 	LanguageConstructorDialog* language_constructor_ = nullptr;
+
+	// Which file each of the table's ids is - its place in the archive, so a write can't
+	// land on a re-used name - the bytes it was read with, and an id. An id rather than a
+	// name because an archive can hold two lumps called LANGUAGE
+	static constexpr unsigned no_file = -1;
+	vector<std::tuple<string, unsigned, string, string>> language_files_;
 
 	// True while the panel is feeding text to the menu constructor, so the change
 	// the editor is about to announce doesn't bounce back as a reload

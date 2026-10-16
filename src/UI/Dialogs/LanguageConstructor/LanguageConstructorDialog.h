@@ -12,52 +12,67 @@ class wxTextCtrl;
 
 namespace slade
 {
-// Lets the user read and change a LANGUAGE lump as a table: one row per string, one
-// column per language the lump declares. The window is modeless and every edit goes back
-// to the text as it's made, so the editor stays the place the file lives and its Ctrl+Z
-// is the undo for this window too.
+// Lets the user read and change an archive's LANGUAGE lumps as a table: one row per
+// string, one column per language any of those lumps declares. The window is modeless and
+// every edit goes back to the file it came from as it's made, so the editor stays the
+// place the open lump lives (and its Ctrl+Z is the undo for that one) while the other
+// lumps are written straight back into the archive.
 //
-// It knows nothing about archives. The text comes in through loadText and goes back out
-// through the function setApplyFunction installs.
+// It knows nothing about archives. The texts come in through loadLumps and go back out
+// through the function setApplyFunction installs, which is told which lump each text is
+// for.
 class LanguageConstructorDialog : public wxDialog
 {
 public:
 	explicit LanguageConstructorDialog(wxWindow* parent);
 
-	// Reads a lump's text and refills the table. A lump with no strings in it is an empty
-	// page rather than a failure
-	bool loadText(string_view text);
+	// Reads the archive's LANGUAGE lumps and refills the table. [current] is the one the
+	// text editor is showing, which is where the caret and the undo live. No strings
+	// anywhere is an empty page rather than a failure
+	bool loadLumps(const vector<LanguageLump>& lumps, string_view current);
 
-	// Takes text the panel has already accepted, so the window's own copy stays the truth
-	void adopt(string_view text)
-	{
-		loadText(text);
-	}
+	// Reads a single lump, for a text that isn't part of an archive
+	bool loadText(string_view text, string_view name = "LANGUAGE");
 
-	// What to call with the whole new text after each change. False means the editor
-	// didn't take it, which is how the window learns to stop trying
-	void setApplyFunction(std::function<bool(string_view)> apply) { apply_ = std::move(apply); }
+	// Takes the texts the caller has already accepted, so the window's copies stay the truth
+	void adopt(const vector<LanguageLump>& lumps, string_view current);
 
-	// The text as the window holds it, so the panel can tell whether it moved under here
-	string_view sourceText() const { return source_.originalText(); }
+	// What to call with the whole new text of one lump after a change. False means the
+	// caller didn't take it, which is how the window learns to stop trying
+	void setApplyFunction(std::function<bool(string_view lump, string_view text)> apply) { apply_ = std::move(apply); }
 
-	// Whether the lump turned out to hold any strings at all
-	bool hasStrings() const { return !source_.entries().empty(); }
+	// The text of the lump the editor is showing, so the panel can tell whether it moved
+	// under here
+	string_view sourceText() const;
+
+	// Which lump that is, empty when the window has nothing loaded
+	const string& currentLump() const { return current_; }
+
+	// Whether any of the lumps turned out to hold strings
+	bool hasStrings() const;
 
 	// Shows the row that holds the definition the caret has landed on. The keyboard stays
 	// where it was: the window follows the editor, never the other way round
 	void followCaret(size_t offset);
 
 	// What to call to move the editor to the line a picked string is written on, without
-	// taking the focus off this window
-	void setSelectFunction(std::function<void(size_t)> select) { select_ = std::move(select); }
+	// taking the focus off this window. It is told which lump the string lives in, because
+	// that may not be the one being edited
+	void setSelectFunction(std::function<void(string_view lump, size_t offset)> select)
+	{
+		select_ = std::move(select);
+	}
 
 	// Hides the window without closing it for good, remembering where it stood
 	void putAway();
 
-	// Where a string sits in the text, so picking a row can move the editor there. False
-	// when the language has no such string
-	bool stringOffset(string_view label, string_view language, size_t& offset) const;
+	// A line in the window's own note space, for the caller to explain something that
+	// didn't happen. Empty clears it
+	void note(string_view what) { say(what); }
+
+	// Where a string sits, in which of the lumps, so picking a row can move the editor
+	// there. False when no lump has the string in that language
+	bool stringOffset(string_view label, string_view language, string& lump, size_t& offset) const;
 
 private:
 	void buildColumns();
@@ -88,12 +103,16 @@ private:
 	// Puts the table's rows in the order of [column], and the arrow on that header
 	void sortByColumn(long column);
 
-	// Writes the whole lump back through the panel after one change
+	// Writes the changed lumps back through the caller after one change
 	void applyChange();
 
 	string selectedLanguage(long column) const;
 
-	// The languages the lump declares, and the rows the filter leaves standing
+	// Which file a language belongs to: the one being edited if it declares the language,
+	// otherwise the last lump that does. Where a new string goes when he adds one
+	string lumpForLanguage(string_view language) const;
+
+	// The languages the archive's lumps declare, and the rows the filter leaves standing
 	vector<string>   languages_;
 	vector<string>   keys_;
 	vector<long>     shown_;
@@ -120,13 +139,18 @@ private:
 	long        edit_row_  = -1;
 	long        edit_col_  = -1;
 
-	LanguageSource source_;
+	// Every LANGUAGE lump of the archive, read in the order the engine loads them
+	LanguageBook book_;
+
+	// Which of those the text editor is showing, and the texts as they came in
+	string               current_;
+	vector<LanguageLump> read_;
 
 	// True while the widgets are being refilled, so they don't react to it
 	bool updating_ = false;
 
-	std::function<bool(string_view)> apply_;
-	std::function<void(size_t)>      select_;
+	std::function<bool(string_view lump, string_view text)> apply_;
+	std::function<void(string_view lump, size_t offset)>    select_;
 
 	// Which header the rows are ordered by, and which way
 	long sort_column_ = 0;

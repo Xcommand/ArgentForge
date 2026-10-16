@@ -126,22 +126,56 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 }
 
 // -----------------------------------------------------------------------------
-// Reads the lump and refills the table
+// Reads the archive's lumps and refills the table
 // -----------------------------------------------------------------------------
-bool LanguageConstructorDialog::loadText(string_view text)
+bool LanguageConstructorDialog::loadLumps(const vector<LanguageLump>& lumps, string_view current)
 {
-	source_.load(text);
+	read_    = lumps;
+	current_ = string(current);
+
+	book_.clear();
+	for (const auto& lump : read_)
+		book_.open(lump.name, lump.text);
+
 	buildColumns();
 	buildRows();
-	return !source_.entries().empty();
+
+	bool any = false;
+	for (const auto& lump : book_.lumps())
+		any |= !lump->entries().empty();
+	return any;
+}
+
+bool LanguageConstructorDialog::loadText(string_view text, string_view name)
+{
+	return loadLumps({ { string(name), string(text) } }, name);
+}
+
+void LanguageConstructorDialog::adopt(const vector<LanguageLump>& lumps, string_view current)
+{
+	loadLumps(lumps, current);
+}
+
+string_view LanguageConstructorDialog::sourceText() const
+{
+	auto* lump = book_.lump(current_);
+	return lump ? lump->originalText() : string_view();
+}
+
+bool LanguageConstructorDialog::hasStrings() const
+{
+	for (const auto& lump : book_.lumps())
+		if (!lump->entries().empty())
+			return true;
+	return false;
 }
 
 // -----------------------------------------------------------------------------
-// One column per language the lump declares, after the key's own
+// One column per language any of the lumps declares, after the key's own
 // -----------------------------------------------------------------------------
 void LanguageConstructorDialog::buildColumns()
 {
-	languages_ = source_.languages();
+	languages_ = book_.languages();
 
 	list_->ClearAll();
 	list_->InsertColumn(key_column, wxS("String"), wxLIST_FORMAT_LEFT, ui::scalePx(220));
@@ -166,17 +200,21 @@ void LanguageConstructorDialog::buildRows()
 
 	by_key_.clear();
 	keys_.clear();
-	for (const auto& entry : source_.entries())
+	for (const auto& lump : book_.lumps())
 	{
-		if (!entry.parsed)
-			continue;
+		for (const auto& entry : lump->entries())
+		{
+			if (!entry.parsed)
+				continue;
 
-		// The last write of a label wins, which is what the engine does with it too
-		for (const auto& lang : (entry.langs.empty() ? vector<string>{ "" } : entry.langs))
-			by_key_[entry.label][lang] = &entry;
+			// The last write of a label wins, which is what the engine does with it too. In
+			// load order, so a later file's copy takes the cell over an earlier one's
+			for (const auto& lang : (entry.langs.empty() ? vector<string>{ "" } : entry.langs))
+				by_key_[entry.label][lang] = &entry;
 
-		if (std::find(keys_.begin(), keys_.end(), entry.label) == keys_.end())
-			keys_.push_back(entry.label);
+			if (std::find(keys_.begin(), keys_.end(), entry.label) == keys_.end())
+				keys_.push_back(entry.label);
+		}
 	}
 
 	shown_.clear();
@@ -244,10 +282,12 @@ void LanguageConstructorDialog::buildRows()
 
 	if (counts_)
 		counts_->SetLabel(wxString::Format(
-			wxS("%d strings, %d language%s"),
+			wxS("%d strings, %d language%s, %d file%s"),
 			(int)keys_.size(),
 			(int)languages_.size(),
-			languages_.size() == 1 ? "" : "s"));
+			languages_.size() == 1 ? "" : "s",
+			(int)book_.lumpNames().size(),
+			book_.lumpNames().size() == 1 ? "" : "s"));
 	if (btn_add_)
 	{
 		// The column he was looking at keeps its place across a refill, so a string added
@@ -390,7 +430,7 @@ void LanguageConstructorDialog::endCellEdit(bool keep)
 		return;
 
 	auto language = selectedLanguage(column);
-	auto* entry   = source_.entry(key, language);
+	auto* entry   = book_.entry(key, language);
 
 	if (entry)
 	{
@@ -400,7 +440,7 @@ void LanguageConstructorDialog::endCellEdit(bool keep)
 	}
 	else if (!value.empty())
 	{
-		if (!source_.addString(key, language, value))
+		if (!book_.addString(lumpForLanguage(language), key, language, value))
 		{
 			say("That key is already defined under " + language + ", so nothing was added");
 			return;
@@ -428,7 +468,7 @@ void LanguageConstructorDialog::addFromFields()
 	}
 
 	string language = add_language_.empty() ? (languages_.empty() ? "default" : languages_[0]) : add_language_;
-	if (!source_.addString(key, language, value))
+	if (!book_.addString(lumpForLanguage(language), key, language, value))
 	{
 		say("'" + key + "' is already defined under " + language + ", so nothing was added");
 		return;
@@ -441,32 +481,67 @@ void LanguageConstructorDialog::addFromFields()
 }
 
 // -----------------------------------------------------------------------------
-// Hands the whole lump to the panel, and refills from it. Refusing to take it back
-// means the editor moved under here, so the window reads what's there now
+// Hands every lump the change touched to the caller, and refills from what came back.
+// Refusing to take one means the editor moved under here, so the window stops and reads
+// what's there now instead of pushing a stale text over it
 // -----------------------------------------------------------------------------
 void LanguageConstructorDialog::applyChange()
 {
-	string out = source_.serialize();
+	// Decided before anything is sent: a refusal makes the panel hand back fresh texts,
+	// and those must not be measured against a list made from the old ones
+	vector<std::pair<string, string>> send;
+	for (const auto& name : book_.lumpNames())
+	{
+		auto* lump = book_.lump(name);
+		if (lump && lump->modified())
+			send.emplace_back(name, lump->serialize());
+	}
 
-	// A refusal means the editor had text the window hadn't seen and put it back through
-	// adopt: refilling from our own copy would undo whatever the panel just restored
-	if (apply_ && !apply_(out))
-		return;
+	for (auto& [name, text] : send)
+	{
+		if (apply_ && !apply_(name, text))
+			return;
 
-	loadText(out);
+		// The caller took it, so this is the text the file holds now
+		if (auto* lump = book_.lump(name))
+			lump->load(text);
+	}
+
+	if (!send.empty())
+		buildRows();
 }
 
 // -----------------------------------------------------------------------------
-// Where the string named [label] under [language] begins in the text, so picking a
-// row can scroll the editor to it
+// Where the string named [label] under [language] begins, and in which of the lumps, so
+// picking a row can scroll the editor to it
 // -----------------------------------------------------------------------------
-bool LanguageConstructorDialog::stringOffset(string_view label, string_view language, size_t& offset) const
+bool LanguageConstructorDialog::stringOffset(string_view label, string_view language, string& lump, size_t& offset) const
 {
-	auto* entry = source_.entry(label, language);
-	if (!entry)
-		return false;
-	offset = entry->begin;
-	return true;
+	return book_.locate(label, language, lump, offset);
+}
+
+// -----------------------------------------------------------------------------
+// Which file a new string goes into: the one being edited when it declares the language,
+// otherwise the last lump that does
+// -----------------------------------------------------------------------------
+string LanguageConstructorDialog::lumpForLanguage(string_view language) const
+{
+	auto declares = [&](const LanguageSource* lump)
+	{
+		auto langs = lump->languages();
+		return std::find(langs.begin(), langs.end(), string(language)) != langs.end();
+	};
+
+	if (auto* now = book_.lump(current_); now && declares(now))
+		return current_;
+
+	for (size_t at = book_.lumpNames().size(); at-- > 0;)
+	{
+		const auto& name = book_.lumpNames()[at];
+		if (auto* lump = book_.lump(name); lump && declares(lump))
+			return name;
+	}
+	return current_;
 }
 
 // -----------------------------------------------------------------------------
@@ -502,8 +577,9 @@ void LanguageConstructorDialog::onItemSelected(wxListEvent& e)
 		return;
 
 	size_t offset = 0;
-	if (stringOffset(key, selectedLanguage(e.GetColumn()), offset))
-		select_(offset);
+	string   lump;
+	if (stringOffset(key, selectedLanguage(e.GetColumn()), lump, offset))
+		select_(lump, offset);
 }
 
 // -----------------------------------------------------------------------------
@@ -516,7 +592,11 @@ void LanguageConstructorDialog::followCaret(size_t offset)
 		return;
 
 	const LanguageEntry* nearest = nullptr;
-	for (const auto& entry : source_.entries())
+	auto*                lump    = book_.lump(current_);
+	if (!lump)
+		return;
+
+	for (const auto& entry : lump->entries())
 	{
 		if (!entry.parsed)
 			continue;
