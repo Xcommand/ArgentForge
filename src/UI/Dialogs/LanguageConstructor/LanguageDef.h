@@ -114,4 +114,53 @@ private:
 	std::deque<LanguageEntry> entries_;
 	std::map<string, BlockSpot> spots_;
 };
+
+// Every LANGUAGE lump of one archive, read in the order the archive loads them. A mod
+// keeps its translations in separate files ('LANGUAGE.enu', 'language.gearbox'), so a
+// table of the whole archive's languages has to look at all of them at once and send
+// each change back to the file that holds the string it touched.
+class LanguageBook
+{
+public:
+	// Reads [text] as the lump called [name]. Opening a name again replaces what was
+	// read before, so a reload keeps one copy per file. Any definition handed out from
+	// that lump is gone afterwards
+	LanguageSource& open(string_view name, string_view text);
+
+	bool has(string_view name) const;
+
+	// The lump by name, or null when the book has no such file
+	const LanguageSource* lump(string_view name) const;
+	LanguageSource*       lump(string_view name);
+
+	// The lumps in the order they were opened, which is the order the engine reads them
+	const vector<std::unique_ptr<LanguageSource>>& lumps() const { return lumps_; }
+
+	// Every language any lump declares, in the order each one first appears
+	vector<string> languages() const;
+
+	// Every string any lump defines, in the order each one first appears
+	vector<string> keys() const;
+
+	// The definition the game ends up with. A later lump overwrites an earlier one
+	// (TMap::Insert, tarray.h:1410), so the last write is the one that counts
+	const LanguageEntry* entry(string_view label, string_view language) const;
+
+	// Where the winning definition sits: its lump's name and its offset in it, so
+	// picking a row can move the editor to the right file. False when none has it
+	bool locate(string_view label, string_view language, string& name, size_t& offset) const;
+
+	// Writes [text] over the winning definition. False when no lump defines that string
+	// in that language
+	bool setString(string_view label, string_view language, string_view text);
+
+	// Adds a definition to the lump called [name]. False when there's no such lump, or
+	// when it already writes that label under that language
+	bool addString(string_view name, string_view label, string_view language, string_view text);
+
+private:
+	vector<std::unique_ptr<LanguageSource>> lumps_;
+	vector<string>                          names_;
+	std::map<string, size_t>                by_name_;
+};
 } // namespace slade

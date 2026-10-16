@@ -17,6 +17,8 @@
 
 #include <algorithm>
 #include <map>
+#include <memory>
+#include <set>
 
 using namespace slade;
 
@@ -133,35 +135,15 @@ string quoted(string_view text)
 	return out;
 }
 
-// The bytes of the quoted runs inside a statement, joined the way the engine joins them
-string valueOf(string_view statement)
+// The text the engine ends up with: every token of the value, a quoted run from inside
+// its quotes and anything else exactly as it was written. The engine keeps appending
+// whatever it finds before the ';' (stringtable.cpp:683-691), which is how Doom Deluxe
+// writes NAME = "text" ); and still gets its closing bracket
+string valueOf(string_view value)
 {
 	string out;
-
-	size_t i = 0;
-	while (i < statement.size())
-	{
-		if (statement[i] != '"')
-		{
-			++i;
-			continue;
-		}
-		size_t j = i + 1;
-		while (j < statement.size())
-		{
-			if (statement[j] == '\\')
-			{
-				j += 2;
-				continue;
-			}
-			if (statement[j] == '"')
-				break;
-			++j;
-		}
-		out += statement.substr(i + 1, j - i - 1);
-		i = j < statement.size() ? j + 1 : j;
-	}
-
+	for (const auto& token : tokenize(value))
+		out += token.text;
 	return out;
 }
 } // namespace
@@ -175,25 +157,37 @@ namespace slade
 {
 string LanguageEntry::text() const
 {
-	return valueOf(raw);
+	if (!parsed)
+		return {};
+
+	// Where the value sits inside the statement, the same arithmetic a rewrite uses
+	size_t from = value_begin - begin;
+	size_t to   = value_end - begin;
+	if (from > to || to > raw.size())
+		return {};
+
+	return valueOf(string_view(raw).substr(from, to - from));
 }
 
 bool LanguageEntry::setText(string_view text)
 {
-	if (!parsed || value_end < value_begin || value_begin < begin)
+	if (!parsed)
 		return false;
 
-	// For a string the file doesn't have yet, the entry covers no bytes and [raw] is the
-	// whole line that will be inserted, so the value's place is measured inside it
-	size_t limit = begin == end ? raw.size() : end - begin;
-	if (value_end - begin > limit)
-		return false;
-
-	// The value's place inside the statement, taken out and written back. The bytes the
-	// entry was read from stay as they were: they are where this goes on saving
+	// The value's place inside the statement. For a line the file doesn't have yet, [raw]
+	// is the whole line that will be inserted and [begin] is where it will go, so the same
+	// arithmetic reads correctly either way
 	size_t from = value_begin - begin;
 	size_t to   = value_end - begin;
-	raw = raw.substr(0, from) + quoted(text) + raw.substr(to);
+	if (from > to || to > raw.size())
+		return false;
+
+	auto value = quoted(text);
+	raw        = raw.substr(0, from) + value + raw.substr(to);
+
+	// The value moves with what was written into it. [begin] and [end] stay in the file's
+	// own coordinates, because that's where the writer puts this statement back
+	value_end = begin + from + value.size();
 	return true;
 }
 
@@ -263,9 +257,12 @@ bool LanguageSource::load(string_view text)
 		{
 			++i;
 			size_t first = i;
-			while (i < toks.size() && toks[i].quoted)
+			// Everything between the '=' and the ';' is the value, quoted runs and bare
+			// tokens alike: the engine appends each of them to the string it builds
+			// (stringtable.cpp:683-691)
+			while (i < toks.size() && toks[i].text != ";")
 				++i;
-			if (i < toks.size() && toks[i].text == ";" && i > first)
+			if (i < toks.size() && i > first)
 			{
 				entry.value_begin = toks[first].begin;
 				entry.value_end   = toks[i - 1].end;
@@ -486,5 +483,139 @@ void LanguageSource::shiftEntries(size_t at, size_t by)
 	for (auto& s : spots_)
 		if (s.second.end >= at)
 			s.second.end += by;
+}
+
+// -----------------------------------------------------------------------------
+// LanguageBook
+// -----------------------------------------------------------------------------
+LanguageSource& LanguageBook::open(string_view name, string_view text)
+{
+	string key(name);
+	auto   at = by_name_.find(key);
+	if (at == by_name_.end())
+	{
+		lumps_.push_back(std::make_unique<LanguageSource>());
+		names_.push_back(key);
+		at = by_name_.emplace(key, lumps_.size() - 1).first;
+	}
+	auto& source = *lumps_[at->second];
+	source.load(text);
+	return source;
+}
+
+bool LanguageBook::has(string_view name) const
+{
+	return by_name_.find(string(name)) != by_name_.end();
+}
+
+const LanguageSource* LanguageBook::lump(string_view name) const
+{
+	return const_cast<LanguageBook*>(this)->lump(name);
+}
+
+LanguageSource* LanguageBook::lump(string_view name)
+{
+	auto at = by_name_.find(string(name));
+	if (at == by_name_.end())
+		return nullptr;
+	return lumps_[at->second].get();
+}
+
+// A label is one name whatever case the file wrote it in, the same as in the engine's
+// table, but the spelling the first lump used is the one the table shows
+namespace
+{
+string lowerName(string_view name)
+{
+	string out(name);
+	for (auto& c : out)
+	{
+		if (c >= 'A' && c <= 'Z')
+			c = char(c - 'A' + 'a');
+	}
+	return out;
+}
+
+// Keeps the first spelling of each name while testing new ones against it
+struct SeenNames
+{
+	std::set<string> folded;
+
+	bool add(string_view name)
+	{
+		return folded.insert(lowerName(name)).second;
+	}
+};
+} // namespace
+
+vector<string> LanguageBook::languages() const
+{
+	vector<string> out;
+	for (const auto& source : lumps_)
+		for (const auto& lang : source->languages())
+			if (std::find(out.begin(), out.end(), lang) == out.end())
+				out.push_back(lang);
+	return out;
+}
+
+vector<string> LanguageBook::keys() const
+{
+	SeenNames seen;
+	vector<string> out;
+	for (const auto& source : lumps_)
+		for (const auto& entry : source->entries())
+		{
+			if (!entry.parsed)
+				continue;
+			if (seen.add(entry.label))
+				out.push_back(entry.label);
+		}
+	return out;
+}
+
+// The last lump that writes the string is the one the game reads, because a later
+// LANGUAGE file overwrites what an earlier one defined
+const LanguageEntry* LanguageBook::entry(string_view label, string_view language) const
+{
+	for (size_t at = lumps_.size(); at-- > 0;)
+	{
+		if (auto e = lumps_[at]->entry(label, language))
+			return e;
+	}
+	return nullptr;
+}
+
+bool LanguageBook::locate(string_view label, string_view language, string& name, size_t& offset) const
+{
+	for (size_t at = lumps_.size(); at-- > 0;)
+	{
+		auto& source = *lumps_[at];
+		auto  entry  = source.entry(label, language);
+		if (!entry)
+			continue;
+		// A definition added since the file was read has no bytes behind it yet
+		if (entry->end <= entry->begin)
+			return false;
+		name   = names_[at];
+		offset = entry->begin;
+		return true;
+	}
+	return false;
+}
+
+bool LanguageBook::setString(string_view label, string_view language, string_view text)
+{
+	for (size_t at = lumps_.size(); at-- > 0;)
+		if (lumps_[at]->setString(label, language, text))
+			return true;
+	return false;
+}
+
+bool LanguageBook::addString(string_view name, string_view label, string_view language, string_view text)
+{
+	auto source = lump(name);
+	if (!source)
+		return false;
+	return source->addString(label, language, text);
 }
 } // namespace slade
