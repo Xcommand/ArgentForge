@@ -324,16 +324,109 @@ void LanguageConstructorDialog::chooseAdditional()
 }
 
 // -----------------------------------------------------------------------------
-// One column per language any of the lumps declares, after the key's own
+// One column per language, after the key's own. Tags the engine folds into the same
+// language share a column, because a modder filling in Doom Deluxe's English shouldn't
+// have to know that one file wrote 'enu', another 'eng' and a third just 'en'
 // -----------------------------------------------------------------------------
 void LanguageConstructorDialog::buildColumns()
 {
 	languages_ = book_.languages();
 
+	columns_.clear();
+	for (const auto& tag : languages_)
+	{
+		auto group = languageGroup(tag);
+		bool found = false;
+		for (auto& column : columns_)
+		{
+			if (column.group != group)
+				continue;
+			column.tags.push_back(tag);
+			found = true;
+			break;
+		}
+		if (!found)
+			columns_.push_back({ group, "", { tag } });
+	}
+
+	// How many pieces the engine's own form of the tag has says how specific it is: it
+	// reads en-US before it falls back to a bare en. Ties go to the later file, which is
+	// the one whose copy the game shows
+	auto specificity = [](string_view tag)
+	{
+		auto  code  = canonicalCode(tag);
+		int   parts = 1;
+		for (auto c : code)
+			if (c == '-')
+				++parts;
+		return parts;
+	};
+
+	for (auto& column : columns_)
+	{
+		std::stable_sort(column.tags.begin(), column.tags.end(), [&](string_view left, string_view right)
+		{
+			auto dl = specificity(left), dr = specificity(right);
+			if (dl != dr)
+				return dl > dr;
+			auto at_left  = std::find(languages_.begin(), languages_.end(), string(left));
+			auto at_right = std::find(languages_.begin(), languages_.end(), string(right));
+			return at_right < at_left;
+		});
+
+		string label = languageName(column.tags[0]);
+		if (column.tags.size() > 1)
+		{
+			// The header lists the tags in the order the files wrote them; only the cell's
+			// own choice follows the engine's priority
+			vector<string> shown = column.tags;
+			std::stable_sort(shown.begin(), shown.end(), [&](string_view left, string_view right)
+			{
+				return std::find(languages_.begin(), languages_.end(), string(left))
+				     < std::find(languages_.begin(), languages_.end(), string(right));
+			});
+			string joined;
+			for (const auto& tag : shown)
+				joined += (joined.empty() ? "" : ", ") + tag;
+			label += " (" + joined + ")";
+		}
+		column.label = label;
+	}
+
 	list_->ClearAll();
 	list_->InsertColumn(key_column, wxS("String"), wxLIST_FORMAT_LEFT, ui::scalePx(220));
-	for (size_t i = 0; i < languages_.size(); ++i)
-		list_->InsertColumn((int)i + 1, wxString::FromUTF8(languages_[i]), wxLIST_FORMAT_LEFT, ui::scalePx(300));
+	for (size_t i = 0; i < columns_.size(); ++i)
+		list_->InsertColumn((int)i + 1, wxString::FromUTF8(columns_[i].label), wxLIST_FORMAT_LEFT, ui::scalePx(300));
+}
+
+long LanguageConstructorDialog::columnIndex(long header_column) const
+{
+	if (header_column <= key_column || header_column > (long)columns_.size())
+		return -1;
+	return header_column - 1;
+}
+
+// The cell's own string: the first tag in the column that this row actually has. Through
+// the index built with the rows, because a thousand strings times five columns is not
+// something to search for on every refill
+const LanguageEntry* LanguageConstructorDialog::cellAt(string_view key, const LanguageColumn& column) const
+{
+	for (const auto& tag : column.tags)
+	{
+		if (auto* entry = cell(key, tag))
+			return entry;
+	}
+	return nullptr;
+}
+
+string LanguageConstructorDialog::tagAt(string_view key, const LanguageColumn& column) const
+{
+	for (const auto& tag : column.tags)
+	{
+		if (cell(key, tag))
+			return tag;
+	}
+	return column.tags.empty() ? "" : column.tags[0];
 }
 
 // -----------------------------------------------------------------------------
@@ -376,8 +469,8 @@ void LanguageConstructorDialog::buildRows()
 		if (!filter.empty())
 		{
 			bool hit = strutil::containsCI(keys_[i], filter);
-			for (const auto& lang : languages_)
-				if (auto* entry = cell(keys_[i], lang))
+			for (const auto& column : columns_)
+				if (auto* entry = cellAt(keys_[i], column))
 					hit |= strutil::containsCI(entry->text(), filter);
 			if (!hit)
 				continue;
@@ -387,21 +480,22 @@ void LanguageConstructorDialog::buildRows()
 
 	// The order he picked by clicking a header. A stable sort keeps the file's own order
 	// underneath it, so rows with the same text don't swap between one refill and the next
-	if (!shown_.empty() && sort_column_ < (long)languages_.size() + 1)
+	if (!shown_.empty() && sort_column_ < (long)columns_.size() + 1)
 	{
-		string language = sort_column_ > key_column ? languages_[std::min((size_t)sort_column_ - 1, languages_.size() - 1)] : string();
+		const LanguageColumn* sort_by = sort_column_ > key_column ? &columns_[std::min((size_t)sort_column_ - 1, columns_.size() - 1)]
+		                                                          : nullptr;
 		std::stable_sort(shown_.begin(), shown_.end(), [&](long left, long right)
 		{
 			string a, b;
-			if (sort_column_ == key_column)
+			if (!sort_by)
 			{
 				a = fold(keys_[left]);
 				b = fold(keys_[right]);
 			}
 			else
 			{
-				auto* ea = cell(keys_[left], language);
-				auto* eb = cell(keys_[right], language);
+				auto* ea = cellAt(keys_[left], *sort_by);
+				auto* eb = cellAt(keys_[right], *sort_by);
 				a = fold(ea ? ea->text() : string());
 				b = fold(eb ? eb->text() : string());
 			}
@@ -414,9 +508,9 @@ void LanguageConstructorDialog::buildRows()
 	{
 		const auto& key = keys_[shown_[row]];
 		list_->InsertItem((long)row, wxString::FromUTF8(key));
-		for (size_t c = 0; c < languages_.size(); ++c)
+		for (size_t c = 0; c < columns_.size(); ++c)
 		{
-			auto* entry = cell(key, languages_[c]);
+			auto* entry = cellAt(key, columns_[c]);
 			list_->SetItem((long)row, (int)c + 1, entry ? wxString::FromUTF8(entry->text()) : wxEmptyString);
 		}
 	}
@@ -437,16 +531,19 @@ void LanguageConstructorDialog::buildRows()
 		counts_->SetLabel(wxString::Format(
 			wxS("%d strings, %d language%s, %d file%s"),
 			(int)keys_.size(),
-			(int)languages_.size(),
-			languages_.size() == 1 ? "" : "s",
+			(int)columns_.size(),
+			columns_.size() == 1 ? "" : "s",
 			(int)book_.lumpNames().size(),
 			book_.lumpNames().size() == 1 ? "" : "s"));
 	if (btn_add_)
 	{
 		// The column he was looking at keeps its place across a refill, so a string added
 		// after an edit still goes where he meant it
-		if (add_language_.empty() || std::find(languages_.begin(), languages_.end(), add_language_) == languages_.end())
-			add_language_ = languages_.empty() ? "default" : languages_[0];
+		bool known = false;
+		for (const auto& column : columns_)
+			known |= std::find(column.tags.begin(), column.tags.end(), add_language_) != column.tags.end();
+		if (!known)
+			add_language_ = columns_.empty() ? "default" : columns_[0].tags[0];
 		btn_add_->SetLabel(wxString::FromUTF8("Add to " + add_language_ + " in " + primary_));
 	}
 
@@ -472,17 +569,31 @@ const LanguageEntry* LanguageConstructorDialog::cell(string_view key, string_vie
 
 const LanguageEntry* LanguageConstructorDialog::cellEntry(long row, long column) const
 {
-	auto key = keyAt(row);
-	if (key.empty() || column <= key_column || column > (long)languages_.size())
+	auto index = columnIndex(column);
+	auto key   = keyAt(row);
+	if (index < 0 || key.empty())
 		return nullptr;
-	return cell(key, languages_[column - 1]);
+	return cellAt(key, columns_[index]);
 }
 
+// The tag a cell was taken from, so an edit writes the file that holds it rather than
+// whichever tag happens to share the column
+string LanguageConstructorDialog::selectedTag(long row, long column) const
+{
+	auto index = columnIndex(column);
+	auto key   = keyAt(row);
+	if (index < 0 || key.empty())
+		return "";
+	return tagAt(key, columns_[index]);
+}
+
+// The column's own leading tag, for an add where no row decides anything
 string LanguageConstructorDialog::selectedLanguage(long column) const
 {
-	if (column <= key_column || column > (long)languages_.size())
-		return languages_.empty() ? "" : languages_[0];
-	return languages_[column - 1];
+	auto index = columnIndex(column);
+	if (index < 0)
+		return columns_.empty() ? "" : columns_[0].tags[0];
+	return columns_[index].tags.empty() ? "" : columns_[index].tags[0];
 }
 
 // -----------------------------------------------------------------------------
@@ -500,7 +611,7 @@ void LanguageConstructorDialog::say(string_view what)
 // -----------------------------------------------------------------------------
 void LanguageConstructorDialog::sortByColumn(long column)
 {
-	if (column < 0 || column > (long)languages_.size())
+	if (column < 0 || column > (long)columns_.size())
 		return;
 
 	if (sort_column_ == column)
@@ -519,7 +630,7 @@ void LanguageConstructorDialog::sortByColumn(long column)
 // -----------------------------------------------------------------------------
 void LanguageConstructorDialog::editCell(long row, long column)
 {
-	if (column <= key_column || column > (long)languages_.size())
+	if (column <= key_column || column > (long)columns_.size())
 		return;
 
 	auto* entry = cellEntry(row, column);
@@ -582,7 +693,7 @@ void LanguageConstructorDialog::endCellEdit(bool keep)
 	if (!keep || key.empty())
 		return;
 
-	auto language = selectedLanguage(column);
+	auto language = selectedTag(row, column);
 	auto* entry   = book_.entry(key, language);
 
 	if (entry)
@@ -620,7 +731,7 @@ void LanguageConstructorDialog::addFromFields()
 		return;
 	}
 
-	string language = add_language_.empty() ? (languages_.empty() ? "default" : languages_[0]) : add_language_;
+	string language = add_language_.empty() ? (columns_.empty() ? "default" : columns_[0].tags[0]) : add_language_;
 	if (!addNewString(key, language, value))
 	{
 		say("'" + key + "' is already defined under " + language + ", so nothing was added");
@@ -750,9 +861,9 @@ void LanguageConstructorDialog::onItemSelected(wxListEvent& e)
 
 	// The button names the language of the column he last looked at, which is the one
 	// an added string most likely belongs to
-	if (!languages_.empty())
+	if (!columns_.empty())
 	{
-		add_language_ = selectedLanguage(e.GetColumn());
+		add_language_ = selectedTag(e.GetIndex(), e.GetColumn());
 		if (btn_add_)
 			btn_add_->SetLabel(wxString::FromUTF8("Add to " + add_language_));
 	}
@@ -763,7 +874,7 @@ void LanguageConstructorDialog::onItemSelected(wxListEvent& e)
 
 	size_t offset = 0;
 	string   lump;
-	if (stringOffset(key, selectedLanguage(e.GetColumn()), lump, offset))
+	if (stringOffset(key, selectedTag(e.GetIndex(), e.GetColumn()), lump, offset))
 		select_(lump, offset);
 }
 

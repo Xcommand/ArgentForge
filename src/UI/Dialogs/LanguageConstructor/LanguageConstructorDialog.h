@@ -132,13 +132,35 @@ private:
 	void applyChange();
 
 	string selectedLanguage(long column) const;
+	string selectedTag(long row, long column) const;
+
+	// One column per language, not per tag: a mod that writes 'enu' in one file and 'eng'
+	// in another has one English to fill in, and the engine reads the most specific tag
+	// first anyway
+	struct LanguageColumn
+	{
+		string       group; // what languageGroup calls it, e.g. "en"
+		string       label; // what the header shows, e.g. "English (US) (enu, eng, en)"
+		vector<string> tags; // the tags folded into it, most specific first
+	};
+
+	// The column's own number, or -1 when the header is the key's
+	long columnIndex(long header_column) const;
+
+	// The string a row shows in a column: the most specific tag the row has a value under
+	const LanguageEntry* cellAt(string_view key, const LanguageColumn& column) const;
+
+	// Which tag a cell was taken from, so an edit writes the file that holds it
+	string tagAt(string_view key, const LanguageColumn& column) const;
 
 	// Which file a language belongs to: the one being edited if it declares the language,
 	// otherwise the last lump that does. Where a new string goes when he adds one
 	string lumpForLanguage(string_view language) const;
 
-	// The languages the archive's lumps declare, and the rows the filter leaves standing
+	// The languages the archive's lumps declare, folded into columns, and the rows the
+	// filter leaves standing
 	vector<string>   languages_;
+	vector<LanguageColumn> columns_;
 	vector<string>   keys_;
 	vector<long>     shown_;
 	std::map<string, std::map<string, const LanguageEntry*>> by_key_;
