@@ -190,6 +190,10 @@ private:
 	static constexpr unsigned no_file = -1;
 	vector<std::tuple<string, unsigned, string, string>> language_files_;
 
+	// The id the table gave the file this panel is showing. It isn't always the lump's own
+	// name: a WAD can hold two lumps called LANGUAGE, and the second one is numbered
+	string language_current_id_;
+
 	// True while the panel is feeding text to the menu constructor, so the change
 	// the editor is about to announce doesn't bounce back as a reload
 	bool applying_menu_ = false;

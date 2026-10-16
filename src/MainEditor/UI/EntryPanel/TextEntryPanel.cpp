@@ -1502,6 +1502,7 @@ ArchiveEntry* TextEntryPanel::languageEntryAt(Archive* arch, unsigned index)
 vector<LanguageLump> TextEntryPanel::languageLumps()
 {
 	language_files_.clear();
+	language_current_id_.clear();
 	vector<LanguageLump> out;
 
 	auto entry = entry_.lock();
@@ -1515,8 +1516,12 @@ vector<LanguageLump> TextEntryPanel::languageLumps()
 	auto* arch = entry->parent();
 	if (!arch)
 	{
-		language_files_.emplace_back("LANGUAGE", no_file, editing, string(entry->name()));
-		out.push_back({ "LANGUAGE", editing });
+		// The id has to be the name the window calls this file, or the panel would be
+		// looking for its own text under a name the table never had
+		string id = entry->name();
+		language_current_id_ = id;
+		language_files_.emplace_back(id, no_file, editing, id);
+		out.push_back({ id, editing });
 		return out;
 	}
 
@@ -1546,6 +1551,9 @@ vector<LanguageLump> TextEntryPanel::languageLumps()
 		     { return one.name == id; });
 		     ++n)
 			id = each->name() + " (" + std::to_string(n + 2) + ")";
+
+		if (each == entry.get())
+			language_current_id_ = id;
 
 		language_files_.emplace_back(id, static_cast<unsigned>(i), text, string(each->name()));
 		out.push_back({ id, text });
@@ -1650,15 +1658,15 @@ void TextEntryPanel::openLanguageConstructor()
 					return false;
 
 				// The new file has to be in the table before the window can point at it
-				auto entry = entry_.lock();
-				language_constructor_->adopt(languageLumps(), entry ? entry->name() : "LANGUAGE");
+				auto lumps = languageLumps();
+				language_constructor_->adopt(lumps, language_current_id_);
 				return true;
 			});
 	}
 
 	auto entry  = entry_.lock();
 	auto lumps  = languageLumps();
-	auto current = entry ? entry->name() : "LANGUAGE";
+	auto current = language_current_id_;
 
 	if (!language_constructor_->loadLumps(lumps, current) && !isLanguageLump())
 	{
@@ -1769,9 +1777,8 @@ void TextEntryPanel::resyncLanguageConstructor()
 	if (!language_constructor_ || !language_constructor_->IsShown())
 		return;
 
-	auto entry   = entry_.lock();
 	auto lumps   = languageLumps();
-	auto current = entry ? entry->name() : "LANGUAGE";
+	auto current = language_current_id_;
 
 	MemChunk mc;
 	text_area_->getRawText(mc);
