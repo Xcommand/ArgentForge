@@ -1520,6 +1520,46 @@ vector<LanguageLump> TextEntryPanel::languageLumps()
 }
 
 // -----------------------------------------------------------------------------
+// Makes a LANGUAGE file for a language the mod doesn't have yet, right after the lump
+// being edited. A WAD has no room for an extension in an 8-character name, so there the
+// new lump is called LANGUAGE like its neighbours and the table tells them apart by place
+// -----------------------------------------------------------------------------
+bool TextEntryPanel::createLanguageLump(string_view code, string& id)
+{
+	id.clear();
+
+	auto entry = entry_.lock();
+	if (!entry || code.empty())
+		return false;
+
+	auto* arch = entry->parent();
+	if (!arch || arch->isReadOnly())
+		return false;
+
+	string name = arch->isTreeless() ? "LANGUAGE" : "LANGUAGE." + string(code);
+	auto   added = arch->addNewEntry(name, arch->entryIndex(entry.get()) + 1, nullptr);
+	if (!added)
+		return false;
+
+	string text = "[" + string(code) + "]" + "\n";
+	added->importMem(text.data(), text.size());
+	arch->setModified(true);
+	arch->entryStateChanged(added.get());
+
+	// The table reads the archive again, which is where the new file's id comes from
+	languageLumps();
+	auto index = arch->entryIndex(added.get());
+	for (const auto& one : language_files_)
+	{
+		if (std::get<1>(one) != index)
+			continue;
+		id = std::get<0>(one);
+		return true;
+	}
+	return false;
+}
+
+// -----------------------------------------------------------------------------
 // Opens the language constructor over the archive's strings. One window per panel,
 // reused for whichever lump is asked for; what it changes goes back into the file the
 // string lives in, and into the editor's undo when that file is the one being edited
@@ -1552,6 +1592,17 @@ void TextEntryPanel::openLanguageConstructor()
 			[this](string_view lump, size_t offset)
 			{
 				selectLanguageString(lump, offset);
+			});
+		language_constructor_->setCreateFunction(
+			[this](string_view code, string& id)
+			{
+				if (!createLanguageLump(code, id))
+					return false;
+
+				// The new file has to be in the table before the window can point at it
+				auto entry = entry_.lock();
+				language_constructor_->adopt(languageLumps(), entry ? entry->name() : "LANGUAGE");
+				return true;
 			});
 	}
 

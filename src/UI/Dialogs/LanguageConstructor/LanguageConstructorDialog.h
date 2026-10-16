@@ -5,6 +5,7 @@
 #include "UI/Dialogs/LanguageConstructor/LanguageDef.h"
 
 class wxButton;
+class wxChoice;
 class wxListCtrl;
 class wxListEvent;
 class wxStaticText;
@@ -63,6 +64,15 @@ public:
 		select_ = std::move(select);
 	}
 
+	// What to call to make a new LANGUAGE lump in the archive, named after the code he
+	// types. It reports the id the file got in the table, because a WAD and a folder
+	// project name the same language differently
+	void setCreateFunction(std::function<bool(string_view code, string& id)> create) { create_ = std::move(create); }
+
+	// Which file new strings go into. The dropdown's business, not the editor's: the lump
+	// on screen stays where it is
+	const string& primaryLump() const { return primary_; }
+
 	// Hides the window without closing it for good, remembering where it stood
 	void putAway();
 
@@ -96,6 +106,20 @@ private:
 	// Adds the key and text in the bottom fields to the language the button names
 	void addFromFields();
 
+	// Puts a new string into the file the dropdown names, and copies it as a placeholder
+	// into the ones the Additional list names. False when nothing was written
+	bool addNewString(string_view key, string_view language, string_view value);
+
+	// Fills the dropdown from the archive's lumps: the files, a line of dashes so the last
+	// item can't be hit by accident, and the way to make a new file
+	void buildLumpChoices();
+
+	// Asks what the new LANGUAGE file should be called, and makes it
+	void askNewLanguage();
+
+	// The little window of checkboxes for which files also get a placeholder copy
+	void chooseAdditional();
+
 	// Says why something didn't happen, in the window's own space where it stays read-
 	// able. An action that does nothing quietly costs a session of guessing
 	void say(string_view what);
@@ -125,6 +149,8 @@ private:
 	void onItemActivated(wxListEvent& e);
 	void onItemSelected(wxListEvent& e);	void onColClicked(wxListEvent& e);
 	void onBtnAdd(wxCommandEvent& e);
+	void onLumpChosen(wxCommandEvent& e);
+	void onBtnAdditional(wxCommandEvent& e);
 	void onCloseWindow(wxCloseEvent& e);
 
 	wxTextCtrl* text_filter_ = nullptr;
@@ -133,6 +159,13 @@ private:
 	wxTextCtrl* text_value_  = nullptr;
 	wxButton*   btn_add_     = nullptr;
 	wxStaticText* counts_    = nullptr;
+
+	// The file new strings go into, and the button that picks which others get a copy
+	wxChoice* choice_lump_    = nullptr;
+	wxButton* btn_additional_ = nullptr;
+	string    primary_;
+	vector<string> additional_;
+	int        lump_row_ = 0; // where the files stop and the dashed line begins
 
 	wxStaticText* note_      = nullptr;
 	wxTextCtrl* edit_cell_ = nullptr;
@@ -151,6 +184,7 @@ private:
 
 	std::function<bool(string_view lump, string_view text)> apply_;
 	std::function<void(string_view lump, size_t offset)>    select_;
+	std::function<bool(string_view code, string& id)>        create_;
 
 	// Which header the rows are ordered by, and which way
 	long sort_column_ = 0;

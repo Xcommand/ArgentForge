@@ -15,11 +15,14 @@
 #include "Utility/StringUtils.h"
 
 #include <wx/button.h>
+#include <wx/checkbox.h>
+#include <wx/choice.h>
 #include <wx/display.h>
 #include <wx/listctrl.h>
 #include <wx/sizer.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
+#include <wx/textdlg.h>
 
 using namespace slade;
 
@@ -92,6 +95,14 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 	top->Add(text_filter_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, ui::pad());
 	top->Add(counts_, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, ui::padLarge());
 
+	// Which file new strings are written to, and which others get a copy of them
+	choice_lump_    = new wxChoice(this, wxID_ANY, wxDefaultPosition, { ui::scalePx(220), -1 });
+	btn_additional_ = new wxButton(this, wxID_ANY, wxS("Additional"));
+
+	auto files = new wxBoxSizer(wxHORIZONTAL);
+	files->Add(choice_lump_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, ui::pad());
+	files->Add(btn_additional_, 0, wxALIGN_CENTER_VERTICAL);
+
 	note_ = new wxStaticText(this, wxID_ANY, "");
 
 	auto bottom = new wxBoxSizer(wxHORIZONTAL);
@@ -100,6 +111,7 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 	bottom->Add(text_value_, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, ui::pad());
 	bottom->Add(btn_add_, 0, wxALIGN_CENTER_VERTICAL);
 
+	sizer->Add(files, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, ui::padLarge());
 	sizer->Add(top, 0, wxEXPAND | wxALL, ui::padLarge());
 	sizer->Add(list_, 1, wxEXPAND | wxLEFT | wxRIGHT, ui::padLarge());
 	sizer->Add(note_, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, ui::pad());
@@ -114,6 +126,8 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 	list_->Bind(wxEVT_LIST_ITEM_SELECTED, &LanguageConstructorDialog::onItemSelected, this);
 	list_->Bind(wxEVT_LIST_COL_CLICK, &LanguageConstructorDialog::onColClicked, this);
 	btn_add_->Bind(wxEVT_BUTTON, &LanguageConstructorDialog::onBtnAdd, this);
+	choice_lump_->Bind(wxEVT_CHOICE, &LanguageConstructorDialog::onLumpChosen, this);
+	btn_additional_->Bind(wxEVT_BUTTON, &LanguageConstructorDialog::onBtnAdditional, this);
 
 	// Enter in either field is the same verb as the button, not a third thing
 	text_key_->Bind(wxEVT_TEXT_ENTER, [this](wxCommandEvent&)
@@ -137,8 +151,16 @@ bool LanguageConstructorDialog::loadLumps(const vector<LanguageLump>& lumps, str
 	for (const auto& lump : read_)
 		book_.open(lump.name, lump.text);
 
+	// The dropdown keeps its pick across a refill, and falls back to the file on screen
+	if (primary_.empty() || !book_.has(primary_))
+		primary_ = current_;
+	additional_.erase(std::remove_if(additional_.begin(), additional_.end(), [&](const string& one)
+		{ return !book_.has(one); }),
+		additional_.end());
+
 	buildColumns();
 	buildRows();
+	buildLumpChoices();
 
 	bool any = false;
 	for (const auto& lump : book_.lumps())
@@ -168,6 +190,129 @@ bool LanguageConstructorDialog::hasStrings() const
 		if (!lump->entries().empty())
 			return true;
 	return false;
+}
+
+// -----------------------------------------------------------------------------
+// The dropdown: the archive's LANGUAGE files, a line of dashes so the last item can't be
+// reached by accident, and the way to make a new file
+// -----------------------------------------------------------------------------
+void LanguageConstructorDialog::buildLumpChoices()
+{
+	KeepFocus keep;
+	updating_ = true;
+
+	auto        files = book_.lumpNames();
+	vector<wxString> names;
+	for (const auto& name : files)
+		names.push_back(wxString::FromUTF8(name));
+
+	choice_lump_->Clear();
+	for (const auto& name : names)
+		choice_lump_->Append(name);
+	lump_row_ = (int)names.size();
+	choice_lump_->Append(wxS("----------------------------"));
+	choice_lump_->Append(wxS("Add new language"));
+
+	int pick = 0;
+	for (size_t row = 0; row < names.size(); ++row)
+	{
+		if (string(names[row].utf8_str()) != primary_)
+			continue;
+		pick = (int)row;
+		break;
+	}
+	choice_lump_->SetSelection(pick);
+
+	btn_additional_->SetLabel(
+		additional_.empty() ? wxString::FromUTF8("Additional")
+		                    : wxString::Format(wxS("Additional (%d)"), (int)additional_.size()));
+
+	updating_ = false;
+}
+
+// -----------------------------------------------------------------------------
+// A new string goes to the file the dropdown names, and the ones picked as Additional
+// get it as a placeholder in their own language
+// -----------------------------------------------------------------------------
+bool LanguageConstructorDialog::addNewString(string_view key, string_view language, string_view value)
+{
+	string into = primary_;
+	if (!book_.has(into))
+		into = lumpForLanguage(language);
+
+	return book_.addAcross(into, language, key, value, additional_) > 0;
+}
+
+// -----------------------------------------------------------------------------
+// Asks for a language code and has the archive make the file. The pick moves to it,
+// because that's what he just asked to work in
+// -----------------------------------------------------------------------------
+void LanguageConstructorDialog::askNewLanguage()
+{
+	wxTextEntryDialog ask(this, wxS("New LANGUAGE lump. Type its language code:"), wxS("New language"), "enu");
+	if (ask.ShowModal() != wxID_OK)
+	{
+		buildLumpChoices();
+		return;
+	}
+
+	string code = ask.GetValue().utf8_str();
+	while (!code.empty() && (code.back() == ' ' || code.back() == '\t'))
+		code.pop_back();
+
+	if (code.empty() || !create_)
+	{
+		buildLumpChoices();
+		return;
+	}
+
+	string id;
+	if (!create_(code, id))
+	{
+		say("The archive wouldn't take a new LANGUAGE." + code);
+		buildLumpChoices();
+		return;
+	}
+
+	primary_ = id;
+	say("Created " + id + " - new strings go there now");
+	buildLumpChoices();
+}
+
+// -----------------------------------------------------------------------------
+// The list of files that also get a copy of anything added, as a placeholder
+// -----------------------------------------------------------------------------
+void LanguageConstructorDialog::chooseAdditional()
+{
+	wxDialog pick(this, wxID_ANY, wxS("Additional languages"), wxDefaultPosition, wxDefaultSize, wxDEFAULT_DIALOG_STYLE);
+	auto     sizer = new wxBoxSizer(wxVERTICAL);
+
+	vector<std::pair<string, wxCheckBox*>> boxes;
+	for (const auto& name : book_.lumpNames())
+	{
+		if (name == primary_)
+			continue;
+
+		auto* box = new wxCheckBox(&pick, wxID_ANY, wxString::FromUTF8(name));
+		box->SetValue(std::find(additional_.begin(), additional_.end(), name) != additional_.end());
+		boxes.emplace_back(name, box);
+		sizer->Add(box, 0, wxALL, ui::pad());
+	}
+
+	sizer->Add(
+		new wxStaticText(&pick, wxID_ANY, wxS("Choose lumps to duplicate translation to as 'placeholder'")), 0,
+		wxALL | wxTOP, ui::padLarge());
+	sizer->Add(new wxButton(&pick, wxID_OK, wxS("Done")), 0, wxALIGN_RIGHT | wxALL, ui::padLarge());
+
+	pick.SetSizerAndFit(sizer);
+	if (pick.ShowModal() == wxID_OK)
+	{
+		additional_.clear();
+		for (const auto& [name, box] : boxes)
+			if (box->IsChecked())
+				additional_.push_back(name);
+	}
+	buildLumpChoices();
 }
 
 // -----------------------------------------------------------------------------
@@ -294,7 +439,7 @@ void LanguageConstructorDialog::buildRows()
 		// after an edit still goes where he meant it
 		if (add_language_.empty() || std::find(languages_.begin(), languages_.end(), add_language_) == languages_.end())
 			add_language_ = languages_.empty() ? "default" : languages_[0];
-		btn_add_->SetLabel(wxString::FromUTF8("Add to " + add_language_));
+		btn_add_->SetLabel(wxString::FromUTF8("Add to " + add_language_ + " in " + primary_));
 	}
 
 	updating_ = false;
@@ -440,7 +585,7 @@ void LanguageConstructorDialog::endCellEdit(bool keep)
 	}
 	else if (!value.empty())
 	{
-		if (!book_.addString(lumpForLanguage(language), key, language, value))
+		if (!addNewString(key, language, value))
 		{
 			say("That key is already defined under " + language + ", so nothing was added");
 			return;
@@ -468,7 +613,7 @@ void LanguageConstructorDialog::addFromFields()
 	}
 
 	string language = add_language_.empty() ? (languages_.empty() ? "default" : languages_[0]) : add_language_;
-	if (!book_.addString(lumpForLanguage(language), key, language, value))
+	if (!addNewString(key, language, value))
 	{
 		say("'" + key + "' is already defined under " + language + ", so nothing was added");
 		return;
@@ -551,6 +696,39 @@ void LanguageConstructorDialog::onFilterChanged(wxCommandEvent& e)
 {
 	buildRows();
 	e.Skip();
+}
+
+// -----------------------------------------------------------------------------
+// The dropdown picked which file new strings go into. The dashes are there to be looked
+// at, not clicked, so a pick that lands on them goes back where it was
+// -----------------------------------------------------------------------------
+void LanguageConstructorDialog::onLumpChosen(wxCommandEvent& e)
+{
+	if (updating_)
+		return;
+
+	int row = choice_lump_->GetSelection();
+	if (row == lump_row_)
+	{
+		buildLumpChoices();
+		return;
+	}
+	if (row == lump_row_ + 1)
+	{
+		askNewLanguage();
+		return;
+	}
+	if (row < 0 || row >= lump_row_)
+		return;
+
+	primary_ = string(choice_lump_->GetString(row).utf8_str());
+	say("");
+	buildLumpChoices();
+}
+
+void LanguageConstructorDialog::onBtnAdditional(wxCommandEvent& e)
+{
+	chooseAdditional();
 }
 
 void LanguageConstructorDialog::onItemActivated(wxListEvent& e)

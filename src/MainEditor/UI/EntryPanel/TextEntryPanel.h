@@ -78,6 +78,10 @@ private:
 	// shows them all; an edit goes back to the file the string lives in
 	vector<LanguageLump> languageLumps();
 
+	// Makes a LANGUAGE file for a new language code, next to the one being edited, and
+	// reports the id the table gave it
+	bool createLanguageLump(string_view code, string& id);
+
 	// Moves the editor to a string the window picked, and points the window at the
 	// definition the caret has moved into. The id says which of the archive's LANGUAGE
 	// files the string was read from, which isn't necessarily this one
