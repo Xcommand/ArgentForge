@@ -222,6 +222,10 @@ public:
 	// a table compares against to know a copy is still a placeholder
 	const LanguageEntry* inLump(string_view name, string_view label) const;
 
+	// The game's languages this archive hasn't got yet, as code and name together. What the
+	// new-language picker offers
+	vector<LanguageInfo> missingLanguages() const;
+
 private:
 	vector<std::unique_ptr<LanguageSource>> lumps_;
 	vector<string>                          names_;

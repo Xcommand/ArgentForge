@@ -19,10 +19,10 @@
 #include <wx/choice.h>
 #include <wx/display.h>
 #include <wx/listctrl.h>
+#include <wx/scrolwin.h>
 #include <wx/sizer.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
-#include <wx/textdlg.h>
 
 using namespace slade;
 
@@ -256,53 +256,119 @@ int LanguageConstructorDialog::addNewString(string_view key, string_view languag
 }
 
 // -----------------------------------------------------------------------------
-// Asks for a language code and has the archive make the file. The pick moves to it,
-// because that's what he just asked to work in
+// The languages he can ask for: the game's own list, minus whatever the archive already
+// declares, with a Custom row on top for the tags mods invent. What happens next is his
+// call in Preferences > Extra Features: a file per language, or a block in this one
 // -----------------------------------------------------------------------------
 void LanguageConstructorDialog::askNewLanguage()
 {
-	wxTextEntryDialog ask(this, wxS("New LANGUAGE lump. Type its language code:"), wxS("New language"), "enu");
-	if (ask.ShowModal() != wxID_OK)
+	// What the game knows and this archive doesn't have yet
+	auto offered = book_.missingLanguages();
+
+	wxDialog pick(this, wxID_ANY, wxS("New languages"), wxDefaultPosition, wxDefaultSize,
+	              wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
+	auto     outer = new wxBoxSizer(wxVERTICAL);
+	auto     scroll = new wxScrolledWindow(&pick, wxID_ANY);
+	scroll->SetScrollRate(0, 12);
+	auto list = new wxBoxSizer(wxVERTICAL);
+
+	// Custom first, because a mod that writes 'colors' or 'tips' as a language wants it here
+	auto custom_row = new wxBoxSizer(wxHORIZONTAL);
+	auto* custom_box = new wxCheckBox(scroll, wxID_ANY, wxS("Custom"));
+	auto* custom_name = new wxTextCtrl(scroll, wxID_ANY, "", wxDefaultPosition, { ui::scalePx(160), -1 });
+	custom_row->Add(custom_box, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, ui::pad());
+	custom_row->Add(custom_name, 0, wxALIGN_CENTER_VERTICAL);
+	list->Add(custom_row, 0, wxBOTTOM, ui::pad());
+
+	vector<std::pair<string, wxCheckBox*>> boxes;
+	for (const auto& info : offered)
+	{
+		auto* box = new wxCheckBox(scroll, wxID_ANY, wxString::FromUTF8(info.name + " (" + info.code + ")"));
+		boxes.emplace_back(info.code, box);
+		list->Add(box, 0, wxBOTTOM, ui::pad());
+	}
+
+	if (boxes.empty())
+		list->Add(new wxStaticText(scroll, wxID_ANY, wxS("Every language the game knows is already in this archive.")),
+		          0, wxBOTTOM, ui::pad());
+
+	scroll->SetSizer(list);
+	outer->Add(scroll, 1, wxEXPAND | wxALL, ui::pad());
+	outer->Add(new wxStaticText(&pick, wxID_ANY, wxS("New strings go to the file named above; the setting in Extra Features "
+	                                                 "decides whether each language also gets its own LANGUAGE.")),
+	           0, wxLEFT | wxRIGHT | wxBOTTOM, ui::pad());
+	outer->Add(new wxButton(&pick, wxID_OK, wxS("Done")), 0, wxALIGN_RIGHT | wxBOTTOM | wxRIGHT, ui::padLarge());
+
+	pick.SetSizerAndFit(outer);
+	pick.SetMinSize({ ui::scalePx(360), ui::scalePx(420) });
+	if (pick.ShowModal() != wxID_OK)
 	{
 		buildLumpChoices();
 		return;
 	}
 
-	string code = ask.GetValue().utf8_str();
-	while (!code.empty() && (code.back() == ' ' || code.back() == '\t'))
-		code.pop_back();
-
-	if (code.empty() || !create_)
+	vector<string> codes;
+	for (const auto& [code, box] : boxes)
 	{
-		buildLumpChoices();
-		return;
+		if (box->IsChecked())
+			codes.push_back(code);
 	}
-
-	// One lump per language, or every language as a block inside the file being worked in:
-	// his call, under Preferences > Extra Features
-	if (lngc_new_language_style == 1)
+	if (custom_box->IsChecked())
 	{
-		if (!book_.openBlock(primary_, code))
+		string code = custom_name->GetValue().utf8_str();
+		while (!code.empty() && (code.back() == ' ' || code.back() == '\t'))
+			code.pop_back();
+		if (code.empty())
 		{
-			say("The file " + primary_ + " already declares " + code);
+			say("Custom was ticked but no name was written, so nothing was made");
 			buildLumpChoices();
 			return;
 		}
-		applyChange();
-		say("Opened [" + code + "] in " + primary_ + " - new strings can go under it");
-		return;
+		codes.push_back(code);
 	}
 
-	string id;
-	if (!create_(code, id))
+	if (codes.empty())
 	{
-		say("The archive wouldn't take a new LANGUAGE." + code);
 		buildLumpChoices();
 		return;
 	}
 
-	primary_ = id;
-	say("Created " + id + " - new strings go there now");
+	// One lump each, or blocks in the file being worked in
+	string first_id;
+	int    made = 0;
+
+	if (lngc_new_language_style == 1)
+	{
+		for (const auto& code : codes)
+		{
+			if (book_.openBlock(primary_, code))
+				++made;
+		}
+		if (made)
+			applyChange();
+		say(made ? "Opened " + std::to_string(made) + " language block(s) in " + primary_
+		         : "Those languages are already declared in " + primary_);
+		buildLumpChoices();
+		return;
+	}
+
+	for (const auto& code : codes)
+	{
+		string id;
+		if (!create_ || !create_(code, id))
+			continue;
+		++made;
+		if (first_id.empty())
+			first_id = id;
+	}
+
+	if (!made)
+		say("The archive wouldn't take a new LANGUAGE");
+	else
+	{
+		primary_ = first_id;
+		say("Created " + std::to_string(made) + " LANGUAGE file(s), new strings go to " + first_id);
+	}
 	buildLumpChoices();
 }
 

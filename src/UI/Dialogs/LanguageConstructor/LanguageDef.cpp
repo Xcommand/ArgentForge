@@ -877,6 +877,32 @@ int LanguageBook::addAcross(
 	return wrote;
 }
 
+// -----------------------------------------------------------------------------
+// The game's languages the archive has no block for. Compared by language, not by the
+// letters a file happened to use, so a mod that wrote 'enu' isn't offered English again
+// -----------------------------------------------------------------------------
+vector<LanguageInfo> LanguageBook::missingLanguages() const
+{
+	vector<string> have;
+	for (const auto& lump : lumps_)
+	{
+		for (const auto& lang : lump->languages())
+		{
+			auto group = languageGroup(lang);
+			if (std::find(have.begin(), have.end(), group) == have.end())
+				have.push_back(group);
+		}
+	}
+
+	vector<LanguageInfo> out;
+	for (const auto& info : engineLanguages())
+	{
+		if (std::find(have.begin(), have.end(), languageGroup(info.code)) == have.end())
+			out.push_back(info);
+	}
+	return out;
+}
+
 const LanguageEntry* LanguageBook::inLump(string_view name, string_view label) const
 {
 	auto source = lump(name);
