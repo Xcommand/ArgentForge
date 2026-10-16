@@ -422,9 +422,9 @@ bool LanguageSource::addString(string_view label, string_view language, string_v
 	}
 
 	// A language the lump doesn't open a block for yet gets its header with the line
-	string line = eol + indent + string(label) + " = " + quoted(text) + ";";
-	if (spot == spots_.end())
-		line = eol + "[" + string(language) + "]" + line;
+	string header = spot == spots_.end() ? eol + "[" + string(language) + "]" : string();
+	string value  = quoted(text);
+	string line   = header + eol + indent + string(label) + " = " + value + ";";
 
 	LanguageEntry add;
 	add.label       = string(label);
@@ -432,10 +432,11 @@ bool LanguageSource::addString(string_view label, string_view language, string_v
 	add.parsed      = true;
 	add.begin       = at;
 	add.end         = at;
-	add.value_begin = at + (spot == spots_.end() ? eol.size() + 2 + language.size() + 1 : 0) + eol.size() + indent.size()
-	              + label.size() + 3;
-	add.value_end = at + line.size() - 1;
-	add.raw       = line;
+	// Measured off the pieces that were just built, so the value's place can't drift away
+	// from the quotes it sits between
+	add.value_begin = at + header.size() + eol.size() + indent.size() + label.size() + 3;
+	add.value_end   = add.value_begin + value.size();
+	add.raw         = line;
 
 	entries_.push_back(std::move(add));
 
