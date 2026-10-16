@@ -201,6 +201,7 @@ bool LanguageSource::load(string_view text)
 	text_.assign(text);
 	entries_.clear();
 	spots_.clear();
+	extra_.clear();
 
 	auto toks = tokenize(text);
 
@@ -221,8 +222,28 @@ bool LanguageSource::load(string_view text)
 					current.push_back(string(toks[i].text));
 				++i;
 			}
+			// A header is a language the file writes even when nothing follows it, so the
+			// block is known from here on and not only once a string lands inside it
 			if (i < toks.size())
+			{
+				// What line ending this header's own line uses, so a string added under it
+				// matches the file instead of bringing in a bare newline
+				string   line_eol = "\n";
+				auto     nl       = text_.find('\n', toks[i].end);
+				if (nl != string::npos && nl > 0 && text_[nl - 1] == '\r')
+					line_eol = "\r\n";
+
+				for (const auto& lang : current)
+				{
+					auto& spot = spots_[lang];
+					if (toks[i].end > spot.end)
+					{
+						spot.end = toks[i].end;
+						spot.eol = line_eol;
+					}
+				}
 				++i;
+			}
 			continue;
 		}
 
@@ -320,31 +341,52 @@ string LanguageSource::serialize() const
 	// ordered before it's written back: replacing from the end only works if you really
 	// do come from the end. Two additions at the same place keep the order they were
 	// asked for, which means writing the later one first
-	vector<std::pair<size_t, const LanguageEntry*>> changed;
+	struct write_op
+	{
+		size_t at;
+		size_t len;
+		string text;
+		bool   replacement;
+		size_t order;
+	};
+
+	vector<write_op> ops;
+	size_t           order = 0;
 	for (size_t i = 0; i < entries_.size(); ++i)
 	{
 		const auto& entry = entries_[i];
 		if (!entry.parsed || entry.raw == string(text_.substr(entry.begin, entry.end - entry.begin)))
 			continue;
-		changed.push_back({ i, &entry });
+		ops.push_back({ entry.begin, entry.end - entry.begin, entry.raw, true, order++ });
 	}
+	for (const auto& one : extra_)
+		ops.push_back({ one.first, 0, one.second, false, order++ });
 
-	std::sort(changed.begin(), changed.end(), [](const auto& a, const auto& b)
+	std::stable_sort(ops.begin(), ops.end(), [](const write_op& a, const write_op& b)
 	{
-		if (a.second->begin != b.second->begin)
-			return a.second->begin > b.second->begin;
-		return a.first > b.first;
+		if (a.at != b.at)
+			return a.at > b.at;
+		// A rewritten statement and a header pushed at the same place: the statement's own
+		// bytes go first, so a header added by openBlock can't end up inside a line
+		if (a.replacement != b.replacement)
+			return a.replacement;
+		// Two things asked for at one place: writing the later one first keeps them in the
+		// order they were asked for once the pass is done
+		return a.order > b.order;
 	});
 
 	string out = text_;
-	for (const auto& change : changed)
-		out.replace(change.second->begin, change.second->end - change.second->begin, change.second->raw);
+	for (const auto& op : ops)
+		out.replace(op.at, op.len, op.text);
 
 	return out;
 }
 
 bool LanguageSource::modified() const
 {
+	if (!extra_.empty())
+		return true;
+
 	for (const auto& entry : entries_)
 		if (entry.raw != string(text_.substr(entry.begin, entry.end - entry.begin)))
 			return true;
@@ -358,6 +400,15 @@ vector<string> LanguageSource::languages() const
 		for (const auto& lang : entry.langs)
 			if (std::find(out.begin(), out.end(), lang) == out.end())
 				out.push_back(lang);
+
+	// A block opened on its own has no strings yet, but it is still a language the file
+	// writes: that's the whole point of adding a language before translating anything
+	for (const auto& spot : spots_)
+	{
+		if (spot.first.empty() || std::find(out.begin(), out.end(), spot.first) != out.end())
+			continue;
+		out.push_back(spot.first);
+	}
 	return out;
 }
 
@@ -416,9 +467,12 @@ bool LanguageSource::addString(string_view label, string_view language, string_v
 	auto spot = spots_.find(string(language));
 	if (spot != spots_.end())
 	{
-		indent = spot->second.indent;
-		eol    = spot->second.eol;
-		at     = spot->second.end;
+		// A block the file only declared, with no strings under it yet, has no indentation
+		// of its own to copy: keep the default rather than writing a line flush left
+		if (!spot->second.indent.empty())
+			indent = spot->second.indent;
+		eol = spot->second.eol;
+		at  = spot->second.end;
 	}
 
 	// A language the lump doesn't open a block for yet gets its header with the line
@@ -444,6 +498,26 @@ bool LanguageSource::addString(string_view label, string_view language, string_v
 	// next addition goes to the same place and the writer keeps them in the order asked
 	if (spot == spots_.end())
 		spots_[string(language)].end = at;
+	return true;
+}
+
+bool LanguageSource::openBlock(string_view language)
+{
+	if (language.empty() || spots_.find(string(language)) != spots_.end())
+		return false;
+
+	// The file's own line ending, taken from wherever it ends now, so a CRLF lump doesn't
+	// get a bare newline pushed onto it
+	size_t at  = text_.size();
+	string eol = eolAt(text_, at);
+
+	string header = eol + "[" + string(language) + "]";
+	extra_.emplace_back(at, header);
+
+	BlockSpot spot;
+	spot.eol = eol;
+	spot.end = at + header.size();
+	spots_[string(language)] = spot;
 	return true;
 }
 
@@ -764,6 +838,14 @@ bool LanguageBook::addString(string_view name, string_view label, string_view la
 	if (!source)
 		return false;
 	return source->addString(label, language, text);
+}
+
+bool LanguageBook::openBlock(string_view name, string_view language)
+{
+	auto source = lump(name);
+	if (!source)
+		return false;
+	return source->openBlock(language);
 }
 
 // -----------------------------------------------------------------------------

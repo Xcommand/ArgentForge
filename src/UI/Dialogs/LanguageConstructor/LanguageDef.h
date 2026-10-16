@@ -91,6 +91,10 @@ public:
 	// already there under that language, because two of them would leave the reader guessing
 	bool addString(string_view label, string_view language, string_view text);
 
+	// Opens a language's block without writing any string into it: just the header, in the
+	// file's own line ending. False when the lump already declares that language
+	bool openBlock(string_view language);
+
 private:
 	// Whether this definition belongs to the language being asked about
 	static bool holds(const LanguageEntry& entry, string_view language);
@@ -113,6 +117,10 @@ private:
 	string                  text_;
 	std::deque<LanguageEntry> entries_;
 	std::map<string, BlockSpot> spots_;
+
+	// Text to push into the file that isn't a definition anyone can edit: a language header
+	// opened on its own. Position is in the coordinates of the text as it was read
+	vector<std::pair<size_t, string>> extra_;
 };
 
 // One LANGUAGE file of an archive, as the text it holds
@@ -197,6 +205,10 @@ public:
 	// Adds a definition to the lump called [name]. False when there's no such lump, or
 	// when it already writes that label under that language
 	bool addString(string_view name, string_view label, string_view language, string_view text);
+
+	// Opens a language's block in the named lump, without writing any string into it. This
+	// is what "all languages in one lump" does when he picks a language the file lacks
+	bool openBlock(string_view name, string_view language);
 
 	// Writes a new string into [primary] under [language], and the same text into every
 	// lump of [also] as a placeholder. Each of those keeps it in the language it declares
