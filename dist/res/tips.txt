@@ -1,4 +1,4 @@
-40
+42
 "Q picks up the brush and W the eraser - the Keyboard Shortcuts settings page lets you point them at other keys."
 "Hold ALT and drag with the right mouse button over a picture to change the brush size and how soft its edge is."
 "Hold ALT and roll the mouse wheel over a picture to change how opaque the brush paints."
@@ -14,7 +14,7 @@
 "Select two or three states first and SHIFT plays exactly what you picked, in a loop, at the tics each line asks for."
 "With 'Play across a goto' on, SHIFT keeps going into the state the jump names instead of stopping at the end of the block."
 "The name under a preview picture is the state it belongs to, so you can see the frame where the animation crossed into another state."
-"The Language Constructor shows a lump's strings as a table: one row per key, one column per language. Double-click a cell to change it there."
+"The Language Constructor shows the archive's strings as a table: one row per key, one column per language any of its LANGUAGE files declares. Double-click a cell to change it there."
 "Click a header to order the table by that language, click it again to flip. The filter above matches the text as well as the key."
 "Saving a DECORATE or ZScript lump recounts the numbers in 'goto Label+N' for states you added or removed by hand."
 "SHIFT is the key to reach for first: Shift+Up/Down moves a block or a line, Shift+click picks a run of lines, Shift+wheel resizes the menu preview, Shift+Ctrl+Z redoes."
@@ -39,3 +39,5 @@
 "Drag with the middle mouse button to move the viewpoint around an image or a texture."
 "Be sure to set up a Base Resource Archive; the Base Resource toolbar switches between them."
 "Renaming several selected entries at once offers both a mask and a one-by-one prompt."
+"The dropdown above the language table names the LANGUAGE file that new strings go into; Add new language makes one and starts you writing in it."
+"Additional copies every new string into the other LANGUAGE files as a placeholder, each held in the language that file is written in."
