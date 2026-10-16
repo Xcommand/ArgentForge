@@ -107,8 +107,9 @@ private:
 	void addFromFields();
 
 	// Puts a new string into the file the dropdown names, and copies it as a placeholder
-	// into the ones the Additional list names. False when nothing was written
-	bool addNewString(string_view key, string_view language, string_view value);
+	// into the ones the Additional list names. How many files took it; 0 means nothing was
+	// written, and the note line says why
+	int addNewString(string_view key, string_view language, string_view value);
 
 	// Fills the dropdown from the archive's lumps: the files, a line of dashes so the last
 	// item can't be hit by accident, and the way to make a new file

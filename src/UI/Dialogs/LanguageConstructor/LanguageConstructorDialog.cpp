@@ -232,15 +232,24 @@ void LanguageConstructorDialog::buildLumpChoices()
 
 // -----------------------------------------------------------------------------
 // A new string goes to the file the dropdown names, and the ones picked as Additional
-// get it as a placeholder in their own language
+// get it as a placeholder in their own language. The count is what came back, so the note
+// line can say where the text ended up instead of leaving him to guess
 // -----------------------------------------------------------------------------
-bool LanguageConstructorDialog::addNewString(string_view key, string_view language, string_view value)
+int LanguageConstructorDialog::addNewString(string_view key, string_view language, string_view value)
 {
 	string into = primary_;
 	if (!book_.has(into))
 		into = lumpForLanguage(language);
 
-	return book_.addAcross(into, language, key, value, additional_) > 0;
+	int wrote = book_.addAcross(into, language, key, value, additional_);
+	if (wrote <= 0)
+		return 0;
+
+	string where = "Added " + string(key) + " to " + into + " under [" + string(language) + "]";
+	if (wrote > 1)
+		where += ", and as a placeholder in " + std::to_string(wrote - 1) + " other file(s)";
+	say(where);
+	return wrote;
 }
 
 // -----------------------------------------------------------------------------
@@ -582,6 +591,7 @@ void LanguageConstructorDialog::endCellEdit(bool keep)
 		if (entry->text() == value)
 			return;
 		entry->setText(value);
+		say("");
 	}
 	else if (!value.empty())
 	{
@@ -594,7 +604,6 @@ void LanguageConstructorDialog::endCellEdit(bool keep)
 	else
 		return;
 
-	say("");
 	applyChange();
 }
 
@@ -621,7 +630,6 @@ void LanguageConstructorDialog::addFromFields()
 
 	text_key_->Clear();
 	text_value_->Clear();
-	say("");
 	applyChange();
 }
 
