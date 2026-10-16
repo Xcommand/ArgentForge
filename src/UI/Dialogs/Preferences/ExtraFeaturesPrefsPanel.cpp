@@ -52,6 +52,9 @@
 using namespace slade;
 
 EXTERN_CVAR(Int, startpage_recent_scale)
+// How the Language Constructor makes a language he adds: its own lump, or a block in
+// the file already open
+EXTERN_CVAR(Int, lngc_new_language_style)
 
 // Where AceZDL keeps its settings, and the path that was in it before we wrote ours
 CVAR(String, acl_config_file, "", CVar::Flag::Save)
@@ -230,6 +233,26 @@ ExtraFeaturesPrefsPanel::ExtraFeaturesPrefsPanel(wxWindow* parent) : PrefsPanelB
 		},
 		button_acl_restore_->GetId());
 
+	// Where a new language lands, when he adds one from either constructor
+	auto lngc_notice = new wxStaticText(
+		this,
+		-1,
+		wxS("Language Constructor: what 'Add new language' should do."));
+	sizer->Add(lngc_notice, 0, wxLEFT | wxRIGHT | wxTOP, ui::padLarge());
+
+	lngc_style_id_ = wxNewId();
+	auto lngc_choice = new wxChoice(
+		this,
+		lngc_style_id_,
+		wxDefaultPosition,
+		{ ui::scalePx(420), -1 },
+		wxArrayString{ wxS("Add a LANGUAGE lump for each language"), wxS("All LANGUAGE defined in one lump") });
+	// A choice with nothing picked shows blank and then writes the default over whatever
+	// was saved, so it starts on the setting as it stands
+	lngc_choice->SetSelection(lngc_new_language_style == 1 ? 1 : 0);
+	lngc_choice->SetToolTip(wxS("Default: one LANGUAGE lump per language. The other choice writes a [code] block into the file you are working in, so the whole archive keeps a single LANGUAGE."));
+	sizer->Add(lngc_choice, 0, wxALL | wxEXPAND, ui::pad());
+
 	refreshAceZdl();
 }
 
@@ -255,6 +278,8 @@ void ExtraFeaturesPrefsPanel::applyPreferences()
 			startpage_recent_scale = spin->GetValue();
 	}
 
+	if (auto* choice = wxDynamicCast(FindWindow(lngc_style_id_), wxChoice))
+		lngc_new_language_style = choice->GetSelection() == 1 ? 1 : 0;
 	if (flp_acl_)
 		acl_config_file = flp_acl_->location();
 }

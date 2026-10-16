@@ -26,6 +26,10 @@
 
 using namespace slade;
 
+// How "Add new language" makes a language: a LANGUAGE lump of its own, or a block inside
+// the file already being worked in. Set under Preferences > Extra Features
+CVAR(Int, lngc_new_language_style, 0, CVar::Flag::Save)
+
 
 namespace
 {
@@ -271,6 +275,21 @@ void LanguageConstructorDialog::askNewLanguage()
 	if (code.empty() || !create_)
 	{
 		buildLumpChoices();
+		return;
+	}
+
+	// One lump per language, or every language as a block inside the file being worked in:
+	// his call, under Preferences > Extra Features
+	if (lngc_new_language_style == 1)
+	{
+		if (!book_.openBlock(primary_, code))
+		{
+			say("The file " + primary_ + " already declares " + code);
+			buildLumpChoices();
+			return;
+		}
+		applyChange();
+		say("Opened [" + code + "] in " + primary_ + " - new strings can go under it");
 		return;
 	}
 

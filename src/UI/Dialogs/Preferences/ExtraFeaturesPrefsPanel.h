@@ -26,6 +26,7 @@
 #pragma once
 
 #include "PrefsPanelBase.h"
+#include <wx/choice.h>
 #include <wx/spinctrl.h>
 
 class wxButton;
@@ -61,6 +62,8 @@ private:
 
 	wxButton*          button_import_ = nullptr;
 	int                spin_recent_scale_id_ = -1;
+	// The Language Constructor's 'where does a new language go' choice
+	int lngc_style_id_ = -1;
 	int                recent_scale_value_ = 100;
 	FileLocationPanel* flp_acl_ = nullptr;
 	wxStaticText*      acl_state_ = nullptr;
