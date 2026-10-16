@@ -489,6 +489,135 @@ void LanguageSource::shiftEntries(size_t at, size_t by)
 // -----------------------------------------------------------------------------
 // LanguageBook
 // -----------------------------------------------------------------------------
+namespace
+{
+// Fold a tag the way the engine's name table does, so 'ENU' and 'enu' are one thing
+string foldTag(string_view tag)
+{
+	string out(tag);
+	for (auto& c : out)
+	{
+		if (c >= 'A' && c <= 'Z')
+			c = char(c + 32);
+	}
+	return out;
+}
+
+// RemapLegacyLanguages (stringtable.cpp:78-147), the tags the game still understands from
+// older mods. Everything not listed here the engine splits into language-script-region
+const std::map<string, string>& legacyTags()
+{
+	static const std::map<string, string> tags = {
+		{ "by", "be" },
+		{ "ena", "en-GB" }, { "enb", "en-GB" }, { "enc", "en-GB" }, { "eng", "en-GB" },
+		{ "eni", "en-GB" }, { "enj", "en-GB" }, { "enl", "en-GB" }, { "ens", "en-GB" },
+		{ "ent", "en-GB" }, { "enw", "en-GB" }, { "enz", "en-GB" },
+		{ "enu", "en-US" }, { "default", "en-US" },
+		{ "esa", "es-MX" }, { "esb", "es-MX" }, { "esc", "es-MX" }, { "esd", "es-MX" },
+		{ "ese", "es-MX" }, { "esf", "es-MX" }, { "esg", "es-MX" }, { "esh", "es-MX" },
+		{ "esi", "es-MX" }, { "esl", "es-MX" }, { "esm", "es-MX" }, { "esn", "es-MX" },
+		{ "eso", "es-MX" }, { "esr", "es-MX" }, { "ess", "es-MX" }, { "esu", "es-MX" },
+		{ "esv", "es-MX" }, { "esy", "es-MX" }, { "esz", "es-MX" },
+		{ "ja", "ja-JP" }, { "jp", "ja-JP" },
+		{ "nb", "nb-NO" }, { "no", "nb-NO" },
+		{ "ptg", "pt" },
+		{ "chi", "zh-Hant" }, { "cht", "zh-Hant" },
+		{ "chs", "zh-Hans" }, { "zho", "zh-Hans" },
+	};
+	return tags;
+}
+} // namespace
+
+const vector<LanguageInfo>& slade::engineLanguages()
+{
+	// The game's own list, in its order, without "auto" (not a language to write) and
+	// without zh-Hant, which its menu has commented out
+	static const vector<LanguageInfo> list = {
+		{ "bs", "Bosnian" },
+		{ "ca", "Catalan" },
+		{ "cs", "Czech" },
+		{ "da", "Danish" },
+		{ "de", "German" },
+		{ "en-GB", "English (UK)" },
+		{ "en-US", "English (US)" },
+		{ "eo", "Esperanto" },
+		{ "es", "Castilian Spanish" },
+		{ "es-MX", "Latin American Spanish" },
+		{ "fi", "Finnish" },
+		{ "fr", "French" },
+		{ "hr", "Croatian" },
+		{ "hu", "Hungarian" },
+		{ "id", "Indonesian" },
+		{ "it", "Italian" },
+		{ "ja-JP", "Japanese" },
+		{ "ko", "Korean" },
+		{ "la", "Latin" },
+		{ "nb-NO", "Norwegian" },
+		{ "nl", "Dutch" },
+		{ "pl", "Polish" },
+		{ "pt", "European Portuguese" },
+		{ "pt-BR", "Brazilian Portuguese" },
+		{ "ro", "Romanian" },
+		{ "ru", "Russian" },
+		{ "sr", "Serbian" },
+		{ "sv", "Swedish" },
+		{ "tr", "Turkish" },
+		{ "uk", "Ukrainian" },
+		{ "zh-Hans", "Simplified Chinese" },
+	};
+	return list;
+}
+
+string slade::canonicalCode(string_view tag)
+{
+	// The legacy switch is looked up without regard to case, but a tag the engine keeps is
+	// kept as written: 'en-US' isn't 'en-us' to the game's own list
+	auto legacy = legacyTags().find(foldTag(tag));
+	if (legacy != legacyTags().end())
+		return legacy->second;
+	return string(tag);
+}
+
+string slade::languageGroup(string_view tag)
+{
+	auto code = canonicalCode(tag);
+
+	auto dash = code.find('-');
+	if (dash == string::npos)
+		return code;
+
+	auto second = code.find('-', dash + 1);
+	// Language and script, but not region: en-US and en-GB are one language to a person,
+	// zh-Hans and zh-Hant are not. A script subtag is four letters, a region two
+	if (second == string::npos)
+		return code.size() - dash == 5 ? code : code.substr(0, dash);
+	if (second - dash == 5)
+		return code.substr(0, second);
+	return code.substr(0, dash);
+}
+
+string slade::languageName(string_view tag)
+{
+	auto code = canonicalCode(tag);
+
+	for (const auto& info : engineLanguages())
+	{
+		if (info.code == code)
+			return info.name;
+	}
+	// A tag the game doesn't list, like a mod's bare 'en': call it by the language it
+	// belongs to, rather than showing three names that all read as English
+	for (const auto& info : engineLanguages())
+	{
+		if (languageGroup(info.code) == languageGroup(code))
+			return info.name;
+	}
+	return string(tag);
+}
+
+// -----------------------------------------------------------------------------
+// LanguageBook
+// -----------------------------------------------------------------------------
 LanguageSource& LanguageBook::open(string_view name, string_view text)
 {
 	string key(name);

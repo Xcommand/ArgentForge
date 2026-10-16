@@ -122,6 +122,32 @@ struct LanguageLump
 	string text;
 };
 
+// The languages the game itself offers, taken from its own menu list (menudef.txt's
+// "LanguageOptions"), and how a tag a mod wrote maps onto them.
+//
+// The engine rewrites the legacy three-letter tags before it builds a table
+// (RemapLegacyLanguages, stringtable.cpp:78-147) and splits anything else into
+// language-script-region, so 'enu' and 'default' land in en-US, 'eng' in en-GB, and a mod
+// that wrote 'en' gets a third table that en-US only reaches by fallback. A person calling
+// all of them "English" is right, so the table groups columns by language and script.
+struct LanguageInfo
+{
+	string code;  // what the game's own list calls it, e.g. "en-US"
+	string name;  // what it shows in the menu, e.g. "English (US)"
+};
+
+// The game's language list, in its own order, minus "auto" which isn't a language to write
+const vector<LanguageInfo>& engineLanguages();
+
+// The tag the engine would end up using for something a lump declared
+string canonicalCode(string_view tag);
+
+// What a column header groups by: language and script, but not region
+string languageGroup(string_view tag);
+
+// The name the game shows for a tag, or the tag itself when it isn't one of its own
+string languageName(string_view tag);
+
 // Every LANGUAGE lump of one archive, read in the order the archive loads them. A mod
 // keeps its translations in separate files ('LANGUAGE.enu', 'language.gearbox'), so a
 // table of the whole archive's languages has to look at all of them at once and send
