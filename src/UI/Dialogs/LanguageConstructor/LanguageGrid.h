@@ -110,6 +110,14 @@ public:
 	}
 	void ensureVisible(long row);
 
+	// Leaves a cell unpainted while a field is over it, so nothing shows through around the
+	// field and the value he is typing is the only version of it on screen
+	void setEditing(long row, long column)
+	{
+		edit_row_ = row;
+		edit_col_ = column;
+	}
+
 	// The whole of what a paint does, on any DC of the right size. The window's own paint
 	// handler calls it; so does a harness that wants to look at the table without a screen
 	void drawTable(wxDC& dc, const wxSize& size) const;
@@ -133,7 +141,6 @@ private:
 	void onRightDown(wxMouseEvent& e);
 	void onRightUp(wxMouseEvent& e);
 	void onMotion(wxMouseEvent& e);
-	void onLeave(wxMouseEvent& e);
 	void onContextMenu(wxContextMenuEvent& e);
 	void onChar(wxKeyEvent& e);
 	void onScroll(wxScrollWinEvent& e);
@@ -166,8 +173,12 @@ private:
 
 	long sel_row_ = -1;
 	long sel_col_ = -1;
-	long hov_row_ = -1;
-	long hov_col_ = -1;
+
+	// The cell a field is sitting on, which is not painted while the field is there
+	long edit_row_ = -1;
+	long edit_col_ = -1;
+
+	bool on_divider_ = false;
 
 	// Which header shows the arrow, and which way
 	long sort_column_ = 0;

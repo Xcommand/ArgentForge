@@ -1228,6 +1228,9 @@ void LanguageConstructorDialog::editCell(long row, long column)
 	edit_col_ = column;
 	placeCellEditor();
 
+	// The table leaves this cell alone until the field is gone
+	grid_->setEditing(row, column);
+
 	edit_cell_->SetValue(cellEntry(row, column) ? wxString::FromUTF8(entry->text()) : wxEmptyString);
 	edit_cell_->Show(true);
 	edit_cell_->Raise();
@@ -1284,6 +1287,7 @@ void LanguageConstructorDialog::endCellEdit(bool keep)
 	auto   key    = string(keyAt(row));
 
 	edit_row_ = -1;
+	grid_->setEditing(-1, -1);
 	edit_cell_->Hide();
 
 	if (!keep || key.empty())

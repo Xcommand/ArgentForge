@@ -39,7 +39,6 @@ struct Theme
 	wxColour head;
 	wxColour head_ink;
 	wxColour line;
-	wxColour hover;
 	wxColour picked;
 	wxColour frame;
 
@@ -52,7 +51,6 @@ struct Theme
 		t.head_ink   = wxSystemSettings::GetColour(wxSYS_COLOUR_BTNTEXT);
 		t.frame      = wxSystemSettings::GetColour(wxSYS_COLOUR_HIGHLIGHT);
 		t.line       = mix(t.paper, t.ink, 0.14);
-		t.hover      = mix(t.paper, t.ink, 0.06);
 		t.picked     = mix(t.paper, t.frame, 0.22);
 		if (!t.head.IsOk())
 			t.head = mix(t.paper, t.ink, 0.06);
@@ -94,8 +92,6 @@ LanguageGrid::LanguageGrid(wxWindow* parent, wxWindowID id, const wxSize& size) 
 	Bind(wxEVT_RIGHT_DOWN, &LanguageGrid::onRightDown, this);
 	Bind(wxEVT_RIGHT_UP, &LanguageGrid::onRightUp, this);
 	Bind(wxEVT_MOTION, &LanguageGrid::onMotion, this);
-	Bind(wxEVT_ENTER_WINDOW, &LanguageGrid::onMotion, this);
-	Bind(wxEVT_LEAVE_WINDOW, &LanguageGrid::onLeave, this);
 	Bind(wxEVT_CONTEXT_MENU, &LanguageGrid::onContextMenu, this);
 	Bind(wxEVT_CHAR, &LanguageGrid::onChar, this);
 	// There is no one event for 'the table moved', so all of them are answered with the same
@@ -500,6 +496,8 @@ void LanguageGrid::onLeftUp(wxMouseEvent& e)
 	e.Skip();
 }
 
+// The mouse only ever changes the cursor here. Nothing follows it: a table that repaints
+// under a moving pointer is a table that blinks
 void LanguageGrid::onMotion(wxMouseEvent& e)
 {
 	if (drag_col_ >= 0)
@@ -509,34 +507,14 @@ void LanguageGrid::onMotion(wxMouseEvent& e)
 		return;
 	}
 
+	// The pointer changes the cursor and nothing else. A table that repaints wherever the
+	// mouse goes is a table that blinks
 	long column  = 0;
 	bool divider = dividerAt(e.GetPosition(), column);
-	SetCursor(wxCursor(divider ? wxCURSOR_SIZEWE : wxCURSOR_ARROW));
-
-	long row = 0, col = 0;
-	if (cellAt(e.GetPosition(), row, col))
+	if (divider != on_divider_)
 	{
-		if (row != hov_row_ || col != hov_col_)
-		{
-			hov_row_ = row;
-			hov_col_ = col;
-			Refresh();
-		}
-	}
-	else if (hov_row_ >= 0)
-	{
-		hov_row_ = hov_col_ = -1;
-		Refresh();
-	}
-	e.Skip();
-}
-
-void LanguageGrid::onLeave(wxMouseEvent& e)
-{
-	if (hov_row_ >= 0)
-	{
-		hov_row_ = hov_col_ = -1;
-		Refresh();
+		on_divider_ = divider;
+		SetCursor(wxCursor(divider ? wxCURSOR_SIZEWE : wxCURSOR_ARROW));
 	}
 	e.Skip();
 }
@@ -663,12 +641,6 @@ void LanguageGrid::drawTable(wxDC& dc, const wxSize& size) const
 			dc.SetPen(*wxTRANSPARENT_PEN);
 			dc.DrawRectangle({ 0, y, size.x, row_h_ });
 		}
-		else if (row == hov_row_)
-		{
-			dc.SetBrush(wxBrush(theme.hover));
-			dc.SetPen(*wxTRANSPARENT_PEN);
-			dc.DrawRectangle({ 0, y, size.x, row_h_ });
-		}
 
 		if (!cell)
 			continue;
@@ -680,6 +652,11 @@ void LanguageGrid::drawTable(wxDC& dc, const wxSize& size) const
 			if (x >= size.x)
 				break;
 			if (x + w <= 0)
+				continue;
+
+			// The cell a field is sitting on stays empty here: the field is its only
+			// version while he types
+			if (row == edit_row_ && c == edit_col_)
 				continue;
 
 			auto data = cell(row, c);
