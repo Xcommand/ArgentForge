@@ -1183,8 +1183,17 @@ void LanguageConstructorDialog::editCell(long row, long column)
 		// A child of the table, over the cell it belongs to. A child of the window would be a
 		// sibling of the table, and the table paints that square again on every refill - the
 		// field's own pixels go under it and only the system caret, which is drawn above all
-		// windows, is left to show that anything is there at all
-		edit_cell_ = new wxTextCtrl(grid_, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, wxTE_PROCESS_ENTER);
+		// windows, is left to show that anything is there at all.
+		// Multiline so a long value can be read at full height, Enter still being the commit:
+		// a LANGUAGE string keeps its line breaks as the two characters '\n', so a real
+		// newline is never something he means to type
+		edit_cell_ = new wxTextCtrl(
+			grid_,
+			wxID_ANY,
+			"",
+			wxDefaultPosition,
+			wxDefaultSize,
+			wxTE_PROCESS_ENTER | wxTE_MULTILINE | wxTE_NO_VSCROLL);
 
 		edit_cell_->Bind(
 			wxEVT_TEXT_ENTER,
@@ -1228,6 +1237,10 @@ void LanguageConstructorDialog::editCell(long row, long column)
 			{
 				if (e.GetKeyCode() == WXK_ESCAPE)
 					endCellEdit(false);
+				// A multiline field eats the return instead of announcing it, and the return
+				// is the commit here
+				else if (e.GetKeyCode() == WXK_RETURN || e.GetKeyCode() == WXK_NUMPAD_ENTER)
+					endCellEdit(true);
 				else
 					e.Skip();
 			});
@@ -1287,7 +1300,40 @@ void LanguageConstructorDialog::placeCellEditor()
 		return;
 	}
 
-	edit_cell_->SetSize(cell.width, cell.height + ui::scalePx(2));
+	// As wide as the room from its cell to the edge of the table, so a long value is read
+	// rather than hunted for, and as tall as that width needs
+	auto grid_size = grid_->GetClientSize();
+	int  wide      = std::max(cell.width, grid_size.x - cell.x - ui::scalePx(6));
+	int  room      = std::max(ui::scalePx(40), wide - ui::scalePx(10));
+
+	int lines = 1;
+	{
+		wxClientDC dc(edit_cell_);
+		dc.SetFont(edit_cell_->GetFont());
+
+		auto          text = edit_cell_->GetValue();
+		wxArrayInt     each;
+		if (dc.GetPartialTextExtents(text, each) && !each.empty())
+		{
+			int start = 0;
+			for (int i = 0; i < (int)each.size(); ++i)
+			{
+				if (each[i] - each[start] > room)
+				{
+					++lines;
+					start = i;
+					if (lines >= 16)
+						break;
+				}
+			}
+		}
+	}
+
+	int line_h = std::max(1, edit_cell_->GetCharHeight());
+	int tall   = std::max(cell.height + ui::scalePx(2), lines * line_h + ui::scalePx(8));
+	tall       = std::min(tall, std::max(cell.height, grid_size.y - cell.y));
+
+	edit_cell_->SetSize(wide, tall);
 	edit_cell_->Move(cell.GetTopLeft());
 }
 
