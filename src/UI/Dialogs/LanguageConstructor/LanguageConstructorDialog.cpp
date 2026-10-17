@@ -44,6 +44,10 @@ using namespace slade;
 CVAR(Int, lngc_new_language_style, 0, CVar::Flag::Save)
 
 
+// Temporary: what a click and a cell paint decided. Gone once both answers are in
+static void clickLog(const string& line);
+
+
 namespace slade
 {
 // -----------------------------------------------------------------------------
@@ -78,92 +82,113 @@ public:
 		return row;
 	}
 
+	// A virtual list forgets where it was scrolled when its row count is set, and wx only
+	// exposes the scroll as a protected member of a control
+	void scrollBy(int dx, int dy)
+	{
+		ListView_Scroll(GetHwnd(), dx, dy);
+	}
+
 protected:
 	wxString OnGetItemText(long item, long column) const override
 	{
 		return cellText ? cellText(item, column) : wxString();
 	}
 
-	WXLRESULT MSWWindowProc(WXUINT msg, WXWPARAM wParam, WXLPARAM lParam) override;
+	bool MSWOnNotify(int idCtrl, WXLPARAM lParam, WXLPARAM* result) override;
 };
 
-WXLRESULT LanguageList::MSWWindowProc(WXUINT msg, WXWPARAM wParam, WXLPARAM lParam)
+// wx hands a control its notifications through this hook, not through MSWWindowProc: the
+// message goes to the parent, which looks the child up by its window handle. Overriding the
+// window proc left all the cell drawing below unreachable, which is why no colour ever
+// reached the screen
+bool LanguageList::MSWOnNotify(int idCtrl, WXLPARAM lParam, WXLPARAM* result)
 {
-	if (msg == WM_NOTIFY && cellRuns)
+	auto* hdr = (LPNMHDR)lParam;
+
+	if (cellRuns && hdr->hwndFrom == GetHwnd() && hdr->code == NM_CUSTOMDRAW)
 	{
-		// A notification's idFrom is the sending window's handle, not its wx id: comparing
-		// it to GetId() never matched, and the cell drawing below never ran at all
-		auto* hdr = (LPNMHDR)lParam;
-		if (hdr->hwndFrom == GetHwnd() && hdr->code == NM_CUSTOMDRAW)
+		auto* draw = (NMLVCUSTOMDRAW*)lParam;
+		switch (draw->nmcd.dwDrawStage)
 		{
-			auto* draw = (NMLVCUSTOMDRAW*)lParam;
-			switch (draw->nmcd.dwDrawStage)
+		case CDDS_PREPAINT:
+			*result = CDRF_NOTIFYITEMDRAW;
+			return true;
+
+		case CDDS_ITEMPREPAINT:
+			*result = CDRF_NOTIFYSUBITEMDRAW;
+			return true;
+
+		case CDDS_ITEMPREPAINT | CDDS_SUBITEM:
+		{
+			auto row = (long)draw->nmcd.dwItemSpec;
+
+			// A picked row belongs to the theme: its own text colour is what makes a
+			// selection readable, whatever the file asked the text to be
+			if (GetItemState(row, LVIS_SELECTED) & LVIS_SELECTED)
+				break;
+
+			auto runs = cellRuns(row, draw->iSubItem);
+			if (runs.empty())
+				break;
+
+			// Temporary: does this run at all, and what did it resolve
+			static int drawn = 0;
+			if (drawn < 10)
 			{
-			case CDDS_PREPAINT:
-				return CDRF_NOTIFYITEMDRAW;
+				++drawn;
+				string ink = runs[0].ink.IsOk() ? string(runs[0].ink.GetAsString(wxC2S_HTML_SYNTAX).utf8_str())
+				                                : "invalid";
+				clickLog("draw row=" + std::to_string(row) + " col=" + std::to_string(draw->iSubItem) +
+				         " runs=" + std::to_string(runs.size()) + " ink=" + ink);
+			}
 
-			case CDDS_ITEMPREPAINT:
-				return CDRF_NOTIFYSUBITEMDRAW;
-
-			case CDDS_ITEMPREPAINT | CDDS_SUBITEM:
+			// One colour for the whole cell is something the control can do itself
+			if (runs.size() == 1)
 			{
-				auto row = (long)draw->nmcd.dwItemSpec;
-
-				// A picked row belongs to the theme: its own text colour is what makes a
-				// selection readable, whatever the file asked the text to be
-				if (GetItemState(row, LVIS_SELECTED) & LVIS_SELECTED)
+				if (!runs[0].ink.IsOk())
 					break;
-
-				auto runs = cellRuns(row, draw->iSubItem);
-				if (runs.empty())
-					break;
-
-				// One colour for the whole cell is something the control can do itself
-				if (runs.size() == 1)
-				{
-					if (!runs[0].ink.IsOk())
-						break;
-					draw->clrText = RGB(runs[0].ink.Red(), runs[0].ink.Green(), runs[0].ink.Blue());
-					return CDRF_NEWFONT;
-				}
-
-				// More than one: the cell is drawn here, run by run, left to right
-				RECT box{};
-				if (!ListView_GetSubItemRect(GetHwnd(), (int)row, draw->iSubItem, LVIR_LABEL, &box))
-					break;
-
-				auto* dc = (HDC)draw->nmcd.hdc;
-
-				// The cell's own background first, then the text with a transparent
-				// background. Left as it came, ExtTextOut fills behind every glyph with
-				// whatever the control had set, and a coloured string comes out as a grey
-				// bar with unreadable letters inside it
-				{
-					auto* brush = CreateSolidBrush(draw->clrTextBk);
-					FillRect(dc, &box, brush);
-					DeleteObject(brush);
-				}
-				SetBkMode(dc, TRANSPARENT);
-
-				int x = box.left;
-				for (const auto& one : runs)
-				{
-					auto wide = one.text.wc_str();
-					SIZE size{};
-					GetTextExtentPoint32W(dc, wide, (int)wcslen(wide), &size);
-					SetTextColor(dc, one.ink.IsOk() ? RGB(one.ink.Red(), one.ink.Green(), one.ink.Blue())
-					                                : GetTextColor(dc));
-					RECT part{ x, box.top, x + size.cx + 1, box.bottom };
-					ExtTextOutW(dc, x, box.top, ETO_CLIPPED, &part, wide, (int)wcslen(wide), nullptr);
-					x += size.cx;
-				}
-				return CDRF_SKIPDEFAULT;
+				draw->clrText = RGB(runs[0].ink.Red(), runs[0].ink.Green(), runs[0].ink.Blue());
+				*result = CDRF_NEWFONT;
+				return true;
 			}
+
+			// More than one: the cell is drawn here, run by run, left to right
+			RECT box{};
+			if (!ListView_GetSubItemRect(GetHwnd(), (int)row, draw->iSubItem, LVIR_LABEL, &box))
+				break;
+
+			auto* dc = (HDC)draw->nmcd.hdc;
+
+			// The cell's own background first, then the text with a transparent background.
+			// Left as it came, ExtTextOut fills behind every glyph with whatever the control
+			// had set, and a coloured string comes out as a grey bar of unreadable letters
+			{
+				auto* brush = CreateSolidBrush(draw->clrTextBk);
+				FillRect(dc, &box, brush);
+				DeleteObject(brush);
 			}
+			SetBkMode(dc, TRANSPARENT);
+
+			int x = box.left;
+			for (const auto& one : runs)
+			{
+				auto wide = one.text.wc_str();
+				SIZE size{};
+				GetTextExtentPoint32W(dc, wide, (int)wcslen(wide), &size);
+				SetTextColor(dc, one.ink.IsOk() ? RGB(one.ink.Red(), one.ink.Green(), one.ink.Blue())
+				                                : GetTextColor(dc));
+				RECT part{ x, box.top, x + size.cx + 1, box.bottom };
+				ExtTextOutW(dc, x, box.top, ETO_CLIPPED, &part, wide, (int)wcslen(wide), nullptr);
+				x += size.cx;
+			}
+			*result = CDRF_SKIPDEFAULT;
+			return true;
+		}
 		}
 	}
 
-	return wxListCtrl::MSWWindowProc(msg, wParam, lParam);
+	return wxListCtrl::MSWOnNotify(idCtrl, lParam, result);
 }
 } // namespace slade
 
@@ -1000,6 +1025,10 @@ void LanguageConstructorDialog::buildRows()
 	KeepFocus keep;
 	string  selected = string(keyAt(list_->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED)));
 
+	// Where he was looking, in pixels, before the rows are handed over again
+	int vpos = list_->GetScrollPos(wxVERTICAL);
+	int hpos = list_->GetScrollPos(wxHORIZONTAL);
+
 	string filter = text_filter_ ? text_filter_->GetValue().utf8_str() : "";
 
 	keys_.clear();
@@ -1106,6 +1135,11 @@ void LanguageConstructorDialog::buildRows()
 			break;
 		}
 	}
+
+	// A virtual list goes back to its top when its row count is set, so a refill that came
+	// from picking a colour would otherwise drop him at the first string and make him hunt
+	// for his place again
+	list_->scrollBy(hpos - list_->GetScrollPos(wxHORIZONTAL), vpos - list_->GetScrollPos(wxVERTICAL));
 
 	if (counts_)
 		counts_->SetLabel(wxString::Format(
