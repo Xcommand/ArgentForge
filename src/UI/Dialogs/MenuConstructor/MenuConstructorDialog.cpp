@@ -1401,14 +1401,25 @@ void MenuConstructorDialog::onGridChanged(wxPropertyGridEvent& e)
   auto* prop = e.GetProperty(); if (!prop) return;
   auto* def = currentDefinition(); auto* st = currentStatement(); if (!def || !st) return;
   auto data = prop->GetName().utf8_string(); string typed = strutil::trim(e.GetValue().GetString().utf8_string());
+
+  // Which of the engine's own argument words this field is. A row's property is named
+  // 'argN' and only labelled with the word, so the label is the one place that says whether
+  // what's typed here is text the game shows a player
+  string field = string(prop->GetLabel().utf8_string());
+  bool   spoken = field == "label" || field == "text" || field == "prompt" || field == "label2"
+               || data == "text" || data == "tooltip";
+
+  // What stood in the field before this edit. A '$KEY' that isn't declared yet takes it as
+  // the text of the new string, so a label being named doesn't start out empty
+  string before;
+  if (data.rfind("arg", 0) == 0)
+  { size_t at = 0; try { at = (size_t)std::stoul(string(data.substr(3))); } catch (...) {}
+    if (at < st->args.size()) before = unquote(st->args[at].value); }
+  else if (data == "text" && !st->args.empty()) before = unquote(st->args[0].value);
+
   if (data == "value") { if (typed.empty() || typed == st->word) { buildGrid(wxString::FromUTF8(data)); return; }
     st->word = typed; st->edited = true; }
-  else if (data == "text") { auto was = st->args.empty() ? string() : st->args[0].value;
-    if (st->args.empty() || typed.empty() || !st->setArg(0, quoteAs(st->args[0].value, typed))) { buildGrid(wxString::FromUTF8(data)); return; }
-    // A '$KEY' the mod doesn't declare yet is a label being named, not a typo: the text that
-    // stood in the field becomes its value, in the file the dropdown names
-    if (typed.size() > 1 && typed.front() == '$' && !mod_language_.count(typed))
-        createLanguageKey(typed.substr(1), was); }
+  else if (data == "text") { if (st->args.empty() || typed.empty() || !st->setArg(0, quoteAs(st->args[0].value, typed))) { buildGrid(wxString::FromUTF8(data)); return; } }
   else if (data == "tooltip") {
       // The third value field. Edit it if the row already has one; add it if the row has a text
       // but no tooltip yet; refuse if there's no text to sit behind
@@ -1419,6 +1430,10 @@ void MenuConstructorDialog::onGridChanged(wxPropertyGridEvent& e)
       size_t index = 0; try { index = (size_t)std::stoul(string(data.substr(3))); } catch (...) { return; }
       if (!writeArgAt(st, index, typed)) { buildGrid(wxString::FromUTF8(data)); return; } }
   else return;
+  // Any of the words the player reads can hold a LANGUAGE reference instead of plain text,
+  // and a '$NAME' the archive doesn't declare is a label being born, not a typo
+  if (spoken && typed.size() > 1 && typed.front() == '$' && !mod_language_.count(typed))
+      createLanguageKey(typed.substr(1), before);
   if (!apply()) { buildTree(); return; } applyCaption(); showHelp(); }
 
 void MenuConstructorDialog::onGridSelected(wxPropertyGridEvent& e)
