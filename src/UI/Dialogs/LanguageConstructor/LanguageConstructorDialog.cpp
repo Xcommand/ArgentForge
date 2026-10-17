@@ -450,10 +450,33 @@ void LanguageConstructorDialog::buildColumns()
 		return parts;
 	};
 
+	// The file picked in the dropdown leads the tags of its own column, ahead of the
+	// specificity rule. A column that groups 'enu' with another file's 'eng' would
+	// otherwise offer 'eng' as the language to add under, and the add would open an
+	// [eng] block inside the file that never declared it
+	vector<string> chosen;
+	if (auto* lump = book_.lump(primary_))
+		chosen = lump->languages();
+	auto in_chosen = [&](string_view tag)
+	{ return std::find(chosen.begin(), chosen.end(), string(tag)) != chosen.end(); };
+
 	for (auto& column : columns_)
 	{
 		std::stable_sort(column.tags.begin(), column.tags.end(), [&](string_view left, string_view right)
 		{
+			bool cl = in_chosen(left), cr = in_chosen(right);
+			if (cl != cr)
+				return cl;
+			// Both written by the chosen file: it reads as the file writes them, so a lump
+			// that opened with '[enu default]' adds under enu, not under default
+			if (cl)
+			{
+				auto cl_left  = std::find(chosen.begin(), chosen.end(), string(left));
+				auto cl_right = std::find(chosen.begin(), chosen.end(), string(right));
+				if (cl_left != cl_right)
+					return cl_left < cl_right;
+			}
+
 			auto dl = specificity(left), dr = specificity(right);
 			if (dl != dr)
 				return dl > dr;
