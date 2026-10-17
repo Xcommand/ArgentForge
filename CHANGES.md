@@ -10,17 +10,16 @@ This release is the Language Constructor: a `LANGUAGE` lump as a table of string
 guide page is [Translating a language](docs/user/language.md).
 
 * One row per string, one column per language file. The dropdown says which file new strings go
-  into and which column is the original; **Additional** ticks the other files you want beside it.
+  into and which column is the original; `Additional` ticks the other files you want beside it.
   A file you didn't tick isn't in the table, so an archive with nine language files doesn't put
   nine columns in front of you.
 * A string a second file doesn't define is filled with the first file's text in a quieter colour: a
-  placeholder, which is the table saying "this one isn't translated" without a report. Translate it
+  placeholder, which is the table saying 'this one isn't translated' without a report. Translate it
   and it stops being quiet.
 * Colour inside the text. The engine reads a colour as `\c` plus a letter inside the string, and the
   table shows the words in that colour with the code hidden, which is what the menu will look like.
-  Right-click a cell for **Colour...** (the program's own picker, snapped to the nearest colour the
-  game can draw, written in at the caret), **Remove the colour from this cell**, **Copy** and
-  **Paste**.
+  Right-click a cell for `Colour...` (the program's own picker, snapped to the nearest colour the
+  game can draw, written in at the caret), `Remove the colour from this cell`, `Copy` and `Paste`.
 * One click opens a cell. `Enter` writes it, so does moving to another cell, `Esc` takes back what
   you typed, and `Ctrl+Z` / `Ctrl+Y` in the window are the editor's undo. A long value opens a field
   tall enough to read all of it, and shows the file's `\n` markers where it breaks the line, so a

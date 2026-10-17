@@ -29,6 +29,24 @@
 		</p>
 	</description>
 	<releases>
+		<release date="2026-10-17" version="1.2.0">
+			<description>
+				<ul>
+					<li>The Language Constructor: edit a mod's LANGUAGE lumps as a table of one
+					column per file, and paint part of a string with the colours the engine
+					itself reads.</li>
+					<li>A new translation comes with its $key written for you, and an
+					untranslated value sits grey in the column until it is.</li>
+					<li>The table and the code editor follow each other: pick a row and the
+					editor moves to its line, pick a line and the row lights up.</li>
+					<li>The Menu Constructor reads a block you select as one run, so rows move,
+					copy, paste and delete together, and its buttons appear only over the
+					lump they belong to.</li>
+					<li>Preferences has a Language Constructor page and an Integration page for
+					the SLADE import and AceZDL settings.</li>
+				</ul>
+			</description>
+		</release>
 		<release date="2026-10-15" version="1.1.2">
 			<description>
 				<ul>
