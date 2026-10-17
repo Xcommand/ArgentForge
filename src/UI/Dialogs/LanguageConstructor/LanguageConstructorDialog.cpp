@@ -1041,6 +1041,17 @@ string_view LanguageConstructorDialog::keyAt(long row) const
 	return keys_[shown_[row]];
 }
 
+// The row a key is on now, or -1 when the filter leaves it out
+long LanguageConstructorDialog::rowForKey(string_view key) const
+{
+	if (key.empty())
+		return -1;
+	for (size_t i = 0; i < shown_.size(); ++i)
+		if (keys_[shown_[i]] == key)
+			return (long)i;
+	return -1;
+}
+
 const LanguageEntry* LanguageConstructorDialog::cellEntry(long row, long column) const
 {
 	auto index = columnIndex(column);
@@ -1056,8 +1067,14 @@ string LanguageConstructorDialog::selectedTag(long row, long column) const
 {
 	auto index = columnIndex(column);
 	auto key   = keyAt(row);
-	if (index < 0 || key.empty())
+	if (key.empty())
 		return "";
+
+	// The key column names no language of its own. Ask for the one the file in the dropdown
+	// reads, because that is where this row's string lives for the editor to show
+	if (index < 0)
+		return columns_.empty() ? "" : tagAt(key, columns_[0]);
+
 	return tagAt(key, columns_[index]);
 }
 
@@ -1104,6 +1121,8 @@ void LanguageConstructorDialog::sortByColumn(long column)
 	if (column < 0 || column > (long)columns_.size())
 		return;
 
+	commitOpenCell();
+
 	if (sort_column_ == column)
 		sort_up_ = !sort_up_;
 	else
@@ -1123,6 +1142,22 @@ void LanguageConstructorDialog::editCell(long row, long column)
 {
 	if (column <= key_column || column > (long)columns_.size())
 		return;
+
+	// What a menu or a paste put into the field is only in the file once the field closes,
+	// and a field doesn't always hear about closing: after a popup or a picker the keys can
+	// be somewhere else already. So the cell being left is written here, before a new one
+	// opens over it
+	auto clicked = string(keyAt(row));
+	if (edit_row_ >= 0 && (edit_row_ != row || edit_col_ != column))
+	{
+		endCellEdit(true);
+
+		// Writing can re-order the rows under a sort, and the click named its row by number
+		if (clicked != keyAt(row))
+			row = rowForKey(clicked);
+		if (row < 0)
+			return;
+	}
 
 	auto* entry = cellEntry(row, column);
 	if (!edit_cell_)
@@ -1238,6 +1273,16 @@ void LanguageConstructorDialog::placeCellEditor()
 	edit_cell_->Move(cell.GetTopLeft());
 }
 
+// -----------------------------------------------------------------------------
+// What is typed into a cell only reaches the file when the field closes, and a rebuild of
+// the table can take that cell away before the field hears about it
+// -----------------------------------------------------------------------------
+void LanguageConstructorDialog::commitOpenCell()
+{
+	if (edit_row_ >= 0)
+		endCellEdit(true);
+}
+
 void LanguageConstructorDialog::endCellEdit(bool keep)
 {
 	if (!edit_cell_ || edit_row_ < 0)
@@ -1287,6 +1332,8 @@ void LanguageConstructorDialog::endCellEdit(bool keep)
 // -----------------------------------------------------------------------------
 void LanguageConstructorDialog::addFromFields()
 {
+	commitOpenCell();
+
 	string key   = text_key_->GetValue().utf8_str();
 	string value = text_value_->GetValue().utf8_str();
 
@@ -1377,6 +1424,7 @@ string LanguageConstructorDialog::lumpForLanguage(string_view language) const
 // -----------------------------------------------------------------------------
 void LanguageConstructorDialog::onFilterChanged(wxCommandEvent& e)
 {
+	commitOpenCell();
 	buildRows();
 	e.Skip();
 }
@@ -1389,6 +1437,8 @@ void LanguageConstructorDialog::onLumpChosen(wxCommandEvent& e)
 {
 	if (updating_)
 		return;
+
+	commitOpenCell();
 
 	int row = choice_lump_->GetSelection();
 	if (row == lump_row_)

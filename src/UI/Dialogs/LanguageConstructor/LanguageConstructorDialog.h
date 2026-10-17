@@ -103,6 +103,9 @@ private:
 	// The row's key, or empty when the filter left nothing at that place
 	string_view keyAt(long row) const;
 
+	// The row a key is on now, or -1 when the filter leaves it out
+	long rowForKey(string_view key) const;
+
 	// The string a cell holds, or null when the lump doesn't define it in that language
 	const LanguageEntry* cellEntry(long row, long column) const;
 	LanguageEntry*       cellEntryOf(long row, long column);
@@ -114,6 +117,9 @@ private:
 
 	// Moves the field to where its cell now is, after the table was scrolled
 	void placeCellEditor();
+
+	// Writes the cell a field is open on, for anything about to rebuild the table
+	void commitOpenCell();
 
 	// The cell menu: colour, and the clipboard
 	void onCellColourMenu(long row, long column, wxPoint where, wxWindow* anchor = nullptr);
