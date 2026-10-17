@@ -1759,6 +1759,25 @@ void TextEntryPanel::openLanguageConstructor()
 				language_constructor_->adopt(lumps, language_current_id_);
 				return true;
 			});
+		language_constructor_->setUndoFunctions(
+			[this]()
+			{
+				if (!text_area_)
+					return false;
+				text_area_->Undo();
+				return true;
+			},
+			[this]()
+			{
+				if (!text_area_)
+					return false;
+				text_area_->Redo();
+				return true;
+			},
+			[this]()
+			{
+				resyncLanguageConstructor();
+			});
 	}
 
 	auto entry  = entry_.lock();

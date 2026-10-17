@@ -81,6 +81,15 @@ public:
 	// project name the same language differently
 	void setCreateFunction(std::function<bool(string_view code, string& id)> create) { create_ = std::move(create); }
 
+	// What to call to step the editor's own undo back and forward: a cell edit is written
+	// through the text editor, so its undo buffer is the history of these changes too
+	void setUndoFunctions(std::function<bool()> undo, std::function<bool()> redo, std::function<void()> resync)
+	{
+		undo_   = std::move(undo);
+		redo_   = std::move(redo);
+		resync_ = std::move(resync);
+	}
+
 	// Which file new strings go into. The dropdown's business, not the editor's: the lump
 	// on screen stays where it is
 	const string& primaryLump() const { return primary_; }
@@ -245,6 +254,9 @@ private:
 	std::function<bool(string_view lump, string_view text)> apply_;
 	std::function<void(string_view lump, size_t offset)>    select_;
 	std::function<bool(string_view code, string& id)>        create_;
+	std::function<bool()>                                   undo_;
+	std::function<bool()>                                   redo_;
+	std::function<void()>                                   resync_;
 
 	// Which header the rows are ordered by, and which way
 	long sort_column_ = 0;

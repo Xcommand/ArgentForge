@@ -55,6 +55,9 @@ EXTERN_CVAR(Int, startpage_recent_scale)
 // How the Language Constructor makes a language he adds: its own lump, or a block in
 // the file already open
 EXTERN_CVAR(Int, lngc_new_language_style)
+// Whether the cell field keeps the file's '\n' markers on screen as well as breaking the
+// line there
+EXTERN_CVAR(Int, lngc_show_line_breaks)
 
 // Where AceZDL keeps its settings, and the path that was in it before we wrote ours
 CVAR(String, acl_config_file, "", CVar::Flag::Save)
@@ -253,6 +256,12 @@ ExtraFeaturesPrefsPanel::ExtraFeaturesPrefsPanel(wxWindow* parent) : PrefsPanelB
 	lngc_choice->SetToolTip(wxS("Default: one LANGUAGE lump per language. The other choice writes a [code] block into the file you are working in, so the whole archive keeps a single LANGUAGE."));
 	sizer->Add(lngc_choice, 0, wxALL | wxEXPAND, ui::pad());
 
+	lngc_breaks_id_ = wxNewId();
+	auto lngc_breaks = new wxCheckBox(this, lngc_breaks_id_, wxS("Language Constructor: show the \\n markers while editing a text field"));
+	lngc_breaks->SetValue(lngc_show_line_breaks == 1);
+	lngc_breaks->SetToolTip(wxS("Default: on. A LANGUAGE file writes a line break as the two characters \\n. On, the field shows those characters and breaks the line after them, so a break is something you can see yourself deleting. Off, the line breaks but the marker stays hidden."));
+	sizer->Add(lngc_breaks, 0, wxLEFT | wxRIGHT | wxTOP, ui::pad());
+
 	refreshAceZdl();
 }
 
@@ -280,6 +289,8 @@ void ExtraFeaturesPrefsPanel::applyPreferences()
 
 	if (auto* choice = wxDynamicCast(FindWindow(lngc_style_id_), wxChoice))
 		lngc_new_language_style = choice->GetSelection() == 1 ? 1 : 0;
+	if (auto* box = wxDynamicCast(FindWindow(lngc_breaks_id_), wxCheckBox))
+		lngc_show_line_breaks = box->GetValue() ? 1 : 0;
 	if (flp_acl_)
 		acl_config_file = flp_acl_->location();
 }

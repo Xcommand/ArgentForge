@@ -37,6 +37,10 @@ using namespace slade;
 // the file already being worked in. Set under Preferences > Extra Features
 CVAR(Int, lngc_new_language_style, 0, CVar::Flag::Save)
 
+// Whether the field keeps the file's '\n' markers on screen as well as breaking the line
+// there. Off, a break is invisible and deleting one looks like deleting a letter
+CVAR(Int, lngc_show_line_breaks, 1, CVar::Flag::Save)
+
 
 
 // 'RRGGBB' or '#RRGGBB' as written in a TEXTCOLO or in the vocabulary's own table
@@ -125,7 +129,11 @@ static std::vector<slade::LanguageCellRun> languageRuns(const string& text)
 // them back into one byte when it reads the string (ProcessEscapes, stringtable.cpp:875). The
 // cell field shows that break as a real one so a long hint can be read at all, and gives the
 // two characters back on the way out. A '\\' stays two characters, so it never eats the next
-// escape
+// escape.
+//
+// With lngc_show_line_breaks the two characters stay on screen as well, and the break comes
+// after them: what he deletes is then something he can see, rather than a line that quietly
+// joins its neighbour
 static wxString displayedValue(string_view raw)
 {
 	string bytes;
@@ -135,6 +143,8 @@ static wxString displayedValue(string_view raw)
 		{
 			if (raw[i + 1] == 'n')
 			{
+				if (lngc_show_line_breaks)
+					bytes += "\\n";
 				bytes += '\n';
 				i++;
 				continue;
@@ -151,13 +161,27 @@ static wxString displayedValue(string_view raw)
 	return wxString::FromUTF8(bytes);
 }
 
-// The same trip back: what is typed in the field becomes the file's own bytes again
+// The same trip back. A break that only exists because the marker asked for it is dropped
+// with the marker, so the file keeps exactly the bytes it had
 static string storedValue(const wxString& shown)
 {
 	wxString out;
 	for (size_t i = 0; i < shown.size(); i++)
 	{
 		auto c = shown[i];
+
+		if (lngc_show_line_breaks && c == '\\' && i + 1 < shown.size() && shown[i + 1] == 'n')
+		{
+			out += wxS("\\n");
+			i++;
+			// The break that follows the marker is the field's own
+			if (i + 1 < shown.size() && shown[i + 1] == '\r' && shown[i + 2] == '\n')
+				i++;
+			if (i + 1 < shown.size() && shown[i + 1] == '\n')
+				i++;
+			continue;
+		}
+
 		if (c == '\r')
 		{
 			// A Windows pair is one break
@@ -436,6 +460,30 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 	{ addFromFields(); });
 	text_value_->Bind(wxEVT_TEXT_ENTER, [this](wxCommandEvent&)
 	{ addFromFields(); });
+	// A cell change goes back through the text editor, so the editor's undo buffer is the
+	// history of these edits as well. While he is inside a field the keys belong to that
+	// field's own undo, and the hook stays out of it
+	Bind(wxEVT_CHAR_HOOK, [ this ](wxKeyEvent& e)
+	{
+		if (edit_row_ < 0 && e.ControlDown() && (e.GetKeyCode() == 'Z' || e.GetKeyCode() == 'Y'))
+		{
+			bool moved = false;
+			if (e.GetKeyCode() == 'Y')
+				moved = redo_ && redo_();
+			else
+				moved = e.ShiftDown() ? (redo_ && redo_()) : (undo_ && undo_());
+
+			if (moved)
+			{
+				// The undo moved bytes under the window's own copy of the text, and nothing
+				// else would notice while he stays in this window
+				if (resync_)
+					resync_();
+				return;
+			}
+		}
+		e.Skip();
+	});
 	Bind(wxEVT_CLOSE_WINDOW, &LanguageConstructorDialog::onCloseWindow, this);
 
 	restoreGeometry();
