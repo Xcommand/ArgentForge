@@ -221,6 +221,10 @@ private:
 	long        edit_row_  = -1;
 	long        edit_col_  = -1;
 
+	// Up while a menu or the colour picker is showing: they take the focus to give it back,
+	// and that isn't him clicking away
+	bool keep_edit_open_ = false;
+
 	// What each visible cell is made of, rebuilt with the rows: the runs to draw, and
 	// whether that text is only a copy of another language's
 	std::vector<std::vector<LanguageCellPaint>> paint_;

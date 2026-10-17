@@ -29,6 +29,9 @@
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
 
+#include <fstream>
+#include <cstdlib>
+
 // The list view's own custom-draw notices, which wx keeps behind its own include order
 #ifdef __WXMSW__
 #include <wx/msw/wrapcctl.h>
@@ -88,8 +91,10 @@ WXLRESULT LanguageList::MSWWindowProc(WXUINT msg, WXWPARAM wParam, WXLPARAM lPar
 {
 	if (msg == WM_NOTIFY && cellRuns)
 	{
+		// A notification's idFrom is the sending window's handle, not its wx id: comparing
+		// it to GetId() never matched, and the cell drawing below never ran at all
 		auto* hdr = (LPNMHDR)lParam;
-		if (hdr->idFrom == (UINT)GetId() && hdr->code == NM_CUSTOMDRAW)
+		if (hdr->hwndFrom == GetHwnd() && hdr->code == NM_CUSTOMDRAW)
 		{
 			auto* draw = (NMLVCUSTOMDRAW*)lParam;
 			switch (draw->nmcd.dwDrawStage)
@@ -240,6 +245,18 @@ static std::vector<slade::LanguageCellRun> languageRuns(const string& text)
 	}
 	flush(ink);
 	return runs;
+}
+
+// Temporary: what a click decided and why. Gone as soon as the single-click answer is in
+static void clickLog(const string& line)
+{
+	// The off-screen harness sets this so its own runs don't land in his log. Read through
+	// Win32 rather than getenv: the CRT keeps its own copy of the environment, and the
+	// harness sets the variable after that copy was made
+	if (::GetEnvironmentVariableA("SLADE_HEADLESS", nullptr, 0) > 0)
+		return;
+	std::ofstream f("H:/rttools/af_langclick.log", std::ios::app);
+	f << line << "\n";
 }
 
 // The colour a value begins with, which is what the picker opens on
@@ -467,6 +484,8 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 			e.Skip();
 			long column = 0;
 			long row    = list_->cellAt(e.GetPosition(), column);
+			clickLog("up " + std::to_string(e.GetPosition().x) + "," + std::to_string(e.GetPosition().y) +
+			         " row=" + std::to_string(row) + " col=" + std::to_string(column));
 			if (row < 0)
 				return;
 			CallAfter([ this, row, column ]
@@ -1208,7 +1227,11 @@ void LanguageConstructorDialog::sortByColumn(long column)
 void LanguageConstructorDialog::editCell(long row, long column)
 {
 	if (column <= key_column || column > (long)columns_.size())
+	{
+		clickLog("refused row=" + std::to_string(row) + " col=" + std::to_string(column) +
+		         " of " + std::to_string(columns_.size()));
 		return;
+	}
 
 	auto* entry = cellEntry(row, column);
 	if (!edit_cell_)
@@ -1223,11 +1246,18 @@ void LanguageConstructorDialog::editCell(long row, long column)
 			{ endCellEdit(true); });
 
 		// Clicking away means the same as Enter: what's typed is what he wanted. Only
-		// Escape takes it back
+		// Escape takes it back. A menu or the colour picker is not 'away': they take the
+		// focus to give it straight back, and committing there would close the cell before
+		// the choice it was asked for even exists
 		edit_cell_->Bind(
 			wxEVT_KILL_FOCUS,
 			[this](wxFocusEvent& e)
 			{
+				if (keep_edit_open_)
+				{
+					e.Skip();
+					return;
+				}
 				endCellEdit(true);
 				e.Skip();
 			});
@@ -1262,6 +1292,11 @@ void LanguageConstructorDialog::editCell(long row, long column)
 				if (edit_cell_ && edit_row_ >= 0)
 					edit_cell_->SetFocus();
 			});
+
+	clickLog("opened row=" + std::to_string(row) + " col=" + std::to_string(column) +
+	         " shown=" + std::to_string(edit_cell_->IsShown()) + " rect=" + std::to_string(cell.x) + "," +
+	         std::to_string(cell.y) + " " + std::to_string(cell.width) + "x" + std::to_string(cell.height) +
+	         " focus=" + std::to_string(wxWindow::FindFocus() == edit_cell_));
 }
 
 void LanguageConstructorDialog::endCellEdit(bool keep)
@@ -1499,6 +1534,21 @@ void LanguageConstructorDialog::onCellColourMenu(long row, long column, wxPoint 
 	const int colour_id = wxID_HIGHEST + 1;
 	const int clear_id  = wxID_HIGHEST + 2;
 
+	// The popup and the picker take the focus to hand it back; the cell being edited has to
+	// outlive both, or the choice arrives at a cell that already closed and committed
+	struct KeepEdit
+	{
+		KeepEdit(bool& flag) : flag_(flag)
+		{
+			flag_ = true;
+		}
+		~KeepEdit()
+		{
+			flag_ = false;
+		}
+		bool& flag_;
+	} keep(keep_edit_open_);
+
 	wxMenu menu;
 	menu.Append(colour_id, wxS("Colour..."));
 	menu.Append(clear_id, wxS("Remove the colour from this cell"));
@@ -1507,15 +1557,28 @@ void LanguageConstructorDialog::onCellColourMenu(long row, long column, wxPoint 
 	if (picked == wxID_NONE)
 		return;
 
+	bool editing = edit_cell_ && edit_row_ == row && edit_col_ == column;
+	long caret   = editing ? std::max(0L, edit_cell_->GetInsertionPoint()) : 0;
+
 	string was = entry->text();
-	auto   write = [&](const string& now)
+
+	// The cell's text lives in the editor while he is inside it, and in the file otherwise.
+	// A change has to go to whichever of the two is standing, or it lands where nothing can
+	// see it
+	auto source = [&]()
 	{
-		if (now == was)
+		return editing ? string(edit_cell_->GetValue().utf8_str()) : entry->text();
+	};
+	auto write = [&](const string& now)
+	{
+		if (now == source())
 			return;
+		if (editing)
+		{
+			edit_cell_->ChangeValue(wxString::FromUTF8(now));
+			return;
+		}
 		entry->setText(now);
-		// The editor may be standing over this cell; it has to show what was chosen
-		if (edit_cell_ && edit_row_ == row && edit_col_ == column)
-			edit_cell_->SetValue(wxString::FromUTF8(now));
 		applyChange();
 	};
 
@@ -1551,12 +1614,10 @@ void LanguageConstructorDialog::onCellColourMenu(long row, long column, wxPoint 
 	string code = "\\c";
 	code += letter;
 
-	// Where the caret stands, so a label can begin in one colour and carry on in another
-	// the way a mod writes it by hand
-	if (edit_cell_ && edit_row_ == row && edit_col_ == column)
+	if (editing)
 	{
 		auto text = edit_cell_->GetValue();
-		auto at   = std::max(0L, edit_cell_->GetInsertionPoint());
+		auto  at   = std::min(caret, (long)text.length());
 		text.insert((size_t)at, wxString::FromUTF8(code));
 		edit_cell_->ChangeValue(text);
 		edit_cell_->SetInsertionPoint(at + 3);
