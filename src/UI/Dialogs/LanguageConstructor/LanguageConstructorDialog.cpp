@@ -22,8 +22,6 @@
 #include <wx/choice.h>
 #include <wx/colour.h>
 #include <wx/display.h>
-#include <wx/listctrl.h>
-#include <wx/scrolwin.h>
 #include <wx/settings.h>
 #include <wx/sizer.h>
 #include <wx/stattext.h>
@@ -31,11 +29,6 @@
 
 #include <fstream>
 #include <cstdlib>
-
-// The list view's own custom-draw notices, which wx keeps behind its own include order
-#ifdef __WXMSW__
-#include <wx/msw/wrapcctl.h>
-#endif
 
 using namespace slade;
 
@@ -47,121 +40,6 @@ CVAR(Int, lngc_new_language_style, 0, CVar::Flag::Save)
 // Temporary: what a click and a cell paint decided. Gone once both answers are in
 static void clickLog(const string& line);
 
-
-namespace slade
-{
-// -----------------------------------------------------------------------------
-// The table. A LANGUAGE value carries its own colours inside it ('\cc', '\c7'), and a
-// native list colours a whole row at a time, so this answers the control's own
-// custom-draw notice per cell: a cell of one colour asks the control to change the text
-// colour, and a cell that changes colour mid-string is drawn here, because no single
-// colour can say it. The selected row is left to the theme, which knows the dark and
-// light colours of a picked row better than any colour written in a file
-// -----------------------------------------------------------------------------
-class LanguageList : public wxListCtrl
-{
-public:
-	using wxListCtrl::wxListCtrl;
-
-	std::function<std::vector<LanguageCellRun>(long, long)> cellRuns;
-
-	// In virtual mode the control asks for the text of a cell when it is about to draw it,
-	// so a refill is a row count and nothing else
-	std::function<wxString(long, long)> cellText;
-
-	// The control knows which cell a point is in, and says so even when the table is
-	// scrolled sideways or a column has been dragged. Measuring the header widths by hand
-	// got it wrong as soon as either happened, and a click landed on the key column
-	long cellAt(wxPoint where, long& column) const
-	{
-		LVHITTESTINFO hit{};
-		hit.pt.x = where.x;
-		hit.pt.y = where.y;
-		long row = ListView_SubItemHitTest(GetHwnd(), &hit);
-		column   = hit.iSubItem;
-		return row;
-	}
-
-	// A virtual list forgets where it was scrolled when its row count is set, and wx only
-	// exposes the scroll as a protected member of a control
-	void scrollBy(int dx, int dy)
-	{
-		ListView_Scroll(GetHwnd(), dx, dy);
-	}
-
-protected:
-	wxString OnGetItemText(long item, long column) const override
-	{
-		return cellText ? cellText(item, column) : wxString();
-	}
-
-	bool MSWOnNotify(int idCtrl, WXLPARAM lParam, WXLPARAM* result) override;
-};
-
-// wx hands a control its notifications through this hook, not through MSWWindowProc: the
-// message goes to the parent, which looks the child up by its window handle. Overriding the
-// window proc left all the cell drawing below unreachable, which is why no colour ever
-// reached the screen
-bool LanguageList::MSWOnNotify(int idCtrl, WXLPARAM lParam, WXLPARAM* result)
-{
-	auto* hdr = (LPNMHDR)lParam;
-
-	if (cellRuns && hdr->hwndFrom == GetHwnd() && hdr->code == NM_CUSTOMDRAW)
-	{
-		auto* draw = (NMLVCUSTOMDRAW*)lParam;
-		switch (draw->nmcd.dwDrawStage)
-		{
-		case CDDS_PREPAINT:
-			*result = CDRF_NOTIFYITEMDRAW;
-			return true;
-
-		case CDDS_ITEMPREPAINT:
-			*result = CDRF_NOTIFYSUBITEMDRAW;
-			return true;
-
-		case CDDS_ITEMPREPAINT | CDDS_SUBITEM:
-		{
-			auto row = (long)draw->nmcd.dwItemSpec;
-
-			// A picked row belongs to the theme: its own text colour is what makes a
-			// selection readable, whatever the file asked the text to be
-			if (GetItemState(row, LVIS_SELECTED) & LVIS_SELECTED)
-				break;
-
-			auto runs = cellRuns(row, draw->iSubItem);
-
-			// Temporary: does this run at all, and what did it resolve
-			static int drawn = 0;
-			if (drawn < 40)
-			{
-				++drawn;
-				string ink = runs.empty() ? "none" : (runs[0].ink.IsOk() ? string(runs[0].ink.GetAsString(wxC2S_HTML_SYNTAX).utf8_str())
-				                                                        : "invalid");
-				clickLog("draw row=" + std::to_string(row) + " col=" + std::to_string(draw->iSubItem) +
-				         " runs=" + std::to_string(runs.size()) + " ink=" + ink);
-			}
-
-			// Ask the control to change the text colour and let it draw the letters. Taking
-			// the cell over to colour it run by run fought the control's own hover and
-			// selection bands, and lost: rows came out two-tone and a word with no code in
-			// front of it went invisible. One colour per cell is what this control can be
-			// made to do without lying about the row's state
-			for (const auto& one : runs)
-			{
-				if (!one.ink.IsOk())
-					continue;
-				draw->clrText = RGB(one.ink.Red(), one.ink.Green(), one.ink.Blue());
-				*result = CDRF_NEWFONT;
-				return true;
-			}
-			break;
-		}
-		}
-	}
-
-	return wxListCtrl::MSWOnNotify(idCtrl, lParam, result);
-}
-} // namespace slade
 
 // 'RRGGBB' or '#RRGGBB' as written in a TEXTCOLO or in the vocabulary's own table
 static wxColour colourFromHex(string_view hex)
@@ -188,12 +66,14 @@ static std::vector<slade::LanguageCellRun> languageRuns(const string& text)
 	std::vector<slade::LanguageCellRun> runs;
 	auto&                               vocab = MenuVocabulary::instance();
 
-	wxString cur;
+	// The bytes of the piece being collected. A wxString filled one char at a time takes them
+	// in the locale's own codepage, which turned every Cyrillic letter into three marks
+	string cur;
 	auto     flush = [&](const wxColour& ink)
 	{
 		if (!cur.empty())
 		{
-			runs.push_back({ cur, ink });
+			runs.push_back({ wxString::FromUTF8(cur), ink });
 			cur.clear();
 		}
 	};
@@ -204,7 +84,7 @@ static std::vector<slade::LanguageCellRun> languageRuns(const string& text)
 	{
 		if (text[i] != '\\' || i + 2 >= text.size() || text[i + 1] != 'c')
 		{
-			cur += (char)text[i];
+			cur += text[i];
 			continue;
 		}
 
@@ -390,36 +270,38 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 	text_filter_ = new wxTextCtrl(this, wxID_ANY, "", wxDefaultPosition, { ui::scalePx(240), -1 });
 	counts_      = new wxStaticText(this, wxID_ANY, "");
 
-	list_ = new LanguageList(this, wxID_ANY, wxDefaultPosition, { ui::scalePx(760), ui::scalePx(400) },
-	                         wxLC_REPORT | wxLC_SINGLE_SEL | wxLC_VIRTUAL);
+	grid_ = new LanguageGrid(this, wxID_ANY, { ui::scalePx(760), ui::scalePx(400) });
 
-	// The words a cell shows, with its colour codes taken out
-	list_->cellText = [ this ](long row, long column) -> wxString
+	// What a cell is made of, asked as the table paints it: the pieces of the string with
+	// the colour each asks for, and the whole of it as plain words
+	grid_->cell = [ this ](long row, long column) -> LanguageGridCell
 	{
+		LanguageGridCell out;
 		if (row < 0 || row >= (long)paint_.size())
-			return {};
-		if (column == key_column)
-			return row < (long)shown_.size() ? wxString::FromUTF8(keys_[shown_[row]]) : wxString();
-		if (column > (long)paint_[row].size())
-			return {};
-		wxString text;
-		for (const auto& one : paint_[row][column - 1].runs)
-			text += one.text;
-		return text;
-	};
+			return out;
 
-	// What a cell looks like comes from the rows the window just built, so the control asks
-	// here instead of holding a second copy of the table
-	list_->cellRuns = [ this ](long row, long column) -> vector<LanguageCellRun>
-	{
-		if (row < 0 || row >= (long)paint_.size() || column <= key_column || column > (long)paint_[row].size())
-			return {};
-		auto cell = paint_[row][column - 1];
-		if (!cell.placeholder)
-			return cell.runs;
-		for (auto& one : cell.runs)
-			one.ink = faded(one.ink.IsOk() ? one.ink : themeInk());
-		return cell.runs;
+		if (column == key_column)
+		{
+			if (row < (long)shown_.size())
+				out.text = wxString::FromUTF8(keys_[shown_[row]]);
+			return out;
+		}
+		if (column > (long)paint_[row].size())
+			return out;
+
+		auto painted = paint_[row][column - 1];
+		auto runs    = painted.runs;
+
+		// The same words standing in another language's cell are a copy waiting for a
+		// translation, and read as one: quieter than the original, never a different colour
+		if (painted.placeholder)
+			for (auto& one : runs)
+				one.ink = faded(one.ink.IsOk() ? one.ink : themeInk());
+
+		for (const auto& one : runs)
+			out.text += one.text;
+		out.runs = std::move(runs);
+		return out;
 	};
 
 	text_key_   = new wxTextCtrl(this, wxID_ANY, "", wxDefaultPosition, { ui::scalePx(220), -1 }, wxTE_PROCESS_ENTER);
@@ -449,7 +331,7 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 
 	sizer->Add(files, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, ui::padLarge());
 	sizer->Add(top, 0, wxEXPAND | wxALL, ui::padLarge());
-	sizer->Add(list_, 1, wxEXPAND | wxLEFT | wxRIGHT, ui::padLarge());
+	sizer->Add(grid_, 1, wxEXPAND | wxLEFT | wxRIGHT, ui::padLarge());
 	sizer->Add(note_, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, ui::pad());
 	sizer->Add(bottom, 0, wxEXPAND | wxALL, ui::padLarge());
 
@@ -458,51 +340,50 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 	SetSize({ ui::scalePx(900), ui::scalePx(560) });
 
 	text_filter_->Bind(wxEVT_TEXT, &LanguageConstructorDialog::onFilterChanged, this);
-	list_->Bind(wxEVT_LIST_ITEM_ACTIVATED, &LanguageConstructorDialog::onItemActivated, this);
-	// Where the mouse last was, so a keyboard activation (Enter, F2) still knows which cell
-	// he means when the notice itself carries no point
-	list_->Bind(
-		wxEVT_MOTION,
-		[ this ](wxMouseEvent& e)
-		{
-			hover_ = e.GetPosition();
-			e.Skip();
-		});
+
 	// One click opens a cell. The window is nothing but text fields, and making him
-	// double-click each one charges him a click per edit. It has to be the release: the
-	// list takes the focus while it handles the press, and an editor opened from the press
-	// loses the focus it just got and commits itself away before he types
-	list_->Bind(
-		wxEVT_LEFT_UP,
-		[ this ](wxMouseEvent& e)
+	// double-click each one charges him a click per edit
+	grid_->cellClicked = [ this ](long row, long column)
+	{
+		clickLog("click row=" + std::to_string(row) + " col=" + std::to_string(column) + " of "
+		         + std::to_string(columns_.size()));
+		if (column == key_column)
+			return;
+		editCell(row, column);
+	};
+	grid_->cellRightClicked = [ this ](long row, long column, wxPoint where)
+	{ onCellColourMenu(row, column, where); };
+	grid_->headerClicked    = [ this ](long column)
+	{ sortByColumn(column); };
+
+	// A field sitting over a cell goes with it when the table moves
+	grid_->scrolled = [ this ]
+	{ placeCellEditor(); };
+
+	// Picking a row names the language the Add button writes into, and asks the editor to
+	// show where that string is written. The keyboard stays here: the editor is told, never
+	// dragged
+	grid_->selectionMoved = [ this ](long row, long column)
+	{
+		if (updating_)
+			return;
+
+		if (!columns_.empty())
 		{
-			hover_ = e.GetPosition();
-			e.Skip();
-			long column = 0;
-			long row    = list_->cellAt(e.GetPosition(), column);
-			clickLog("up " + std::to_string(e.GetPosition().x) + "," + std::to_string(e.GetPosition().y) +
-			         " row=" + std::to_string(row) + " col=" + std::to_string(column));
-			if (row < 0)
-				return;
-			CallAfter([ this, row, column ]
-				{ editCell(row, column); });
-		});
-	// The right-click that asks for a colour comes through the context-menu message, which
-	// carries the screen point; the list's own item notification names the row but not the
-	// cell, so the cell comes from the control's hit test either way
-	list_->Bind(
-		wxEVT_CONTEXT_MENU,
-		[ this ](wxContextMenuEvent& e)
-		{
-			auto    where  = list_->ScreenToClient(e.GetPosition());
-			long    column = 0;
-			long    row    = list_->cellAt(where, column);
-			if (row < 0)
-				return;
-			onCellColourMenu(row, column, where);
-		});
-	list_->Bind(wxEVT_LIST_ITEM_SELECTED, &LanguageConstructorDialog::onItemSelected, this);
-	list_->Bind(wxEVT_LIST_COL_CLICK, &LanguageConstructorDialog::onColClicked, this);
+			add_language_ = selectedTag(row, column);
+			nameAddButton();
+		}
+
+		auto key = keyAt(row);
+		if (key.empty() || !select_)
+			return;
+
+		size_t offset = 0;
+		string lump;
+		if (stringOffset(key, selectedTag(row, column), lump, offset))
+			select_(lump, offset);
+	};
+
 	btn_add_->Bind(wxEVT_BUTTON, &LanguageConstructorDialog::onBtnAdd, this);
 	choice_lump_->Bind(wxEVT_CHOICE, &LanguageConstructorDialog::onLumpChosen, this);
 	btn_additional_->Bind(wxEVT_BUTTON, &LanguageConstructorDialog::onBtnAdditional, this);
@@ -937,13 +818,14 @@ void LanguageConstructorDialog::buildColumns()
 		column.label = label;
 	}
 
-	list_->ClearAll();
-	list_->InsertColumn(key_column, wxS("String"), wxLIST_FORMAT_LEFT, ui::scalePx(220));
-	for (size_t i = 0; i < columns_.size(); ++i)
-		list_->InsertColumn((int)i + 1, wxString::FromUTF8(columns_[i].label), wxLIST_FORMAT_LEFT, ui::scalePx(300));
+	std::vector<wxString> titles;
+	titles.push_back(wxS("String"));
+	for (const auto& column : columns_)
+		titles.push_back(wxString::FromUTF8(column.label));
 
-	// New columns are new space: whatever was drawn before is gone with them
-	list_->Refresh();
+	// The grid keeps the widths of columns it has already seen, and measures the ones that
+	// are new once the rows are in
+	grid_->setColumns(titles);
 }
 
 long LanguageConstructorDialog::columnIndex(long header_column) const
@@ -1011,11 +893,10 @@ void LanguageConstructorDialog::buildRows()
 	// A refill must not move the keyboard or drop the row he is working on: an edit, a
 	// keystroke in the filter and a sort all come through here
 	KeepFocus keep;
-	string  selected = string(keyAt(list_->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED)));
 
-	// Where he was looking, in pixels, before the rows are handed over again
-	int vpos = list_->GetScrollPos(wxVERTICAL);
-	int hpos = list_->GetScrollPos(wxHORIZONTAL);
+	long  sel_row = -1, sel_col = 0;
+	grid_->selected(sel_row, sel_col);
+	string selected = string(keyAt(sel_row));
 
 	string filter = text_filter_ ? text_filter_->GetValue().utf8_str() : "";
 
@@ -1108,9 +989,9 @@ void LanguageConstructorDialog::buildRows()
 		}
 	}
 
-	// A virtual control is told how many rows exist and asks for the ones it is about to
-	// draw. Pushing every cell into it up front was most of what a refill cost
-	list_->SetItemCount((int)shown_.size());
+	// The table is told how many rows there are and asks for the cells it can see. Nothing is
+	// copied into it, which is what a refill of three thousand strings costs
+	grid_->setRowCount((long)shown_.size());
 
 	if (!selected.empty())
 	{
@@ -1118,22 +999,14 @@ void LanguageConstructorDialog::buildRows()
 		{
 			if (keys_[shown_[row]] != selected)
 				continue;
-			list_->SetItemState((long)row, wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED, wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED);
-			list_->EnsureVisible((long)row);
+			grid_->select((long)row, sel_col, true);
 			break;
 		}
 	}
 
-	// A virtual list goes back to its top when its row count is set, so a refill that came
-	// from picking a colour would otherwise drop him at the first string and make him hunt
-	// for his place again
-	list_->scrollBy(hpos - list_->GetScrollPos(wxHORIZONTAL), vpos - list_->GetScrollPos(wxVERTICAL));
-
-	// The control doesn't repaint what it thinks it already drew, and a refill changes the
-	// colour of cells it had drawn in the theme's own: without this the new colour only
-	// appeared on the rows the mouse happened to move over
-	list_->Refresh();
-	list_->Update();
+	// The rows it had drawn are gone with the refill, and a cell whose colour just changed
+	// is only repainted because the whole table was asked for again
+	grid_->redraw();
 
 	if (counts_)
 		counts_->SetLabel(wxString::Format(
@@ -1246,6 +1119,7 @@ void LanguageConstructorDialog::sortByColumn(long column)
 		sort_up_     = true;
 	}
 
+	grid_->setSortIndicator(sort_column_, sort_up_);
 	buildRows();
 }
 
@@ -1264,9 +1138,10 @@ void LanguageConstructorDialog::editCell(long row, long column)
 	auto* entry = cellEntry(row, column);
 	if (!edit_cell_)
 	{
-		// A child of the list, so the cell's own rectangle is where it goes
-		edit_cell_ =
-			new wxTextCtrl(list_, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, wxTE_PROCESS_ENTER);
+		// A child of the window, not of the table: the field must stay on its cell when the
+		// table is scrolled, and a child of a scrolled window would be drawn at a place that
+		// moves under it
+		edit_cell_ = new wxTextCtrl(this, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, wxTE_PROCESS_ENTER);
 
 		edit_cell_->Bind(
 			wxEVT_TEXT_ENTER,
@@ -1300,31 +1175,42 @@ void LanguageConstructorDialog::editCell(long row, long column)
 			});
 	}
 
-	wxRect cell;
-	list_->GetSubItemRect(row, (int)column, cell);
 	edit_row_ = row;
 	edit_col_ = column;
+	placeCellEditor();
 
-	edit_cell_->SetSize(cell);
 	edit_cell_->SetValue(cellEntry(row, column) ? wxString::FromUTF8(entry->text()) : wxEmptyString);
 	edit_cell_->Show(true);
+	edit_cell_->Raise();
 	edit_cell_->SetFocus();
 	edit_cell_->SetInsertionPointEnd();
 
-	// The list is still finishing the click that brought us here and can take the focus
-	// back. Ask once more when it's done, or the editor dies of a focus loss before a key
-	// reaches it
-	if (wxWindow::FindFocus() != edit_cell_)
-		CallAfter([ this ]
-			{
-				if (edit_cell_ && edit_row_ >= 0)
-					edit_cell_->SetFocus();
-			});
-
 	clickLog("opened row=" + std::to_string(row) + " col=" + std::to_string(column) +
-	         " shown=" + std::to_string(edit_cell_->IsShown()) + " rect=" + std::to_string(cell.x) + "," +
-	         std::to_string(cell.y) + " " + std::to_string(cell.width) + "x" + std::to_string(cell.height) +
-	         " focus=" + std::to_string(wxWindow::FindFocus() == edit_cell_));
+	         " shown=" + std::to_string(edit_cell_->IsShown()) + " focus="
+	         + std::to_string(wxWindow::FindFocus() == edit_cell_));
+}
+
+// -----------------------------------------------------------------------------
+// The field goes over the cell it belongs to. The table's own coordinates say where that
+// is right now, so this is also what keeps the field on the cell when he scrolls
+// -----------------------------------------------------------------------------
+void LanguageConstructorDialog::placeCellEditor()
+{
+	if (!edit_cell_ || edit_row_ < 0)
+		return;
+
+	auto cell = grid_->cellRect(edit_row_, edit_col_);
+	if (cell.width <= 0 || cell.height <= 0)
+	{
+		edit_cell_->Hide();
+		return;
+	}
+
+	// The cell is a place in the table, the field is a child of the window: the table's point
+	// goes out to the screen and back in as the window's own
+	auto topleft = ScreenToClient(grid_->ClientToScreen(cell.GetTopLeft()));
+	edit_cell_->SetSize(cell.width, cell.height + ui::scalePx(2));
+	edit_cell_->Move(topleft);
 }
 
 void LanguageConstructorDialog::endCellEdit(bool keep)
@@ -1524,22 +1410,6 @@ void LanguageConstructorDialog::onBtnAdditional(wxCommandEvent& e)
 	chooseAdditional();
 }
 
-void LanguageConstructorDialog::onItemActivated(wxListEvent& e)
-{
-	// Windows names the row in the activation notice and never the column, so the cell comes
-	// from the control's own hit test. A keyboard activation carries no point at all, and
-	// there the last place the mouse was over the table is what says which cell he meant
-	auto where = hover_;
-	if (where.x < 0)
-		where = e.GetPoint();
-
-	long column = 0;
-	long row    = list_->cellAt(where, column);
-	if (row < 0)
-		row = e.GetIndex();
-	editCell(row, column);
-}
-
 // -----------------------------------------------------------------------------
 // Right-click on a cell asks which colour its text should start with, and offers to take
 // the codes out again. Both write the cell the same way typing into it does, so the file
@@ -1584,7 +1454,7 @@ void LanguageConstructorDialog::onCellColourMenu(long row, long column, wxPoint 
 	menu.Append(colour_id, wxS("Colour..."));
 	menu.Append(clear_id, wxS("Remove the colour from this cell"));
 
-	int picked = list_->GetPopupMenuSelectionFromUser(menu, where);
+	int picked = grid_->GetPopupMenuSelectionFromUser(menu, where);
 	if (picked == wxID_NONE)
 		return;
 
@@ -1660,29 +1530,6 @@ void LanguageConstructorDialog::onCellColourMenu(long row, long column, wxPoint 
 	write(code + was);
 }
 
-void LanguageConstructorDialog::onItemSelected(wxListEvent& e)
-{
-	if (updating_)
-		return;
-
-	// The button names the language of the column he last looked at, which is the one
-	// an added string most likely belongs to
-	if (!columns_.empty())
-	{
-		add_language_ = selectedTag(e.GetIndex(), e.GetColumn());
-		nameAddButton();
-	}
-
-	auto key = keyAt(e.GetIndex());
-	if (key.empty() || !select_)
-		return;
-
-	size_t offset = 0;
-	string   lump;
-	if (stringOffset(key, selectedTag(e.GetIndex(), e.GetColumn()), lump, offset))
-		select_(lump, offset);
-}
-
 // -----------------------------------------------------------------------------
 // Selects the row that holds the definition the editor's caret is in. The keyboard
 // stays where it was: this window follows the text, it never pulls the text along
@@ -1715,10 +1562,12 @@ void LanguageConstructorDialog::followCaret(size_t offset)
 		if (keys_[shown_[row]] != nearest->label)
 			continue;
 
+		// The window follows the editor's caret, and the cell the keyboard was on keeps its
+		// column: only the row moves
 		updating_ = true;
-		KeepFocus   keep;
-		list_->SetItemState((long)row, wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED, wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED);
-		list_->EnsureVisible((long)row);
+		long row_now = -1, col = 0;
+		grid_->selected(row_now, col);
+		grid_->select((long)row, col, true);
 		updating_ = false;
 		return;
 	}
@@ -1727,11 +1576,6 @@ void LanguageConstructorDialog::followCaret(size_t offset)
 void LanguageConstructorDialog::onBtnAdd(wxCommandEvent& e)
 {
 	addFromFields();
-}
-
-void LanguageConstructorDialog::onColClicked(wxListEvent& e)
-{
-	sortByColumn(e.GetColumn());
 }
 
 void LanguageConstructorDialog::onCloseWindow(wxCloseEvent& e)

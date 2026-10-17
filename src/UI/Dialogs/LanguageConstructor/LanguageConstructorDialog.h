@@ -3,27 +3,17 @@
 #include <wx/dialog.h>
 
 #include "UI/Dialogs/LanguageConstructor/LanguageDef.h"
+#include "UI/Dialogs/LanguageConstructor/LanguageGrid.h"
 
 #include <wx/colour.h>
 
 class wxButton;
 class wxChoice;
-class wxListEvent;
 class wxStaticText;
 class wxTextCtrl;
 
 namespace slade
 {
-class LanguageList;
-
-// One piece of a cell: the text with its colour codes taken out, and the colour the code
-// asked for. An invalid colour is the theme's own
-struct LanguageCellRun
-{
-	wxString text;
-	wxColour ink;
-};
-
 // One cell as it is drawn: the runs of text with their colours, and whether the text is
 // only a copy of another language's rather than a translation
 struct LanguageCellPaint
@@ -122,11 +112,11 @@ private:
 	void editCell(long row, long column);
 	void endCellEdit(bool keep);
 
+	// Moves the field to where its cell now is, after the table was scrolled
+	void placeCellEditor();
+
 	// The colour menu over a cell
 	void onCellColourMenu(long row, long column, wxPoint where);
-
-	// Where the mouse last was over the table
-	wxPoint hover_{ -1, -1 };
 
 	// Adds the key and text in the bottom fields to the language the button names
 	void addFromFields();
@@ -195,15 +185,13 @@ private:
 	void saveGeometry();
 
 	void onFilterChanged(wxCommandEvent& e);
-	void onItemActivated(wxListEvent& e);
-	void onItemSelected(wxListEvent& e);	void onColClicked(wxListEvent& e);
 	void onBtnAdd(wxCommandEvent& e);
 	void onLumpChosen(wxCommandEvent& e);
 	void onBtnAdditional(wxCommandEvent& e);
 	void onCloseWindow(wxCloseEvent& e);
 
 	wxTextCtrl* text_filter_ = nullptr;
-	LanguageList* list_        = nullptr;
+	LanguageGrid* grid_        = nullptr;
 	wxTextCtrl* text_key_    = nullptr;
 	wxTextCtrl* text_value_  = nullptr;
 	wxButton*   btn_add_     = nullptr;
