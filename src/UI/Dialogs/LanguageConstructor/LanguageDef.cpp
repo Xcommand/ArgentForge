@@ -198,6 +198,18 @@ bool LanguageEntry::setText(string_view text)
 // -----------------------------------------------------------------------------
 bool LanguageSource::load(string_view text)
 {
+	// A binary lump isn't a language table: the engine says so and skips it (stringtable.cpp
+	// :651-660). Reading one as text invents hundreds of 'languages' out of machine code,
+	// and a save would write that nonsense back over the lump
+	if (text.substr(0, 4096).find('\0') != string_view::npos)
+	{
+		text_.clear();
+		entries_.clear();
+		spots_.clear();
+		extra_.clear();
+		return false;
+	}
+
 	text_.assign(text);
 	entries_.clear();
 	spots_.clear();
@@ -516,7 +528,10 @@ bool LanguageSource::openBlock(string_view language)
 
 	BlockSpot spot;
 	spot.eol = eol;
-	spot.end = at + header.size();
+	// The spot stays at the place in the bytes as they were read, not after the header
+	// that's only going to be written on saving: a string added next is recorded at the
+	// same place and ordered after the header by serialize()
+	spot.end = at;
 	spots_[string(language)] = spot;
 	return true;
 }
