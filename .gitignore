@@ -82,3 +82,7 @@ CMakeUserPresets.json
 /.continue/
 /.qoder/
 /.qoderignore
+
+# The agent's own note on where the authoritative tree is and which disk it lives on. Local by
+# definition, and it names paths that belong to one machine
+/AGENTS.md

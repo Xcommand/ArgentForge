@@ -14,8 +14,10 @@ const fs = require('fs');
 const path = require('path');
 
 const cfg_path = 'dist/res/config/menudef_widgets.cfg';
-const engine_menu = process.env.UZDOOM_MENUDEF
-   || 'C:/Users/xcomm/Documents/Default Project/UZDoom_Source/wadsrc/static/menudef.txt';
+// The engine's own MENUDEF is the ground truth, but where it lives is nobody's business but
+// the machine's: point UZDOOM_MENUDEF at it and the check runs, without it the corpus alone
+// is compared
+const engine_menu = process.env.UZDOOM_MENUDEF || '';
 const corpus_dir = 'out/scratch/menu_corpus';
 
 // The table ---------------------------------------------------------------
@@ -149,7 +151,7 @@ function splitArgs(text)
 function menuFiles()
 {
    const files = [];
-   if (fs.existsSync(engine_menu)) files.push(engine_menu);
+   if (engine_menu && fs.existsSync(engine_menu)) files.push(engine_menu);
    if (fs.existsSync(corpus_dir))
       for (const one of fs.readdirSync(corpus_dir))
          files.push(path.join(corpus_dir, one));
@@ -269,6 +271,8 @@ for (const file of menuFiles())
 }
 
 console.log(`${checked} written lines checked against the table, ${bad} disagree, from ${files} files`);
+if (!engine_menu)
+   console.log(`UZDOOM_MENUDEF isn't set, so the engine's own menus weren't compared. ${path.basename(corpus_dir)} alone was.`);
 for (const [key, one] of [...groups].sort((a, b) => b[1].count - a[1].count))
 {
    console.log(`${key}  ${one.count} times`);
