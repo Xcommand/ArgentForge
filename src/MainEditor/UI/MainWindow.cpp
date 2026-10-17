@@ -322,6 +322,7 @@ void MainWindow::setupLayout()
 	tools_menu->AppendSeparator();
 	SAction::fromId("main_actorconstructor")->addToMenu(tools_menu);
 	SAction::fromId("main_menuconstructor")->addToMenu(tools_menu);
+	SAction::fromId("main_languageconstructor")->addToMenu(tools_menu);
 	menu->Append(tools_menu, wxS("&Tools"));
 
 	// Help menu
@@ -683,6 +684,20 @@ bool MainWindow::handleAction(string_view id)
 			             wxS("Menu Constructor"),
 			             wxICON_INFORMATION,
 			             this);
+
+		return true;
+	}
+
+	// Tools->Language Constructor. It reads every LANGUAGE file of the archive, so any
+	// text panel will do as the way in, and the window works out which files there are
+	if (id == "main_languageconstructor")
+	{
+		if (!SActionHandler::doAction("ptxt_languageconstructor"))
+			wxMessageBox(
+			    wxS("The Language Constructor opens the LANGUAGE files of the archive you have open."),
+			    wxS("Language Constructor"),
+			    wxICON_INFORMATION,
+			    this);
 
 		return true;
 	}
