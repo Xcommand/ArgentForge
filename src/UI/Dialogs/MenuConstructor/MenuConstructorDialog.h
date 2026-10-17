@@ -446,6 +446,14 @@ private:
 	// Stored as key -> value so the preview can resolve $KEY to the actual text
 	std::map<string, string> mod_language_;
 	void              readArchiveLanguage();
+	// The LANGUAGE files the archive holds, and the one picked above the block list. Its own
+	// language goes over the merged table last, so the preview shows the text of the language
+	// the menu is being written in rather than whichever file the walk happened to reach last
+	std::vector<string>            language_files_;
+	string                         language_lump_;
+	wxChoice*                      choice_language_ = nullptr;
+	void                           buildLanguageChoices();
+	void                           applyChosenLanguage();
 	// One pass of what the game does with a label; resolveLanguageKey runs it the twice the engine does
 	string localizeOnce(string_view text) const;
 	string            resolveLanguageKey(string_view text) const;

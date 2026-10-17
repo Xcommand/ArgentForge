@@ -26,6 +26,7 @@
 #include "Graphics/Palette/Palette.h"
 #include "Graphics/Palette/PaletteManager.h"
 #include "UI/Dialogs/ActorConstructor/DescriptionText.h"
+#include "UI/Dialogs/LanguageConstructor/LanguageDef.h"
 #include "UI/Controls/ColourBox.h"
 #include "Utility/StringUtils.h"
 
@@ -83,6 +84,29 @@ private: wxWindow* had_ = nullptr; };
 vector<ArchiveEntry*> allArchiveEntries(Archive* ar)
 { vector<ArchiveEntry*> out; if (!ar) return out;
   if (auto* root = ar->dirAtPath("")) for (auto& e : root->allEntries()) if (e) out.push_back(e.get());
+  return out; }
+
+// A folder's own entry stands for the folder, not for a lump the engine could read
+bool isFolderEntry(ArchiveEntry* entry)
+{ auto* dir = entry->parentDir(); return dir && dir->dirEntry() == entry; }
+
+// The engine reads strings from any lump called LANGUAGE, with or without a tag after the
+// dot: 'LANGUAGE.enu' and 'language.Menu' both count
+bool isLanguageEntry(ArchiveEntry* entry)
+{ return entry && !isFolderEntry(entry) && strutil::equalCI(entry->nameNoExt(), "language"); }
+
+// The archive's LANGUAGE lumps, each with the name the dropdown shows it under: a second
+// lump called LANGUAGE still needs an id of its own, and a write has to be able to say
+// which one it meant
+vector<std::pair<string, ArchiveEntry*>> languageEntries(Archive* ar)
+{ vector<std::pair<string, ArchiveEntry*>> out;
+  for (auto* e : allArchiveEntries(ar))
+  { if (!isLanguageEntry(e)) continue;
+    string id = e->name();
+    for (size_t n = 0; std::any_of(out.begin(), out.end(), [&](const auto& one)
+         { return strutil::equalCI(one.first, id); }); ++n)
+      id = e->name() + " (" + std::to_string(n + 2) + ")";
+    out.emplace_back(id, e); }
   return out; }
 
 bool findLine(const std::vector<MenuStatement>& statements, const MenuStatement* target, vector<size_t>& steps)
@@ -279,6 +303,21 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	block_row->Add(block_up_, 0, wxRIGHT, 2);
 	block_row->Add(block_down_, 0);
 	auto menus_sizer = new wxBoxSizer(wxVERTICAL);
+	// Above the blocks, where his eye starts: which of the mod's LANGUAGE files the menu's
+	// $keys are read from. An archive with none has nothing to choose, so the row hides
+	choice_language_ = new wxChoice(panel_menus_, wxID_ANY, wxDefaultPosition, wxSize(ui::scalePx(200), -1));
+	choice_language_->Bind(
+		wxEVT_CHOICE,
+		[ this ](wxCommandEvent&)
+		{
+			auto at     = choice_language_->GetSelection();
+			language_lump_ = at == wxNOT_FOUND ? string() : string(choice_language_->GetString(at).utf8_str());
+			readArchiveLanguage();
+			if (preview_) updatePreviewWindow();
+		});
+	auto lang_row = new wxBoxSizer(wxHORIZONTAL);
+	lang_row->Add(choice_language_, 1, wxBOTTOM, ui::pad());
+	menus_sizer->Add(lang_row, 0, wxEXPAND);
 	menus_sizer->Add(list_menus_, 1, wxEXPAND | wxBOTTOM, ui::pad());
 	menus_sizer->Add(block_row, 0, wxEXPAND);
 	panel_menus_->SetSizer(menus_sizer);
@@ -748,7 +787,49 @@ void MenuConstructorDialog::readArchiveLanguage()
   readLanguageFrom(port_archive_.get());
   readLanguageFrom(app::archiveManager().baseResourceArchive());
   readLanguageFrom(archive_);
+  applyChosenLanguage();
   language_keys_ = (int)mod_language_.size(); }
+
+// The files to offer. The row only appears when there is a choice to make, and a pick that
+// has since gone away falls back to letting the walk decide, which is what this window did
+// before the row existed
+void MenuConstructorDialog::buildLanguageChoices()
+{ if (!choice_language_) return;
+  choice_language_->Clear();
+  language_files_.clear();
+  for (auto& one : languageEntries(archive_))
+  { language_files_.push_back(one.first);
+    choice_language_->Append(wxString::FromUTF8(one.first)); }
+  choice_language_->Show(!language_files_.empty());
+  if (language_files_.empty()) language_lump_.clear();
+  else if (!language_lump_.empty()
+           && std::find(language_files_.begin(), language_files_.end(), language_lump_) == language_files_.end())
+    language_lump_.clear();
+  if (!language_lump_.empty()) choice_language_->SetStringSelection(wxString::FromUTF8(language_lump_));
+  panel_menus_->Layout(); }
+
+// One file's own language, put over the merged table last. The reader the Language
+// Constructor uses knows which [lang] a line sits under, which is the one thing the merge
+// above can't tell: it takes every 'NAME = "text"' it finds, whatever language wrote it
+void MenuConstructorDialog::applyChosenLanguage()
+{ if (language_lump_.empty() || !archive_) return;
+
+  ArchiveEntry* chosen = nullptr;
+  for (auto& one : languageEntries(archive_))
+      if (one.first == language_lump_) { chosen = one.second; break; }
+  if (!chosen) return;
+
+  auto&    data = chosen->data();
+  string   text((const char*)data.data(), data.size());
+  LanguageSource src;
+  if (!src.load(text)) return;
+
+  // The first language the file declares is the one it's written for: 'LANGUAGE.enu' with
+  // '[enu default]' is English (US), and a headerless lump is its own single table
+  auto   langs = src.languages();
+  string tag   = langs.empty() ? string() : langs[0];
+  for (auto* entry : src.strings(tag))
+      if (entry && entry->parsed) mod_language_["$" + entry->label] = entry->text(); }
 
 // One row of the spreadsheet form. Quotes hide commas, and a doubled quote inside a quoted field
 // is an escaped one
@@ -1723,6 +1804,7 @@ void MenuConstructorDialog::setArchive(Archive* archive)
   readArchiveCvars();
   readArchiveRanges();
   readArchivePatches();
+  buildLanguageChoices();
   readArchiveLanguage();
   readArchiveWidgets(); }
 
