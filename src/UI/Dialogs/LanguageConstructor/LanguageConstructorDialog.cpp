@@ -292,7 +292,10 @@ void LanguageConstructorDialog::askNewLanguage()
 		list->Add(new wxStaticText(scroll, wxID_ANY, wxS("Every language the game knows is already in this archive.")),
 		          0, wxBOTTOM, ui::pad());
 
+	// Bounded, and scrolled inside: the game knows thirty-odd languages and a window that
+	// fits them all would run past the bottom of a laptop screen
 	scroll->SetSizer(list);
+	scroll->SetMinSize({ ui::scalePx(320), ui::scalePx(280) });
 	outer->Add(scroll, 1, wxEXPAND | wxALL, ui::pad());
 	outer->Add(new wxStaticText(&pick, wxID_ANY, wxS("New strings go to the file named above; the setting in Extra Features "
 	                                                 "decides whether each language also gets its own LANGUAGE.")),
