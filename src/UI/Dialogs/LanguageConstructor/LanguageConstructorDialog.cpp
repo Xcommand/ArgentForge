@@ -364,6 +364,28 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 			hover_ = e.GetPosition();
 			e.Skip();
 		});
+	// One click opens a cell. The window is nothing but text fields, and making him
+	// double-click each one charges him a click per edit
+	list_->Bind(
+		wxEVT_LEFT_DOWN,
+		[ this ](wxMouseEvent& e)
+		{
+			hover_ = e.GetPosition();
+			e.Skip();
+			long row   = -1;
+			int  where = 0;
+			if (list_->HitTest(e.GetPosition(), where, &row) < 0 || row < 0)
+				return;
+			long column = columnAtPoint(e.GetPosition().x);
+			CallAfter([ this, row, column ]
+				{ editCell(row, column); });
+		});
+	list_->Bind(
+		wxEVT_LIST_ITEM_RIGHT_CLICK,
+		[ this ](wxListEvent& e)
+		{
+			onCellColourMenu(e.GetIndex(), columnFor(e), e.GetPoint());
+		});
 	list_->Bind(wxEVT_LIST_ITEM_SELECTED, &LanguageConstructorDialog::onItemSelected, this);
 	list_->Bind(wxEVT_LIST_COL_CLICK, &LanguageConstructorDialog::onColClicked, this);
 	btn_add_->Bind(wxEVT_BUTTON, &LanguageConstructorDialog::onBtnAdd, this);
@@ -1308,8 +1330,11 @@ long LanguageConstructorDialog::columnFor(wxListEvent& e) const
 {
 	if (e.GetColumn() > key_column)
 		return e.GetColumn();
+	return columnAtPoint(hover_.x >= 0 ? hover_.x : e.GetPoint().x);
+}
 
-	int x = hover_.x >= 0 ? hover_.x : e.GetPoint().x;
+long LanguageConstructorDialog::columnAtPoint(int x) const
+{
 	x -= list_->GetScrollPos(wxHORIZONTAL);
 
 	// The key column first, then one data column at a time, walking the widths the header
@@ -1319,10 +1344,77 @@ long LanguageConstructorDialog::columnFor(wxListEvent& e) const
 	{
 		x -= list_->GetColumnWidth(i);
 		if (x < 0)
-			return i <= key_column ? key_column + 1 : (long)i;
+			return i;
 		column = i;
 	}
 	return column;
+}
+
+// -----------------------------------------------------------------------------
+// Right-click on a cell asks which colour its text should start with, and offers to take
+// the codes out again. Both write the cell the same way typing into it does, so the file
+// and the undo behave the same whichever road the change came by
+// -----------------------------------------------------------------------------
+void LanguageConstructorDialog::onCellColourMenu(long row, long column, wxPoint where)
+{
+	if (column <= key_column || column > (long)columns_.size())
+		return;
+
+	auto key = string(keyAt(row));
+	if (key.empty())
+		return;
+
+	auto  tag   = selectedTag(row, column);
+	auto* entry = book_.entry(key, tag);
+	if (!entry)
+	{
+		say("That cell has no string under " + tag + " yet, so there's nothing to colour");
+		return;
+	}
+
+	const int first = wxID_HIGHEST + 1;
+	const int clear = first + 512;
+
+	wxMenu  colours;
+	auto&   names = MenuVocabulary::instance().colourRanges();
+	for (size_t i = 0; i < names.size() && i < 512; ++i)
+		colours.Append(first + (int)i, wxString::FromUTF8(names[i]));
+	colours.AppendSeparator();
+	colours.Append(clear, wxS("Remove the colours from this cell"));
+	colours.SetTitle(wxS("Colour"));
+
+	int picked = list_->GetPopupMenuSelectionFromUser(colours, where);
+	if (picked == wxID_NONE)
+		return;
+
+	string was = entry->text();
+	string now;
+	if (picked == clear)
+	{
+		for (size_t i = 0; i < was.size(); i++)
+		{
+			if (was[i] == '\\' && i + 2 < was.size() && was[i + 1] == 'c')
+			{
+				i += 2;
+				continue;
+			}
+			now += was[i];
+		}
+	}
+	else
+	{
+		char sel = (char)('a' + (picked - first));
+		now      = "\\c" + string(1, sel) + was;
+	}
+
+	if (now == was)
+		return;
+
+	entry->setText(now);
+	// The editor is standing over this cell while he picks: it has to show what he chose
+	if (edit_cell_ && edit_row_ == row && edit_col_ == column)
+		edit_cell_->SetValue(wxString::FromUTF8(now));
+	applyChange();
 }
 
 void LanguageConstructorDialog::onItemSelected(wxListEvent& e)

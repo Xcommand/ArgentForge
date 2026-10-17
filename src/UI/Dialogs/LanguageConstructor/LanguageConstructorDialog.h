@@ -127,6 +127,10 @@ private:
 
 	// Which cell a click landed on, since the activation notice doesn't say
 	long columnFor(wxListEvent& e) const;
+	long columnAtPoint(int x) const;
+
+	// The colour menu over a cell
+	void onCellColourMenu(long row, long column, wxPoint where);
 
 	// Where the mouse last was over the table
 	wxPoint hover_{ -1, -1 };
