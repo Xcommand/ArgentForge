@@ -124,6 +124,7 @@ private:
 	// Says why something didn't happen, in the window's own space where it stays read-
 	// able. An action that does nothing quietly costs a session of guessing
 	void say(string_view what);
+	void nameAddButton();
 
 	// Puts the table's rows in the order of [column], and the arrow on that header
 	void sortByColumn(long column);

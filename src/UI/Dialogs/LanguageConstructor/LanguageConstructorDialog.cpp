@@ -508,7 +508,9 @@ void LanguageConstructorDialog::buildColumns()
 			return at_right < at_left;
 		});
 
-		string label = languageName(column.tags[0]);
+		// A lump that never names a language holds strings the engine gives to any of them.
+		// A header of '-' reads like a broken cell, so it says what it is
+		string label = column.tags[0].empty() ? "any language" : languageName(column.tags[0]);
 		if (column.tags.size() > 1)
 		{
 			// The header lists the tags in the order the files wrote them; only the cell's
@@ -677,11 +679,18 @@ void LanguageConstructorDialog::buildRows()
 		for (const auto& column : columns_)
 			known |= std::find(column.tags.begin(), column.tags.end(), add_language_) != column.tags.end();
 		if (!known)
-			add_language_ = columns_.empty() ? "default" : columns_[0].tags[0];
-		btn_add_->SetLabel(wxString::FromUTF8("Add to " + add_language_ + " in " + primary_));
-		// The button was measured when its label was just 'Add', and a sizer keeps the
-		// width it was told, so a longer label has to ask for its room again
-		btn_add_->InvalidateBestSize();
+		{
+			// Never the 'any language' group: adding under no language writes a block header
+			// the engine can't read, so fall to the first column that names one
+			add_language_ = "default";
+			for (const auto& column : columns_)
+				if (!column.tags.empty() && !column.tags[0].empty())
+				{
+					add_language_ = column.tags[0];
+					break;
+				}
+		}
+		nameAddButton();
 	}
 
 	updating_ = false;
@@ -741,6 +750,22 @@ void LanguageConstructorDialog::say(string_view what)
 {
 	if (note_)
 		note_->SetLabel(wxString::FromUTF8(what));
+}
+
+// -----------------------------------------------------------------------------
+// The Add button says which language and which file a new string would go to. It has to
+// be re-said everywhere either of them changes, or the button keeps naming the file he
+// has just stopped pointing at
+// -----------------------------------------------------------------------------
+void LanguageConstructorDialog::nameAddButton()
+{
+	if (!btn_add_)
+		return;
+
+	btn_add_->SetLabel(wxString::FromUTF8("Add to " + add_language_ + " in " + primary_));
+	// The button was measured when its label was just 'Add', and a sizer keeps the width it
+	// was told, so a longer label has to ask for its room again
+	btn_add_->InvalidateBestSize();
 }
 
 // -----------------------------------------------------------------------------
@@ -978,6 +1003,25 @@ void LanguageConstructorDialog::onLumpChosen(wxCommandEvent& e)
 
 	primary_ = string(choice_lump_->GetString(row).utf8_str());
 	say("");
+
+	// A different file is a different language to add under: keep the pick when this one
+	// declares it, otherwise take the first one it does. The column he clicked keeps its
+	// own say over this, later
+	if (auto* lump = book_.lump(primary_))
+	{
+		auto own = lump->languages();
+		if (own.empty() || std::find(own.begin(), own.end(), add_language_) == own.end())
+		{
+			add_language_ = "default";
+			for (const auto& tag : own)
+				if (!tag.empty())
+				{
+					add_language_ = tag;
+					break;
+				}
+		}
+	}
+	nameAddButton();
 	buildLumpChoices();
 }
 
@@ -1001,11 +1045,7 @@ void LanguageConstructorDialog::onItemSelected(wxListEvent& e)
 	if (!columns_.empty())
 	{
 		add_language_ = selectedTag(e.GetIndex(), e.GetColumn());
-		if (btn_add_)
-		{
-			btn_add_->SetLabel(wxString::FromUTF8("Add to " + add_language_ + " in " + primary_));
-			btn_add_->InvalidateBestSize();
-		}
+		nameAddButton();
 	}
 
 	auto key = keyAt(e.GetIndex());
