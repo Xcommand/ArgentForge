@@ -121,6 +121,58 @@ static std::vector<slade::LanguageCellRun> languageRuns(const string& text)
 	return runs;
 }
 
+// A LANGUAGE file writes a line break as the two characters '\' and 'n', and the engine turns
+// them back into one byte when it reads the string (ProcessEscapes, stringtable.cpp:875). The
+// cell field shows that break as a real one so a long hint can be read at all, and gives the
+// two characters back on the way out. A '\\' stays two characters, so it never eats the next
+// escape
+static wxString displayedValue(string_view raw)
+{
+	string bytes;
+	for (size_t i = 0; i < raw.size(); i++)
+	{
+		if (raw[i] == '\\' && i + 1 < raw.size())
+		{
+			if (raw[i + 1] == 'n')
+			{
+				bytes += '\n';
+				i++;
+				continue;
+			}
+			if (raw[i + 1] == '\\')
+			{
+				bytes += "\\\\";
+				i++;
+				continue;
+			}
+		}
+		bytes += raw[i];
+	}
+	return wxString::FromUTF8(bytes);
+}
+
+// The same trip back: what is typed in the field becomes the file's own bytes again
+static string storedValue(const wxString& shown)
+{
+	wxString out;
+	for (size_t i = 0; i < shown.size(); i++)
+	{
+		auto c = shown[i];
+		if (c == '\r')
+		{
+			// A Windows pair is one break
+			if (i + 1 < shown.size() && shown[i + 1] == '\n')
+				continue;
+			c = '\n';
+		}
+		if (c == '\n')
+			out += wxS("\\n");
+		else
+			out += c;
+	}
+	return string(out.utf8_str());
+}
+
 // The colour a value begins with, which is what the picker opens on
 static wxColour leadingInk(const string& text)
 {
@@ -1238,9 +1290,14 @@ void LanguageConstructorDialog::editCell(long row, long column)
 				if (e.GetKeyCode() == WXK_ESCAPE)
 					endCellEdit(false);
 				// A multiline field eats the return instead of announcing it, and the return
-				// is the commit here
+				// is the commit here. Shift is the one who means a line break
 				else if (e.GetKeyCode() == WXK_RETURN || e.GetKeyCode() == WXK_NUMPAD_ENTER)
-					endCellEdit(true);
+				{
+					if (e.ShiftDown())
+						e.Skip();
+					else
+						endCellEdit(true);
+				}
 				else
 					e.Skip();
 			});
@@ -1259,12 +1316,15 @@ void LanguageConstructorDialog::editCell(long row, long column)
 
 	edit_row_ = row;
 	edit_col_ = column;
+
+	// The text goes in before the field is measured and placed: sized first, it would be
+	// tall enough for the cell he left rather than the one he picked
+	edit_cell_->SetValue(entry ? displayedValue(entry->text()) : wxEmptyString);
 	placeCellEditor();
 
 	// The table leaves this cell alone until the field is gone
 	grid_->setEditing(row, column);
 
-	edit_cell_->SetValue(cellEntry(row, column) ? wxString::FromUTF8(entry->text()) : wxEmptyString);
 	edit_cell_->Show(true);
 	edit_cell_->Raise();
 	edit_cell_->SetFocus();
@@ -1304,29 +1364,30 @@ void LanguageConstructorDialog::placeCellEditor()
 	// rather than hunted for, and as tall as that width needs
 	auto grid_size = grid_->GetClientSize();
 	int  wide      = std::max(cell.width, grid_size.x - cell.x - ui::scalePx(6));
-	int  room      = std::max(ui::scalePx(40), wide - ui::scalePx(10));
 
 	int lines = 1;
 	{
 		wxClientDC dc(edit_cell_);
 		dc.SetFont(edit_cell_->GetFont());
 
-		auto          text = edit_cell_->GetValue();
-		wxArrayInt     each;
-		if (dc.GetPartialTextExtents(text, each) && !each.empty())
+		int             room = std::max(ui::scalePx(40), wide - ui::scalePx(10));
+		const auto text = edit_cell_->GetValue();
+
+		// Every break the file wrote is a line of its own, and a line longer than the field
+		// is wrapped by the control, so both count towards the height
+		lines = 0;
+		for (size_t at = 0;;)
 		{
-			int start = 0;
-			for (int i = 0; i < (int)each.size(); ++i)
-			{
-				if (each[i] - each[start] > room)
-				{
-					++lines;
-					start = i;
-					if (lines >= 16)
-						break;
-				}
-			}
+			auto next = text.find('\n', at);
+			auto part = next == wxString::npos ? text.Mid(at) : text.Mid(at, next - at);
+			int  w    = part.empty() ? 0 : dc.GetTextExtent(part).x;
+			lines += std::max(1, (w + room - 1) / room);
+			if (next == wxString::npos || lines >= 24)
+				break;
+			at = next + 1;
 		}
+		if (text.empty())
+			lines = 1;
 	}
 
 	int line_h = std::max(1, edit_cell_->GetCharHeight());
@@ -1354,7 +1415,7 @@ void LanguageConstructorDialog::endCellEdit(bool keep)
 
 	long row     = edit_row_;
 	long column   = edit_col_;
-	string value  = edit_cell_->GetValue().utf8_str();
+	string value  = storedValue(edit_cell_->GetValue());
 	auto   key    = string(keyAt(row));
 
 	edit_row_ = -1;
@@ -1650,7 +1711,7 @@ void LanguageConstructorDialog::onCellColourMenu(long row, long column, wxPoint 
 	// see it
 	auto source = [&]()
 	{
-		return editing ? string(edit_cell_->GetValue().utf8_str()) : entry->text();
+		return editing ? storedValue(edit_cell_->GetValue()) : entry->text();
 	};
 	auto write = [&](const string& now)
 	{
@@ -1658,7 +1719,7 @@ void LanguageConstructorDialog::onCellColourMenu(long row, long column, wxPoint 
 			return;
 		if (editing)
 		{
-			edit_cell_->ChangeValue(wxString::FromUTF8(now));
+			edit_cell_->ChangeValue(displayedValue(now));
 			return;
 		}
 		entry->setText(now);
@@ -1714,18 +1775,20 @@ void LanguageConstructorDialog::onCellColourMenu(long row, long column, wxPoint 
 	}
 
 	// Taking the colours out is a whole-cell job: a string with codes inside it has more
-	// than one to lose
+	// than one to lose. The live text is the one to strip, so a colour picked after he typed
+	// doesn't undo what he typed
 	if (picked == clear_id)
 	{
+		auto   live = source();
 		string now;
-		for (size_t i = 0; i < was.size(); i++)
+		for (size_t i = 0; i < live.size(); i++)
 		{
-			if (was[i] == '\\' && i + 2 < was.size() && was[i + 1] == 'c')
+			if (live[i] == '\\' && i + 2 < live.size() && live[i + 1] == 'c')
 			{
 				i += 2;
 				continue;
 			}
-			now += was[i];
+			now += live[i];
 		}
 		write(now);
 		return;
