@@ -115,10 +115,7 @@ private:
 
 	// The string a cell holds, or null when the lump doesn't define it in that language
 	const LanguageEntry* cellEntry(long row, long column) const;
-
-	// The definition of [key] under [language], from the lookup built with the rows. The
-	// lump can hold a thousand of them, so a cell is not something to search for
-	const LanguageEntry* cell(string_view key, string_view language) const;
+	LanguageEntry*       cellEntryOf(long row, long column);
 
 	// Puts a field over the cell so it can be changed there, and takes it back again -
 	// keeping what was typed for false
@@ -141,7 +138,7 @@ private:
 	// Puts a new string into the file the dropdown names, and copies it as a placeholder
 	// into the ones the Additional list names. How many files took it; 0 means nothing was
 	// written, and the note line says why
-	int addNewString(string_view key, string_view language, string_view value);
+	int addNewString(string_view key, string_view language, string_view value, string_view into = {});
 
 	// Fills the dropdown from the archive's lumps: the files, a line of dashes so the last
 	// item can't be hit by accident, and the way to make a new file
@@ -175,6 +172,7 @@ private:
 		string       group; // what languageGroup calls it, e.g. "en"
 		string       label; // what the header shows, e.g. "English (US) (enu, eng, en)"
 		vector<string> tags; // the tags folded into it, most specific first
+		string       lump;  // the file whose strings this column shows, and writes back to
 	};
 
 	// The column's own number, or -1 when the header is the key's
@@ -196,7 +194,6 @@ private:
 	vector<LanguageColumn> columns_;
 	vector<string>   keys_;
 	vector<long>     shown_;
-	std::map<string, std::map<string, const LanguageEntry*>> by_key_;
 
 	void restoreGeometry();
 	void saveGeometry();

@@ -497,17 +497,17 @@ void LanguageConstructorDialog::buildLumpChoices()
 // get it as a placeholder in their own language. The count is what came back, so the note
 // line can say where the text ended up instead of leaving him to guess
 // -----------------------------------------------------------------------------
-int LanguageConstructorDialog::addNewString(string_view key, string_view language, string_view value)
+int LanguageConstructorDialog::addNewString(string_view key, string_view language, string_view value, string_view into)
 {
-	string into = primary_;
-	if (!book_.has(into))
-		into = lumpForLanguage(language);
+	string home = into.empty() ? primary_ : string(into);
+	if (!book_.has(home))
+		home = lumpForLanguage(language);
 
-	int wrote = book_.addAcross(into, language, key, value, additional_);
+	int wrote = book_.addAcross(home, language, key, value, additional_);
 	if (wrote <= 0)
 		return 0;
 
-	string where = "Added " + string(key) + " to " + into + " under [" + string(language) + "]";
+	string where = "Added " + string(key) + " to " + home + " under [" + string(language) + "]";
 	if (wrote > 1)
 		where += ", and as a placeholder in " + std::to_string(wrote - 1) + " other file(s)";
 	say(where);
@@ -694,29 +694,38 @@ void LanguageConstructorDialog::chooseAdditional()
 }
 
 // -----------------------------------------------------------------------------
-// One column per language, after the key's own. Tags the engine folds into the same
-// language share a column, because a modder filling in Doom Deluxe's English shouldn't
-// have to know that one file wrote 'enu', another 'eng' and a third just 'en'
+// One column per language, and one per file when several files write the same language.
+// A mod that splits its strings by purpose - language.Menu, language.Tally, language.tips,
+// all of them English - has nothing to show if those files are folded into one column, and
+// a tag the engine folds into the same language ('enu' with 'default') still shares one
 // -----------------------------------------------------------------------------
 void LanguageConstructorDialog::buildColumns()
 {
 	languages_ = book_.languages();
 
 	columns_.clear();
-	for (const auto& tag : languages_)
+	auto files = book_.lumpNames();
+	for (size_t l = 0; l < files.size(); ++l)
 	{
-		auto group = languageGroup(tag);
-		bool found = false;
-		for (auto& column : columns_)
+		auto* lump = book_.lump(files[l]);
+		if (!lump)
+			continue;
+
+		for (const auto& tag : lump->languages())
 		{
-			if (column.group != group)
-				continue;
-			column.tags.push_back(tag);
-			found = true;
-			break;
+			auto group = languageGroup(tag);
+			bool found = false;
+			for (auto& column : columns_)
+			{
+				if (column.group != group || column.lump != files[l])
+					continue;
+				column.tags.push_back(tag);
+				found = true;
+				break;
+			}
+			if (!found)
+				columns_.push_back({ group, "", { tag }, files[l] });
 		}
-		if (!found)
-			columns_.push_back({ group, "", { tag } });
 	}
 
 	// How many pieces the engine's own form of the tag has says how specific it is: it
@@ -785,6 +794,17 @@ void LanguageConstructorDialog::buildColumns()
 				joined += (joined.empty() ? "" : ", ") + tag;
 			label += " (" + joined + ")";
 		}
+
+	// A language written by more than one file says which file this column is, so the
+	// four English files of a mod that splits its strings by purpose read as four columns
+	// rather than one that hides three of them
+	{
+		std::map<string, int> shares;
+		for (const auto& one : columns_)
+			++shares[one.group];
+		if (shares[column.group] > 1)
+			label += " - " + column.lump;
+	}
 		column.label = label;
 	}
 
@@ -806,19 +826,43 @@ long LanguageConstructorDialog::columnIndex(long header_column) const
 // something to search for on every refill
 const LanguageEntry* LanguageConstructorDialog::cellAt(string_view key, const LanguageColumn& column) const
 {
+	auto* lump = book_.lump(column.lump);
+	if (!lump)
+		return nullptr;
 	for (const auto& tag : column.tags)
 	{
-		if (auto* entry = cell(key, tag))
+		if (auto* entry = lump->entry(key, tag))
 			return entry;
 	}
 	return nullptr;
 }
 
+// The same cell for writing. A column belongs to one file, so an edit lands in that file
+// and not in whichever one happens to write the same language later
+LanguageEntry* LanguageConstructorDialog::cellEntryOf(long row, long column)
+{
+	auto index = columnIndex(column);
+	auto key   = keyAt(row);
+	if (index < 0 || key.empty())
+		return nullptr;
+
+	auto* lump = book_.lump(columns_[index].lump);
+	if (!lump)
+		return nullptr;
+	for (const auto& tag : columns_[index].tags)
+		if (auto* entry = lump->entry(key, tag))
+			return entry;
+	return nullptr;
+}
+
 string LanguageConstructorDialog::tagAt(string_view key, const LanguageColumn& column) const
 {
+	auto* lump = book_.lump(column.lump);
+	if (!lump)
+		return column.tags.empty() ? "" : column.tags[0];
 	for (const auto& tag : column.tags)
 	{
-		if (cell(key, tag))
+		if (lump->entry(key, tag))
 			return tag;
 	}
 	return column.tags.empty() ? "" : column.tags[0];
@@ -839,7 +883,6 @@ void LanguageConstructorDialog::buildRows()
 
 	string filter = text_filter_ ? text_filter_->GetValue().utf8_str() : "";
 
-	by_key_.clear();
 	keys_.clear();
 	for (const auto& lump : book_.lumps())
 	{
@@ -848,11 +891,8 @@ void LanguageConstructorDialog::buildRows()
 			if (!entry.parsed)
 				continue;
 
-			// The last write of a label wins, which is what the engine does with it too. In
-			// load order, so a later file's copy takes the cell over an earlier one's
-			for (const auto& lang : (entry.langs.empty() ? vector<string>{ "" } : entry.langs))
-				by_key_[entry.label][lang] = &entry;
-
+			// Every file that writes the label gets its own column, so the list of names is
+			// all this walk has to collect now
 			if (std::find(keys_.begin(), keys_.end(), entry.label) == keys_.end())
 				keys_.push_back(entry.label);
 		}
@@ -986,16 +1026,6 @@ string_view LanguageConstructorDialog::keyAt(long row) const
 	if (row < 0 || row >= (long)shown_.size())
 		return {};
 	return keys_[shown_[row]];
-}
-
-const LanguageEntry* LanguageConstructorDialog::cell(string_view key, string_view language) const
-{
-	auto found = by_key_.find(string(key));
-	if (found == by_key_.end())
-		return nullptr;
-
-	auto lang = found->second.find(string(language));
-	return lang == found->second.end() ? nullptr : lang->second;
 }
 
 const LanguageEntry* LanguageConstructorDialog::cellEntry(long row, long column) const
@@ -1141,7 +1171,7 @@ void LanguageConstructorDialog::endCellEdit(bool keep)
 		return;
 
 	auto language = selectedTag(row, column);
-	auto* entry   = book_.entry(key, language);
+	auto* entry   = cellEntryOf(row, column);
 
 	if (entry)
 	{
@@ -1152,7 +1182,10 @@ void LanguageConstructorDialog::endCellEdit(bool keep)
 	}
 	else if (!value.empty())
 	{
-		if (!addNewString(key, language, value))
+		string into;
+		if (auto index = columnIndex(column); index >= 0)
+			into = columns_[index].lump;
+		if (!addNewString(key, language, value, into))
 		{
 			say("That key is already defined under " + language + ", so nothing was added");
 			return;
@@ -1365,7 +1398,7 @@ void LanguageConstructorDialog::onCellColourMenu(long row, long column, wxPoint 
 		return;
 
 	auto  tag   = selectedTag(row, column);
-	auto* entry = book_.entry(key, tag);
+	auto* entry = cellEntryOf(row, column);
 	if (!entry)
 	{
 		say("That cell has no string under " + tag + " yet, so there's nothing to colour");
