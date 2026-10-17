@@ -39,11 +39,6 @@
 
 using namespace slade;
 
-// The list view marks the row the mouse rests on with this; the headers here don't define it
-#ifndef LVIS_HOT
-#define LVIS_HOT 0x00000040
-#endif
-
 // How "Add new language" makes a language: a LANGUAGE lump of its own, or a block inside
 // the file already being worked in. Set under Preferences > Extra Features
 CVAR(Int, lngc_new_language_style, 0, CVar::Flag::Save)
@@ -129,80 +124,37 @@ bool LanguageList::MSWOnNotify(int idCtrl, WXLPARAM lParam, WXLPARAM* result)
 			auto row = (long)draw->nmcd.dwItemSpec;
 
 			// A picked row belongs to the theme: its own text colour is what makes a
-			// selection readable, whatever the file asked the text to be. The same for a row
-			// the mouse is resting on, where the control has its own hover band to draw
-			if ((GetItemState(row, LVIS_SELECTED | LVIS_HOT) & (LVIS_SELECTED | LVIS_HOT)) != 0)
+			// selection readable, whatever the file asked the text to be
+			if (GetItemState(row, LVIS_SELECTED) & LVIS_SELECTED)
 				break;
 
 			auto runs = cellRuns(row, draw->iSubItem);
-			if (runs.empty())
-				break;
 
 			// Temporary: does this run at all, and what did it resolve
 			static int drawn = 0;
 			if (drawn < 40)
 			{
 				++drawn;
-				string ink = runs[0].ink.IsOk() ? string(runs[0].ink.GetAsString(wxC2S_HTML_SYNTAX).utf8_str())
-				                                : "invalid";
+				string ink = runs.empty() ? "none" : (runs[0].ink.IsOk() ? string(runs[0].ink.GetAsString(wxC2S_HTML_SYNTAX).utf8_str())
+				                                                        : "invalid");
 				clickLog("draw row=" + std::to_string(row) + " col=" + std::to_string(draw->iSubItem) +
 				         " runs=" + std::to_string(runs.size()) + " ink=" + ink);
 			}
 
-			// One colour for the whole cell is something the control can do itself
-			if (runs.size() == 1)
+			// Ask the control to change the text colour and let it draw the letters. Taking
+			// the cell over to colour it run by run fought the control's own hover and
+			// selection bands, and lost: rows came out two-tone and a word with no code in
+			// front of it went invisible. One colour per cell is what this control can be
+			// made to do without lying about the row's state
+			for (const auto& one : runs)
 			{
-				if (!runs[0].ink.IsOk())
-					break;
-				draw->clrText = RGB(runs[0].ink.Red(), runs[0].ink.Green(), runs[0].ink.Blue());
+				if (!one.ink.IsOk())
+					continue;
+				draw->clrText = RGB(one.ink.Red(), one.ink.Green(), one.ink.Blue());
 				*result = CDRF_NEWFONT;
 				return true;
 			}
-
-			// More than one: the cell is drawn here, run by run, left to right
-			RECT box{};
-			if (!ListView_GetSubItemRect(GetHwnd(), (int)row, draw->iSubItem, LVIR_BOUNDS, &box))
-				break;
-
-			auto* dc = (HDC)draw->nmcd.hdc;
-
-			// The colours the theme would have used. Taking over the drawing means wx never
-			// gets to set them on the device, so the letters with no code of their own would
-			// otherwise be drawn in whatever the device happened to hold: black on a dark
-			// theme, which reads as a missing word
-			const wxColour base  = GetForegroundColour();
-			const wxColour paper = GetBackgroundColour().IsOk() ? GetBackgroundColour()
-			                                                    : wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW);
-
-			auto toRGB = [](const wxColour& c)
-			{ return RGB(c.Red(), c.Green(), c.Blue()); };
-
-			auto inkOf = [&](const LanguageCellRun& one)
-			{ return one.ink.IsOk() ? toRGB(one.ink) : toRGB(base); };
-
-			// The whole cell, not just its label: filling the label only leaves the rest in
-			// whatever the control had painted there, and a hovered row comes out two-tone
-			COLORREF back = draw->clrTextBk == CLR_DEFAULT ? toRGB(paper) : draw->clrTextBk;
-			{
-				auto* brush = CreateSolidBrush(back);
-				FillRect(dc, &box, brush);
-				DeleteObject(brush);
-			}
-			SetBkMode(dc, TRANSPARENT);
-
-			int x = box.left + 2;
-			for (const auto& one : runs)
-			{
-				auto wide = one.text.wc_str();
-				SIZE size{};
-				GetTextExtentPoint32W(dc, wide, (int)wcslen(wide), &size);
-				SetTextColor(dc, inkOf(one));
-				RECT part{ x, box.top, x + size.cx + 1, box.bottom };
-				ExtTextOutW(dc, x, box.top, ETO_CLIPPED, &part, wide, (int)wcslen(wide), nullptr);
-				x += size.cx;
-			}
-			*result = CDRF_SKIPDEFAULT;
-			return true;
+			break;
 		}
 		}
 	}
