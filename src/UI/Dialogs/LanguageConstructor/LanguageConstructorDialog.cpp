@@ -342,15 +342,38 @@ void LanguageConstructorDialog::askNewLanguage()
 
 	if (lngc_new_language_style == 1)
 	{
+		// 'All in one lump' means the one the engine reads as LANGUAGE, not whichever file the
+		// dropdown happens to be sitting on. Blocks opened in LANGUAGE.ru are Russian's file's
+		// business, and a language that lives inside another language's file never shows up as
+		// a file to duplicate into. No plain LANGUAGE yet: make one, empty, and use it
+		string home;
+		for (const auto& name : book_.lumpNames())
+			if (strutil::equalCI(name, "LANGUAGE"))
+				home = name;
+
+		if (home.empty())
+		{
+			string id;
+			if (!create_ || !create_("", id) || id.empty())
+			{
+				say("The archive wouldn't take a plain LANGUAGE lump");
+				buildLumpChoices();
+				return;
+			}
+			home     = id;
+			primary_ = home;
+		}
+
 		for (const auto& code : codes)
 		{
-			if (book_.openBlock(primary_, code))
+			if (book_.openBlock(home, code))
 				++made;
 		}
 		if (made)
 			applyChange();
-		say(made ? "Opened " + std::to_string(made) + " language block(s) in " + primary_
-		         : "Those languages are already declared in " + primary_);
+		primary_ = home;
+		say(made ? "Opened " + std::to_string(made) + " language block(s) in " + home
+		         : "Those languages are already declared in " + home);
 		buildLumpChoices();
 		return;
 	}
@@ -656,6 +679,9 @@ void LanguageConstructorDialog::buildRows()
 		if (!known)
 			add_language_ = columns_.empty() ? "default" : columns_[0].tags[0];
 		btn_add_->SetLabel(wxString::FromUTF8("Add to " + add_language_ + " in " + primary_));
+		// The button was measured when its label was just 'Add', and a sizer keeps the
+		// width it was told, so a longer label has to ask for its room again
+		btn_add_->InvalidateBestSize();
 	}
 
 	updating_ = false;
@@ -976,7 +1002,10 @@ void LanguageConstructorDialog::onItemSelected(wxListEvent& e)
 	{
 		add_language_ = selectedTag(e.GetIndex(), e.GetColumn());
 		if (btn_add_)
-			btn_add_->SetLabel(wxString::FromUTF8("Add to " + add_language_));
+		{
+			btn_add_->SetLabel(wxString::FromUTF8("Add to " + add_language_ + " in " + primary_));
+			btn_add_->InvalidateBestSize();
+		}
 	}
 
 	auto key = keyAt(e.GetIndex());

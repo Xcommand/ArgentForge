@@ -74,6 +74,9 @@ CVAR(Int, txed_action_tics, 0, CVar::Flag::Save)
 // Defined below, with the rest of the actor constructor code
 static bool actorFormat(TextLanguage* language, ActorFormat& format);
 
+// Defined below, beside the lump walk it uses
+static ArchiveEntry* findMenuDef(Archive* archive);
+
 
 // -----------------------------------------------------------------------------
 //
@@ -1221,19 +1224,19 @@ bool TextEntryPanel::menuConstructorHasKeyboard()
 }
 
 // -----------------------------------------------------------------------------
-// True when this lump is the one the engine reads menus from. The name decides it,
-// exactly as it does in the archive
+// True when this lump is one the engine reads menus from. The name decides it, and the
+// name is MENUDEF with any extension or none
 // -----------------------------------------------------------------------------
 bool TextEntryPanel::isMenuDefLump() const
 {
 	auto entry = entry_.lock();
-	return entry && strutil::equalCI(entry->name(), "MENUDEF");
+	return entry && strutil::equalCI(entry->nameNoExt(), "MENUDEF");
 }
 
 // -----------------------------------------------------------------------------
 // Called when the Menu button is pressed on a text with no menu block in it. The
-// engine reads menus only from a lump named MENUDEF, so this goes looking for one in
-// the archive and offers to open it, or to make one if the archive has none
+// menus live in the archive's MENUDEF file, so this goes looking for it and offers to
+// open that, or to make one if the archive truly has none
 // -----------------------------------------------------------------------------
 void TextEntryPanel::openMenuDefElsewhere()
 {
@@ -1243,14 +1246,16 @@ void TextEntryPanel::openMenuDefElsewhere()
 
 	Archive* menudef_owner = entry->parent();
 	auto*      panel       = maineditor::currentArchivePanel();
-	auto*      menudef     = menudef_owner ? menudef_owner->entryAtPath("MENUDEF") : nullptr;
+	auto*      menudef     = findMenuDef(menudef_owner);
 
-	// Another lump holds the menus: offer to open it
+	// Another file holds the menus: offer to open it
 	if (menudef && menudef != entry.get() && panel)
 	{
 		if (wxMessageBox(
-			    wxS("This text has no menu definitions, but the archive has a MENUDEF lump.\n\n"
-			        "Open it in the menu constructor?"),
+			    wxString::Format(
+			        wxS("This text has no menu definitions, but %s holds them.\n\n"
+			            "Open it in the menu constructor?"),
+			        wxString::FromUTF8(menudef->name())),
 			    wxS("Menu Constructor"),
 			    wxYES_NO | wxICON_QUESTION,
 			    this)
@@ -1259,20 +1264,16 @@ void TextEntryPanel::openMenuDefElsewhere()
 		return;
 	}
 
-	// No MENUDEF anywhere: offer to create one
+	// No menus anywhere: offer to create the file, beside this one
 	if (menudef_owner && !menudef_owner->isReadOnly() && panel
 	    && wxMessageBox(
-		       wxS("There are no menu definitions here and the archive has no MENUDEF lump.\n\n"
+		       wxS("There are no menu definitions here and the archive has no MENUDEF file.\n\n"
 		           "Create one?"),
 		       wxS("Menu Constructor"),
 		       wxYES_NO | wxICON_QUESTION,
 		       this)
 		       == wxYES)
-	{
-		auto created = menudef_owner->addNewEntry("MENUDEF", "");
-		if (created)
-			panel->openEntryAsText(created.get());
-	}
+		panel->newMenuDefFile(entry.get());
 }
 
 // -----------------------------------------------------------------------------
@@ -1476,6 +1477,25 @@ static bool isFolderEntry(ArchiveEntry* entry)
 }
 
 // -----------------------------------------------------------------------------
+// The file this archive keeps its menus in. Mods write it as MENUDEF, MENUDEF.txt or
+// MENUDEF.dat, and SLADE itself creates the .txt one, so the extension is not part of
+// the question - while 'MENUDEFS.dat' is a different file and must not answer to it
+// -----------------------------------------------------------------------------
+static ArchiveEntry* findMenuDef(Archive* archive)
+{
+	if (!archive)
+		return nullptr;
+
+	vector<ArchiveEntry*> files;
+	archive->putEntryTreeAsList(files);
+	for (auto* one : files)
+		if (one && !isFolderEntry(one) && strutil::equalCI(one->nameNoExt(), "MENUDEF"))
+			return one;
+
+	return nullptr;
+}
+
+// -----------------------------------------------------------------------------
 // The lump a table id stands for. The ids were numbered against the whole entry tree, so
 // the tree is flattened the same way here; a name that no longer matches means the files
 // moved, and a write that can't prove which lump it means doesn't happen
@@ -1571,14 +1591,16 @@ bool TextEntryPanel::createLanguageLump(string_view code, string& id)
 	id.clear();
 
 	auto entry = entry_.lock();
-	if (!entry || code.empty())
+	if (!entry)
 		return false;
 
 	auto* arch = entry->parent();
 	if (!arch || arch->isReadOnly())
 		return false;
 
-	string name = arch->isTreeless() ? "LANGUAGE" : "LANGUAGE." + string(code);
+	// An empty code is the plain LANGUAGE lump the engine reads, which starts out with no
+	// language in it at all
+	string name = (code.empty() || arch->isTreeless()) ? "LANGUAGE" : "LANGUAGE." + string(code);
 
 	// Beside the file he was looking at, in that file's own folder
 	auto*    dir   = entry->parentDir();
@@ -1587,7 +1609,7 @@ bool TextEntryPanel::createLanguageLump(string_view code, string& id)
 	if (!added)
 		return false;
 
-	string text = "[" + string(code) + "]" + "\n";
+	string text = code.empty() ? string() : "[" + string(code) + "]" + "\n";
 	added->importMem(text.data(), text.size());
 	arch->setModified(true);
 	arch->entryStateChanged(added.get());

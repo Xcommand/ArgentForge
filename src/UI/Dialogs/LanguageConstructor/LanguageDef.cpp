@@ -491,8 +491,11 @@ bool LanguageSource::addString(string_view label, string_view language, string_v
 		at  = spot->second.end;
 	}
 
-	// A language the lump doesn't open a block for yet gets its header with the line
-	string header = spot == spots_.end() ? eol + "[" + string(language) + "]" : string();
+	// A language the lump doesn't open a block for yet gets its header with the line. The
+	// first bytes of an empty file start it, so that header takes no newline in front of it
+	string header = spot == spots_.end()
+	                    ? (text_.empty() ? "[" + string(language) + "]" : eol + "[" + string(language) + "]")
+	                    : string();
 	string value  = quoted(text);
 	string line   = header + eol + indent + string(label) + " = " + value + ";";
 
@@ -527,7 +530,8 @@ bool LanguageSource::openBlock(string_view language)
 	size_t at  = text_.size();
 	string eol = eolAt(text_, at);
 
-	string header = eol + "[" + string(language) + "]";
+	// A file with nothing in it yet has no line for the header to hang under: it starts there
+	string header = (text_.empty() ? string() : eol) + "[" + string(language) + "]";
 	extra_.emplace_back(at, header);
 
 	BlockSpot spot;
