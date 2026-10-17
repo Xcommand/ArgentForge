@@ -20,7 +20,9 @@
 #include <wx/button.h>
 #include <wx/checkbox.h>
 #include <wx/choice.h>
+#include <wx/clipbrd.h>
 #include <wx/colour.h>
+#include <wx/dataobj.h>
 #include <wx/display.h>
 #include <wx/settings.h>
 #include <wx/sizer.h>
@@ -333,7 +335,6 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 	{
 		if (column == key_column)
 			return;
-		edit_opening_ = true;
 		CallAfter([ this, row, column ]
 			{ editCell(row, column); });
 	};
@@ -362,12 +363,6 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 
 		auto key = keyAt(row);
 		if (key.empty() || !select_)
-			return;
-
-		// A click that is on its way to a cell he wants to type in is not a request to go
-		// looking at that line in the editor: the editor's window would take the keys from
-		// the field a moment later
-		if (edit_opening_)
 			return;
 
 		size_t offset = 0;
@@ -1177,6 +1172,16 @@ void LanguageConstructorDialog::editCell(long row, long column)
 				else
 					e.Skip();
 			});
+
+		// The field covers its cell, so the right button over an open cell is answered here
+		// and not by the table underneath it
+		edit_cell_->Bind(
+			wxEVT_CONTEXT_MENU,
+			[this](wxContextMenuEvent& e)
+			{
+				if (edit_row_ >= 0)
+					onCellColourMenu(edit_row_, edit_col_, e.GetPosition(), edit_cell_);
+			});
 	}
 
 	edit_row_ = row;
@@ -1201,8 +1206,7 @@ void LanguageConstructorDialog::editCell(long row, long column)
 					edit_cell_->SetFocus();
 			});
 
-	edit_opening_ = false;
-	edit_fresh_   = true;
+	edit_fresh_ = true;
 }
 
 // -----------------------------------------------------------------------------
@@ -1426,11 +1430,12 @@ void LanguageConstructorDialog::onBtnAdditional(wxCommandEvent& e)
 }
 
 // -----------------------------------------------------------------------------
-// Right-click on a cell asks which colour its text should start with, and offers to take
-// the codes out again. Both write the cell the same way typing into it does, so the file
-// and the undo behave the same whichever road the change came by
+// Right-click on a cell: which colour its text should start with, the codes taken out
+// again, and the cell's text to and from the clipboard. Every one of them writes the cell
+// the way typing into it does, so the file and the undo behave the same whichever road the
+// change came by
 // -----------------------------------------------------------------------------
-void LanguageConstructorDialog::onCellColourMenu(long row, long column, wxPoint where)
+void LanguageConstructorDialog::onCellColourMenu(long row, long column, wxPoint where, wxWindow* anchor)
 {
 	if (column <= key_column || column > (long)columns_.size())
 		return;
@@ -1449,6 +1454,8 @@ void LanguageConstructorDialog::onCellColourMenu(long row, long column, wxPoint 
 
 	const int colour_id = wxID_HIGHEST + 1;
 	const int clear_id  = wxID_HIGHEST + 2;
+	const int copy_id   = wxID_HIGHEST + 3;
+	const int paste_id  = wxID_HIGHEST + 4;
 
 	// The popup and the picker take the focus to hand it back; the cell being edited has to
 	// outlive both, or the choice arrives at a cell that already closed and committed
@@ -1468,8 +1475,16 @@ void LanguageConstructorDialog::onCellColourMenu(long row, long column, wxPoint 
 	wxMenu menu;
 	menu.Append(colour_id, wxS("Colour..."));
 	menu.Append(clear_id, wxS("Remove the colour from this cell"));
+	menu.AppendSeparator();
+	menu.Append(copy_id, wxS("Copy"));
+	menu.Append(paste_id, wxS("Paste"));
 
-	int picked = grid_->GetPopupMenuSelectionFromUser(menu, where);
+	// The menu drops from whatever was right-clicked: the table, or the field standing over
+	// its cell
+	if (!anchor)
+		anchor = grid_;
+
+	int picked = anchor->GetPopupMenuSelectionFromUser(menu, where);
 	if (picked == wxID_NONE)
 		return;
 
@@ -1497,6 +1512,54 @@ void LanguageConstructorDialog::onCellColourMenu(long row, long column, wxPoint 
 		entry->setText(now);
 		applyChange();
 	};
+
+	if (picked == copy_id)
+	{
+		if (!wxTheClipboard->Open())
+		{
+			say("The clipboard is held by another program right now");
+			return;
+		}
+		wxTheClipboard->SetData(new wxTextDataObject(wxString::FromUTF8(source())));
+		wxTheClipboard->Close();
+		say("Copied the cell's text, colour codes and all");
+		return;
+	}
+
+	if (picked == paste_id)
+	{
+		if (!wxTheClipboard->Open())
+		{
+			say("The clipboard is held by another program right now");
+			return;
+		}
+		wxTextDataObject data;
+		bool             got = wxTheClipboard->GetData(data);
+		wxTheClipboard->Close();
+
+		if (!got || data.GetText().empty())
+		{
+			say("There's no text on the clipboard to put in");
+			return;
+		}
+
+		auto text = data.GetText();
+
+		// While he is inside the cell, Paste goes where the caret is, the same as Ctrl+V
+		if (editing)
+		{
+			long from = 0, to = 0;
+			edit_cell_->GetSelection(&from, &to);
+			auto now = edit_cell_->GetValue();
+			now.replace(from, to - from, text);
+			edit_cell_->ChangeValue(now);
+			edit_cell_->SetInsertionPoint(from + (long)text.Length());
+			return;
+		}
+
+		write(string(text.utf8_str()));
+		return;
+	}
 
 	// Taking the colours out is a whole-cell job: a string with codes inside it has more
 	// than one to lose

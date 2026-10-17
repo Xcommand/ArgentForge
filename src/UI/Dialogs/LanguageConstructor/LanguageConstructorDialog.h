@@ -115,8 +115,8 @@ private:
 	// Moves the field to where its cell now is, after the table was scrolled
 	void placeCellEditor();
 
-	// The colour menu over a cell
-	void onCellColourMenu(long row, long column, wxPoint where);
+	// The cell menu: colour, and the clipboard
+	void onCellColourMenu(long row, long column, wxPoint where, wxWindow* anchor = nullptr);
 
 	// Adds the key and text in the bottom fields to the language the button names
 	void addFromFields();
@@ -212,11 +212,6 @@ private:
 	// Up while a menu or the colour picker is showing: they take the focus to give it back,
 	// and that isn't him clicking away
 	bool keep_edit_open_ = false;
-
-	// Between the click that asked for a cell and the field that answers it. The row the
-	// click picked would otherwise send the editor to that string, and the editor's window
-	// takes the keys with it
-	bool edit_opening_ = false;
 
 	// True from the moment the field opens until it has survived one focus loss. The click
 	// that opened it takes the keys back as it finishes, and that is not him clicking away
