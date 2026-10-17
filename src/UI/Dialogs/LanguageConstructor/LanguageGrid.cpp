@@ -492,9 +492,11 @@ void LanguageGrid::onLeftUp(wxMouseEvent& e)
 		return;
 	}
 
-	select(row, column, false);
+	// The cell is asked about before the row is announced: a window that opens a field to
+	// type in has to be able to say 'don't move the keyboard anywhere yet'
 	if (cellClicked)
 		cellClicked(row, column);
+	select(row, column, false);
 	e.Skip();
 }
 

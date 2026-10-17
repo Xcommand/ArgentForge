@@ -351,6 +351,7 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 		         + std::to_string(columns_.size()));
 		if (column == key_column)
 			return;
+		edit_opening_ = true;
 		CallAfter([ this, row, column ]
 			{ editCell(row, column); });
 	};
@@ -384,6 +385,15 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 		auto key = keyAt(row);
 		if (key.empty() || !select_)
 			return;
+
+		// A click that is on its way to a cell he wants to type in is not a request to go
+		// looking at that line in the editor: the editor's window would take the keys from
+		// the field a moment later
+		if (edit_opening_)
+		{
+			clickLog("jump skipped, a cell is opening row=" + std::to_string(row));
+			return;
+		}
 
 		size_t offset = 0;
 		string lump;
@@ -1163,6 +1173,9 @@ void LanguageConstructorDialog::editCell(long row, long column)
 			wxEVT_KILL_FOCUS,
 			[this](wxFocusEvent& e)
 			{
+				clickLog("cell field lost the keys row=" + std::to_string(edit_row_) + " col="
+				         + std::to_string(edit_col_) + " held=" + std::to_string(keep_edit_open_)
+				         + " opening=" + std::to_string(edit_opening_));
 				if (keep_edit_open_)
 				{
 					e.Skip();
@@ -1204,6 +1217,7 @@ void LanguageConstructorDialog::editCell(long row, long column)
 	clickLog("opened row=" + std::to_string(row) + " col=" + std::to_string(column) +
 	         " shown=" + std::to_string(edit_cell_->IsShown()) + " focus="
 	         + std::to_string(wxWindow::FindFocus() == edit_cell_));
+	edit_opening_ = false;
 }
 
 // -----------------------------------------------------------------------------

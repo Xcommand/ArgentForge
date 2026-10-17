@@ -213,6 +213,11 @@ private:
 	// and that isn't him clicking away
 	bool keep_edit_open_ = false;
 
+	// Between the click that asked for a cell and the field that answers it. The row the
+	// click picked would otherwise send the editor to that string, and the editor's window
+	// takes the keys with it
+	bool edit_opening_ = false;
+
 	// What each visible cell is made of, rebuilt with the rows: the runs to draw, and
 	// whether that text is only a copy of another language's
 	std::vector<std::vector<LanguageCellPaint>> paint_;
