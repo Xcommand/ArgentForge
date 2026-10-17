@@ -316,7 +316,9 @@ bool LanguageSource::load(string_view text)
 
 		// Where this block's lines end, and how they're written, for 'add' later on
 		BlockSpot spot;
-		spot.end = entry.end;
+		spot.end    = entry.end;
+		spot.indent.clear();
+		spot.seen   = true;
 		size_t line = text_.rfind('\n', entry.begin) == string::npos ? 0 : text_.rfind('\n', entry.begin) + 1;
 		for (size_t c = line; c < entry.begin; ++c)
 		{
@@ -335,8 +337,9 @@ bool LanguageSource::load(string_view text)
 			if (spot.end >= at.end)
 			{
 				at.end    = spot.end;
-				at.indent = spot.indent.empty() ? at.indent : spot.indent;
+				at.indent = spot.indent;
 				at.eol    = spot.eol;
+				at.seen   = spot.seen;
 			}
 		}
 
@@ -480,8 +483,9 @@ bool LanguageSource::addString(string_view label, string_view language, string_v
 	if (spot != spots_.end())
 	{
 		// A block the file only declared, with no strings under it yet, has no indentation
-		// of its own to copy: keep the default rather than writing a line flush left
-		if (!spot->second.indent.empty())
+		// of its own to copy: keep the default rather than writing a line flush left. A block
+		// it did write lines under is copied exactly, flush left included
+		if (spot->second.seen)
 			indent = spot->second.indent;
 		eol = spot->second.eol;
 		at  = spot->second.end;

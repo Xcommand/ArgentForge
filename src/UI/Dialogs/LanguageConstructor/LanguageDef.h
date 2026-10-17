@@ -112,6 +112,10 @@ private:
 		string indent = "\t";
 		string eol    = "\n";
 		size_t end    = 0;
+		// Whether a line of this block was actually read. The indentation of a block the
+		// file only declared is a guess; of one it wrote lines under, it's a copy of those
+		// lines, and a copy of a line flush left is flush left
+		bool seen = false;
 	};
 
 	string                  text_;
