@@ -278,7 +278,7 @@ bool TextEntryPanel::loadEntry(ArchiveEntry* entry)
 	loading_entry_ = false;
 	updateActorConstructor();
 	updateMenuConstructor();
-	updateConstructorTools();
+	updateConstructorTools(entry);
 
 	return true;
 }
@@ -1236,9 +1236,10 @@ bool TextEntryPanel::menuConstructorHasKeyboard()
 // True when this lump is one the engine reads menus from. The name decides it, and the
 // name is MENUDEF with any extension or none
 // -----------------------------------------------------------------------------
-bool TextEntryPanel::isMenuDefLump() const
+bool TextEntryPanel::isMenuDefLump(ArchiveEntry* entry) const
 {
-	auto entry = entry_.lock();
+	if (!entry)
+		entry = entry_.lock().get();
 	return entry && strutil::equalCI(entry->nameNoExt(), "MENUDEF");
 }
 
@@ -1469,9 +1470,10 @@ bool TextEntryPanel::insertActorAction(string_view action, string_view args)
 // named LANGUAGE; a folder project writes it as 'LANGUAGE.txt' or 'language.enu', so the
 // part before the extension is what counts
 // -----------------------------------------------------------------------------
-bool TextEntryPanel::isLanguageLump() const
+bool TextEntryPanel::isLanguageLump(ArchiveEntry* entry) const
 {
-	auto entry = entry_.lock();
+	if (!entry)
+		entry = entry_.lock().get();
 	return entry && strutil::equalCI(entry->nameNoExt(), "language");
 }
 
@@ -1481,15 +1483,15 @@ bool TextEntryPanel::isLanguageLump() const
 // the actor's for DECORATE and ZScript, the menu's for MENUDEF, the language's for a
 // LANGUAGE lump. Called from outside a file, all three are still under Tools
 // -----------------------------------------------------------------------------
-void TextEntryPanel::updateConstructorTools()
+void TextEntryPanel::updateConstructorTools(ArchiveEntry* entry)
 {
 	if (!tool_actor_)
 		return;
 
 	ActorFormat format;
 	bool        actor    = actorFormat(text_area_->language(), format);
-	bool        menu     = isMenuDefLump();
-	bool        language = isLanguageLump();
+	bool        menu     = isMenuDefLump(entry);
+	bool        language = isLanguageLump(entry);
 
 	tool_actor_->Show(actor);
 	tool_menu_->Show(menu);

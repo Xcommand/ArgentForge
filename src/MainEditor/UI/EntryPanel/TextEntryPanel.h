@@ -100,11 +100,13 @@ private:
 	void selectLanguageString(string_view lump, size_t offset);
 	void followLanguageCaret();
 
-	// Whether this lump is one the engine reads as LANGUAGE, whatever it's named on disk
-	bool isLanguageLump() const;
+	// Whether this lump is one the engine reads as LANGUAGE, whatever it's named on disk.
+	// The entry being opened is passed while it is still being loaded, because the panel's
+	// own copy of it is only set once the load has come back
+	bool isLanguageLump(ArchiveEntry* entry = nullptr) const;
 
 	// Which constructor buttons the lump on screen earns
-	void updateConstructorTools();
+	void updateConstructorTools(ArchiveEntry* entry = nullptr);
 
 	// Points the menu constructor at whatever lump just came into the panel
 	void updateMenuConstructor();
@@ -129,7 +131,7 @@ private:
 
 	// Whether this lump is the MENUDEF the engine reads, which decides if an empty text is a
 	// page that hasn't started rather than a file with no business in the window
-	bool isMenuDefLump() const;
+	bool isMenuDefLump(ArchiveEntry* entry = nullptr) const;
 
 	// Reads the editor text into [source]. False if it isn't a language the
 	// constructor works with
