@@ -6,8 +6,8 @@
 // Email:       sirjuddington@gmail.com
 // Web:         http://slade.mancubus.net
 // Filename:    ExtraFeaturesPrefsPanel.h
-// Description: Panel containing the settings this fork adds, that belong to neither
-//              the image editor nor the actor constructor
+// Description: Panel containing the settings this fork adds that belong to no one
+//              constructor in particular. The rest are pages of their own below it
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License as published by the Free
@@ -26,16 +26,10 @@
 #pragma once
 
 #include "PrefsPanelBase.h"
-#include <wx/choice.h>
 #include <wx/spinctrl.h>
-
-class wxButton;
-class wxStaticText;
 
 namespace slade
 {
-class FileLocationPanel;
-
 class ExtraFeaturesPrefsPanel : public PrefsPanelBase
 {
 public:
@@ -45,30 +39,15 @@ public:
 	string pageTitle() override { return "Extra Features"; }
 	string pageDescription() override
 	{
-		return "Settings for what Argent Forge adds on top of the original SLADE. The image "
-			   "editor's brush and the actor constructor have pages of their own below.";
+		return "Settings for what Argent Forge adds on top of the original SLADE. The image editor, "
+			   "the three constructors and the launcher integration each have a page of their own below.";
 	}
 
 private:
-	// One-time migration: pull SLADE's settings into our own folder (we no longer share it)
-	void importSladeSettings();
 	void init() override;
 	void applyPreferences() override;
 
-	// AceZDL: hand the launcher our executable path, and be able to give back what was there
-	void refreshAceZdl();
-	void setAceZdlLocation();
-	void restoreAceZdlLocation();
-
-	wxButton*          button_import_ = nullptr;
-	int                spin_recent_scale_id_ = -1;
-	// The Language Constructor's 'where does a new language go' choice
-	int lngc_style_id_ = -1;
-	int lngc_breaks_id_ = -1;
-	int                recent_scale_value_ = 100;
-	FileLocationPanel* flp_acl_ = nullptr;
-	wxStaticText*      acl_state_ = nullptr;
-	wxButton*          button_acl_set_     = nullptr;
-	wxButton*          button_acl_restore_ = nullptr;
+	int spin_recent_scale_id_ = -1;
+	int recent_scale_value_   = 100;
 };
 } // namespace slade

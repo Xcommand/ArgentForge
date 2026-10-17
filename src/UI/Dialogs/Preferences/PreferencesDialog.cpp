@@ -50,6 +50,8 @@
 #include "ImageEditorPrefsPanel.h"
 #include "InputPrefsPanel.h"
 #include "InterfacePrefsPanel.h"
+#include "IntegrationPrefsPanel.h"
+#include "LanguageConstructorPrefsPanel.h"
 #include "MainEditor/MainEditor.h"
 #include "MainEditor/UI/ArchiveManagerPanel.h"
 #include "MainEditor/UI/MainWindow.h"
@@ -165,6 +167,8 @@ PreferencesDialog::PreferencesDialog(wxWindow* parent) : SDialog(parent, "Argent
 	addPrefsPage<ImageEditorPrefsPanel>("Image Editor", true);
 	addPrefsPage<ActorConstructorPrefsPanel>("Actor Constructor", true);
 	addPrefsPage<MenuConstructorPrefsPanel>("Menu Constructor", true);
+	addPrefsPage<LanguageConstructorPrefsPanel>("Language Constructor", true);
+	addPrefsPage<IntegrationPrefsPanel>("Integration", true);
 
 	tree_prefs_->AddPage(setupAdvancedPanel(), wxS("Advanced"));
 
