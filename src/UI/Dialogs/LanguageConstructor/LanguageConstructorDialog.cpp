@@ -12,23 +12,206 @@
 #include "General/Misc.h"
 #include "General/UI.h"
 #include "UI/WxUtils.h"
+#include "UI/Dialogs/MenuConstructor/MenuVocabulary.h"
 #include "Utility/StringUtils.h"
 
 #include <wx/button.h>
 #include <wx/checkbox.h>
 #include <wx/choice.h>
+#include <wx/colour.h>
 #include <wx/display.h>
 #include <wx/listctrl.h>
 #include <wx/scrolwin.h>
+#include <wx/settings.h>
 #include <wx/sizer.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
+
+// The list view's own custom-draw notices, which wx keeps behind its own include order
+#ifdef __WXMSW__
+#include <wx/msw/wrapcctl.h>
+#endif
 
 using namespace slade;
 
 // How "Add new language" makes a language: a LANGUAGE lump of its own, or a block inside
 // the file already being worked in. Set under Preferences > Extra Features
 CVAR(Int, lngc_new_language_style, 0, CVar::Flag::Save)
+
+
+namespace slade
+{
+// -----------------------------------------------------------------------------
+// The table. A LANGUAGE value carries its own colours inside it ('\cc', '\c7'), and a
+// native list colours a whole row at a time, so this answers the control's own
+// custom-draw notice per cell: a cell of one colour asks the control to change the text
+// colour, and a cell that changes colour mid-string is drawn here, because no single
+// colour can say it. The selected row is left to the theme, which knows the dark and
+// light colours of a picked row better than any colour written in a file
+// -----------------------------------------------------------------------------
+class LanguageList : public wxListCtrl
+{
+public:
+	using wxListCtrl::wxListCtrl;
+
+	std::function<std::vector<LanguageCellRun>(long, long)> cellRuns;
+
+	// In virtual mode the control asks for the text of a cell when it is about to draw it,
+	// so a refill is a row count and nothing else
+	std::function<wxString(long, long)> cellText;
+
+protected:
+	wxString OnGetItemText(long item, long column) const override
+	{
+		return cellText ? cellText(item, column) : wxString();
+	}
+
+	WXLRESULT MSWWindowProc(WXUINT msg, WXWPARAM wParam, WXLPARAM lParam) override;
+};
+
+WXLRESULT LanguageList::MSWWindowProc(WXUINT msg, WXWPARAM wParam, WXLPARAM lParam)
+{
+	if (msg == WM_NOTIFY && cellRuns)
+	{
+		auto* hdr = (LPNMHDR)lParam;
+		if (hdr->idFrom == (UINT)GetId() && hdr->code == NM_CUSTOMDRAW)
+		{
+			auto* draw = (NMLVCUSTOMDRAW*)lParam;
+			switch (draw->nmcd.dwDrawStage)
+			{
+			case CDDS_PREPAINT:
+				return CDRF_NOTIFYITEMDRAW;
+
+			case CDDS_ITEMPREPAINT:
+				return CDRF_NOTIFYSUBITEMDRAW;
+
+			case CDDS_ITEMPREPAINT | CDDS_SUBITEM:
+			{
+				auto row = (long)draw->nmcd.dwItemSpec;
+
+				// A picked row belongs to the theme: its own text colour is what makes a
+				// selection readable, whatever the file asked the text to be
+				if (GetItemState(row, LVIS_SELECTED) & LVIS_SELECTED)
+					break;
+
+				auto runs = cellRuns(row, draw->iSubItem);
+				if (runs.empty())
+					break;
+
+				// One colour for the whole cell is something the control can do itself
+				if (runs.size() == 1)
+				{
+					if (!runs[0].ink.IsOk())
+						break;
+					draw->clrText = RGB(runs[0].ink.Red(), runs[0].ink.Green(), runs[0].ink.Blue());
+					return CDRF_NEWFONT;
+				}
+
+				// More than one: the cell is drawn here, run by run, left to right
+				RECT box{};
+				if (!ListView_GetSubItemRect(GetHwnd(), (int)row, draw->iSubItem, LVIR_LABEL, &box))
+					break;
+
+				auto* dc = (HDC)draw->nmcd.hdc;
+				auto  back = GetBkColor(dc);
+				int   x    = box.left;
+				for (const auto& one : runs)
+				{
+					auto wide = one.text.wc_str();
+					SIZE size{};
+					GetTextExtentPoint32W(dc, wide, (int)wcslen(wide), &size);
+					SetTextColor(dc, one.ink.IsOk() ? RGB(one.ink.Red(), one.ink.Green(), one.ink.Blue())
+					                                : GetTextColor(dc));
+					SetBkColor(dc, back);
+					RECT part{ x, box.top, x + size.cx + 1, box.bottom };
+					ExtTextOutW(dc, x, box.top, ETO_CLIPPED, &part, wide, (int)wcslen(wide), nullptr);
+					x += size.cx;
+				}
+				return CDRF_SKIPDEFAULT;
+			}
+			}
+		}
+	}
+
+	return wxListCtrl::MSWWindowProc(msg, wParam, lParam);
+}
+} // namespace slade
+
+// 'RRGGBB' or '#RRGGBB' as written in a TEXTCOLO or in the vocabulary's own table
+static wxColour colourFromHex(string_view hex)
+{
+	string digits;
+	for (auto c : hex)
+		if (c != '#')
+			digits += (char)toupper((unsigned char)c);
+	if (digits.size() < 6)
+		return {};
+	auto value = strtoul(digits.c_str(), nullptr, 16);
+	return wxColour((unsigned char)((value >> 16) & 0xFF), (unsigned char)((value >> 8) & 0xFF),
+	                (unsigned char)(value & 0xFF));
+}
+
+// The engine reads a colour change as one byte, 0x1C, and a LANGUAGE file writes it as the
+// two characters '\c' followed by a selector: a letter is that colour's place in
+// EColorRange, '-','+','!','*' go back to normal, and '[Name]' asks for a range by name
+// (v_drawtext.cpp:104-112, V_ParseFontColor, v_font.cpp:793-842). A selector the engine
+// doesn't know is swallowed and changes nothing, which is mirrored here. The order of the
+// names comes from the same vocabulary the preview reads, so the two can't disagree
+static std::vector<slade::LanguageCellRun> languageRuns(const string& text)
+{
+	std::vector<slade::LanguageCellRun> runs;
+	auto&                               vocab = MenuVocabulary::instance();
+	auto                                inks  = vocab.colourRanges();
+
+	wxString cur;
+	auto     flush = [&](const wxColour& ink)
+	{
+		if (!cur.empty())
+		{
+			runs.push_back({ cur, ink });
+			cur.clear();
+		}
+	};
+	wxColour ink;
+
+	// The file's bytes are UTF-8 and a colour code is ASCII, so cutting between them is safe
+	for (size_t i = 0; i < text.size(); i++)
+	{
+		if (text[i] != '\\' || i + 2 >= text.size() || text[i + 1] != 'c')
+		{
+			cur += (char)text[i];
+			continue;
+		}
+
+		flush(ink);
+		char sel = text[i + 2];
+		i += 2;
+
+		if (sel == '[')
+		{
+			string name;
+			size_t j = i + 1;
+			for (; j < text.size() && text[j] != ']'; ++j)
+				name += text[j];
+			if (j < text.size())
+				i = j;
+			auto named = colourFromHex(vocab.rangeColour(name));
+			if (named.IsOk())
+				ink = named;
+		}
+		else if (sel == '-' || sel == '+' || sel == '!' || sel == '*')
+			ink = wxColour{};
+		else if ((sel >= 'A' && sel - 'A' < (char)inks.size()) || (sel >= 'a' && sel - 'a' < (char)inks.size()))
+		{
+			auto picked = colourFromHex(vocab.rangeColour(inks[(size_t)((sel | 0x20) - 'a')]));
+			if (picked.IsOk())
+				ink = picked;
+		}
+		// anything else: swallowed with the code, colour unchanged
+	}
+	flush(ink);
+	return runs;
+}
 
 
 namespace
@@ -45,6 +228,21 @@ string fold(string_view text)
 		if (c >= 'A' && c <= 'Z')
 			c += 32;
 	return out;
+}
+
+// The colour the theme draws text in. Asked of the system rather than written as black,
+// because on a dark theme a black row is unreadable
+wxColour themeInk()
+{
+	return wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOWTEXT);
+}
+
+// A quieter version of a colour, for a cell that only holds a copy of another language's
+// text and hasn't been translated yet
+wxColour faded(const wxColour& ink)
+{
+	auto paper = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW);
+	return wxColour((ink.Red() + paper.Red()) / 2, (ink.Green() + paper.Green()) / 2, (ink.Blue() + paper.Blue()) / 2);
 }
 
 // -----------------------------------------------------------------------------
@@ -88,7 +286,37 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 	text_filter_ = new wxTextCtrl(this, wxID_ANY, "", wxDefaultPosition, { ui::scalePx(240), -1 });
 	counts_      = new wxStaticText(this, wxID_ANY, "");
 
-	list_ = new wxListCtrl(this, wxID_ANY, wxDefaultPosition, { ui::scalePx(760), ui::scalePx(400) }, wxLC_REPORT | wxLC_SINGLE_SEL);
+	list_ = new LanguageList(this, wxID_ANY, wxDefaultPosition, { ui::scalePx(760), ui::scalePx(400) },
+	                         wxLC_REPORT | wxLC_SINGLE_SEL | wxLC_VIRTUAL);
+
+	// The words a cell shows, with its colour codes taken out
+	list_->cellText = [ this ](long row, long column) -> wxString
+	{
+		if (row < 0 || row >= (long)paint_.size())
+			return {};
+		if (column == key_column)
+			return row < (long)shown_.size() ? wxString::FromUTF8(keys_[shown_[row]]) : wxString();
+		if (column > (long)paint_[row].size())
+			return {};
+		wxString text;
+		for (const auto& one : paint_[row][column - 1].runs)
+			text += one.text;
+		return text;
+	};
+
+	// What a cell looks like comes from the rows the window just built, so the control asks
+	// here instead of holding a second copy of the table
+	list_->cellRuns = [ this ](long row, long column) -> vector<LanguageCellRun>
+	{
+		if (row < 0 || row >= (long)paint_.size() || column <= key_column || column > (long)paint_[row].size())
+			return {};
+		auto cell = paint_[row][column - 1];
+		if (!cell.placeholder)
+			return cell.runs;
+		for (auto& one : cell.runs)
+			one.ink = faded(one.ink.IsOk() ? one.ink : themeInk());
+		return cell.runs;
+	};
 
 	text_key_   = new wxTextCtrl(this, wxID_ANY, "", wxDefaultPosition, { ui::scalePx(220), -1 }, wxTE_PROCESS_ENTER);
 	text_value_ =
@@ -648,17 +876,43 @@ void LanguageConstructorDialog::buildRows()
 		});
 	}
 
-	list_->DeleteAllItems();
+	paint_.clear();
+	paint_.resize(shown_.size());
+
+	// The words the file in the dropdown holds for a row are the original. The same words
+	// standing in another language's cell are a copy waiting for a translation
+	auto* home = book_.lump(primary_);
 	for (size_t row = 0; row < shown_.size(); ++row)
 	{
 		const auto& key = keys_[shown_[row]];
-		list_->InsertItem((long)row, wxString::FromUTF8(key));
+
+		string               own;
+		const LanguageEntry* from = nullptr;
+		if (home)
+			for (const auto& tag : home->languages())
+				if (auto* one = home->entry(key, tag))
+				{
+					own  = one->text();
+					from = one;
+					break;
+				}
+
+		auto& cells = paint_[row];
+		cells.resize(columns_.size());
 		for (size_t c = 0; c < columns_.size(); ++c)
 		{
 			auto* entry = cellAt(key, columns_[c]);
-			list_->SetItem((long)row, (int)c + 1, entry ? wxString::FromUTF8(entry->text()) : wxEmptyString);
+			if (!entry)
+				continue;
+
+			cells[c].runs        = languageRuns(entry->text());
+			cells[c].placeholder = entry != from && !own.empty() && entry->text() == own;
 		}
 	}
+
+	// A virtual control is told how many rows exist and asks for the ones it is about to
+	// draw. Pushing every cell into it up front was most of what a refill cost
+	list_->SetItemCount((int)shown_.size());
 
 	if (!selected.empty())
 	{

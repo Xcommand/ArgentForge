@@ -4,12 +4,34 @@
 
 #include "UI/Dialogs/LanguageConstructor/LanguageDef.h"
 
+#include <wx/colour.h>
+
 class wxButton;
 class wxChoice;
-class wxListCtrl;
 class wxListEvent;
 class wxStaticText;
 class wxTextCtrl;
+
+namespace slade
+{
+class LanguageList;
+
+// One piece of a cell: the text with its colour codes taken out, and the colour the code
+// asked for. An invalid colour is the theme's own
+struct LanguageCellRun
+{
+	wxString text;
+	wxColour ink;
+};
+
+// One cell as it is drawn: the runs of text with their colours, and whether the text is
+// only a copy of another language's rather than a translation
+struct LanguageCellPaint
+{
+	std::vector<LanguageCellRun> runs;
+	bool                         placeholder = false;
+};
+}
 
 namespace slade
 {
@@ -184,7 +206,7 @@ private:
 	void onCloseWindow(wxCloseEvent& e);
 
 	wxTextCtrl* text_filter_ = nullptr;
-	wxListCtrl* list_        = nullptr;
+	LanguageList* list_        = nullptr;
 	wxTextCtrl* text_key_    = nullptr;
 	wxTextCtrl* text_value_  = nullptr;
 	wxButton*   btn_add_     = nullptr;
@@ -201,6 +223,10 @@ private:
 	wxTextCtrl* edit_cell_ = nullptr;
 	long        edit_row_  = -1;
 	long        edit_col_  = -1;
+
+	// What each visible cell is made of, rebuilt with the rows: the runs to draw, and
+	// whether that text is only a copy of another language's
+	std::vector<std::vector<LanguageCellPaint>> paint_;
 
 	// Every LANGUAGE lump of the archive, read in the order the engine loads them
 	LanguageBook book_;
