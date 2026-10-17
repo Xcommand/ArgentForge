@@ -103,6 +103,12 @@ private:
 	void editCell(long row, long column);
 	void endCellEdit(bool keep);
 
+	// Which cell a click landed on, since the activation notice doesn't say
+	long columnFor(wxListEvent& e) const;
+
+	// Where the mouse last was over the table
+	wxPoint hover_{ -1, -1 };
+
 	// Adds the key and text in the bottom fields to the language the button names
 	void addFromFields();
 

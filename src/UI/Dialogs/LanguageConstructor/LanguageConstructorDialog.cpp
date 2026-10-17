@@ -127,6 +127,15 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 
 	text_filter_->Bind(wxEVT_TEXT, &LanguageConstructorDialog::onFilterChanged, this);
 	list_->Bind(wxEVT_LIST_ITEM_ACTIVATED, &LanguageConstructorDialog::onItemActivated, this);
+	// The activation notice doesn't carry the column, so remember where the mouse last was
+	// over the table
+	list_->Bind(
+		wxEVT_MOTION,
+		[ this ](wxMouseEvent& e)
+		{
+			hover_ = e.GetPosition();
+			e.Skip();
+		});
 	list_->Bind(wxEVT_LIST_ITEM_SELECTED, &LanguageConstructorDialog::onItemSelected, this);
 	list_->Bind(wxEVT_LIST_COL_CLICK, &LanguageConstructorDialog::onColClicked, this);
 	btn_add_->Bind(wxEVT_BUTTON, &LanguageConstructorDialog::onBtnAdd, this);
@@ -1032,7 +1041,34 @@ void LanguageConstructorDialog::onBtnAdditional(wxCommandEvent& e)
 
 void LanguageConstructorDialog::onItemActivated(wxListEvent& e)
 {
-	editCell(e.GetIndex(), e.GetColumn());
+	editCell(e.GetIndex(), columnFor(e));
+}
+
+// -----------------------------------------------------------------------------
+// Which cell he double-clicked. Windows names the row in the activation notice and leaves
+// the column at zero, which is the 'String' column, so a double-click anywhere opened
+// nothing at all. The mouse's own place answers it: where it last moved over the table,
+// measured across the column widths and the horizontal scroll
+// -----------------------------------------------------------------------------
+long LanguageConstructorDialog::columnFor(wxListEvent& e) const
+{
+	if (e.GetColumn() > key_column)
+		return e.GetColumn();
+
+	int x = hover_.x >= 0 ? hover_.x : e.GetPoint().x;
+	x -= list_->GetScrollPos(wxHORIZONTAL);
+
+	// The key column first, then one data column at a time, walking the widths the header
+	// shows. Past the last one the answer is the last column, not nothing
+	long column = key_column + 1;
+	for (int i = 0; i < (int)list_->GetColumnCount(); ++i)
+	{
+		x -= list_->GetColumnWidth(i);
+		if (x < 0)
+			return i <= key_column ? key_column + 1 : (long)i;
+		column = i;
+	}
+	return column;
 }
 
 void LanguageConstructorDialog::onItemSelected(wxListEvent& e)
