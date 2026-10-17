@@ -130,26 +130,14 @@ TextEntryPanel::TextEntryPanel(wxWindow* parent) : EntryPanel(parent, "text")
 
 	// Add 'Constructor' button next to the save/revert buttons. It's its own
 	// group because the Entry group is greyed out until the entry is modified
-	auto group_constructor = new SToolBarGroup(toolbar_, "Constructors");
-	group_constructor->addActionButton(
-		"ptxt_actorconstructor",
-		"Constructor",
-		"things",
-		"Edit the actor the cursor is in without typing the definition out",
-		true);
-	group_constructor->addActionButton(
-		"ptxt_menuconstructor",
-		"Menu Constructor",
-		"properties",
-		"Edit menus in this lump without typing them out",
-		true);
-	group_constructor->addActionButton(
-		"ptxt_languageconstructor",
-		"Language Constructor",
-		"properties",
-		"Edit this lump's LANGUAGE strings as a table of keys by language",
-		true);
-	toolbar_->addGroup(group_constructor);
+	group_constructors_ = new SToolBarGroup(toolbar_, "Constructors");
+	tool_actor_         = group_constructors_->addActionButton("ptxt_actorconstructor", "Constructor", "things",
+	                                                          "Edit the actor the cursor is in without typing the definition out", true);
+	tool_menu_   = group_constructors_->addActionButton("ptxt_menuconstructor", "Menu Constructor", "properties",
+	                                                  "Edit menus in this lump without typing them out", true);
+	tool_language_ = group_constructors_->addActionButton("ptxt_languageconstructor", "Language Constructor", "properties",
+	                                                      "Edit this lump's LANGUAGE strings as a table of keys by language", true);
+	toolbar_->addGroup(group_constructors_);
 
 	// Add 'Text Language' choice to toolbar
 	auto group_language = new SToolBarGroup(toolbar_, "Text Language", true);
@@ -290,6 +278,7 @@ bool TextEntryPanel::loadEntry(ArchiveEntry* entry)
 	loading_entry_ = false;
 	updateActorConstructor();
 	updateMenuConstructor();
+	updateConstructorTools();
 
 	return true;
 }
@@ -789,6 +778,7 @@ void TextEntryPanel::setTextLanguage(TextLanguage* language)
 	{
 		choice_text_language_->Select(0);
 		updateSpritePreview();
+		updateConstructorTools();
 		return;
 	}
 
@@ -802,6 +792,7 @@ void TextEntryPanel::setTextLanguage(TextLanguage* language)
 	}
 
 	updateSpritePreview();
+	updateConstructorTools();
 }
 
 // -----------------------------------------------------------------------------
@@ -1482,6 +1473,32 @@ bool TextEntryPanel::isLanguageLump() const
 {
 	auto entry = entry_.lock();
 	return entry && strutil::equalCI(entry->nameNoExt(), "language");
+}
+
+// -----------------------------------------------------------------------------
+// A constructor button is an offer to edit the file that is on screen. Three of them over
+// a texture made the toolbar a wall of dead ends, so each shows only where it has work:
+// the actor's for DECORATE and ZScript, the menu's for MENUDEF, the language's for a
+// LANGUAGE lump. Called from outside a file, all three are still under Tools
+// -----------------------------------------------------------------------------
+void TextEntryPanel::updateConstructorTools()
+{
+	if (!tool_actor_)
+		return;
+
+	ActorFormat format;
+	bool        actor    = actorFormat(text_area_->language(), format);
+	bool        menu     = isMenuDefLump();
+	bool        language = isLanguageLump();
+
+	tool_actor_->Show(actor);
+	tool_menu_->Show(menu);
+	tool_language_->Show(language);
+
+	// A group with nothing in it is two lines and a gap across the toolbar
+	group_constructors_->Show(actor || menu || language);
+
+	toolbar_->Layout();
 }
 
 // -----------------------------------------------------------------------------

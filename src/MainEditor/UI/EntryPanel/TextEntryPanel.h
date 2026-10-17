@@ -14,6 +14,8 @@ struct NewActorSpec;
 class TextEditorCtrl;
 class TextLanguage;
 class FindReplacePanel;
+class SToolBarButton;
+class SToolBarGroup;
 
 class TextEntryPanel : public EntryPanel
 {
@@ -46,6 +48,13 @@ private:
 	FindReplacePanel* panel_fr_             = nullptr;
 	wxChoice*         choice_text_language_ = nullptr;
 	wxChoice*         choice_jump_to_       = nullptr;
+
+	// The three constructor buttons. Only the ones that can take the lump on screen are
+	// shown, so which of them is there says what this file is
+	SToolBarGroup*  group_constructors_ = nullptr;
+	SToolBarButton* tool_actor_         = nullptr;
+	SToolBarButton* tool_menu_          = nullptr;
+	SToolBarButton* tool_language_      = nullptr;
 
 	// Opens the actor constructor for the definition the cursor is on
 	void openActorConstructor();
@@ -93,6 +102,9 @@ private:
 
 	// Whether this lump is one the engine reads as LANGUAGE, whatever it's named on disk
 	bool isLanguageLump() const;
+
+	// Which constructor buttons the lump on screen earns
+	void updateConstructorTools();
 
 	// Points the menu constructor at whatever lump just came into the panel
 	void updateMenuConstructor();
