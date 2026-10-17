@@ -31,6 +31,7 @@
 #include "Utility/StringUtils.h"
 
 #include <wx/bitmap.h>
+#include <wx/checkbox.h>
 #include <wx/clipbrd.h>
 #include <wx/dataobj.h>
 #include <wx/mstream.h>
@@ -42,6 +43,8 @@
 #include <wx/msgdlg.h>
 #include <wx/panel.h>
 #include <wx/radiobut.h>
+#include <wx/stattext.h>
+#include <wx/textdlg.h>
 #include <wx/propgrid/advprops.h>
 #include <wx/propgrid/propgrid.h>
 #include <wx/sizer.h>
@@ -304,19 +307,18 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 	block_row->Add(block_down_, 0);
 	auto menus_sizer = new wxBoxSizer(wxVERTICAL);
 	// Above the blocks, where his eye starts: which of the mod's LANGUAGE files the menu's
-	// $keys are read from. An archive with none has nothing to choose, so the row hides
+	// $keys are read from, and which files also get a copy of anything new. An archive with
+	// none has nothing to choose, so the row hides
 	choice_language_ = new wxChoice(panel_menus_, wxID_ANY, wxDefaultPosition, wxSize(ui::scalePx(200), -1));
-	choice_language_->Bind(
-		wxEVT_CHOICE,
-		[ this ](wxCommandEvent&)
-		{
-			auto at     = choice_language_->GetSelection();
-			language_lump_ = at == wxNOT_FOUND ? string() : string(choice_language_->GetString(at).utf8_str());
-			readArchiveLanguage();
-			if (preview_) updatePreviewWindow();
-		});
+	choice_language_->Bind(wxEVT_CHOICE, [ this ](wxCommandEvent&) { languageChosen(); });
+	btn_language_extra_ = new wxButton(panel_menus_, wxID_ANY, wxS("Additional"));
+	btn_language_extra_->SetToolTip(wxS("Files that also get a new string, as a placeholder"));
+	btn_language_extra_->Bind(
+		wxEVT_BUTTON,
+		[ this ](wxCommandEvent&) { chooseAdditionalLanguages(); });
 	auto lang_row = new wxBoxSizer(wxHORIZONTAL);
 	lang_row->Add(choice_language_, 1, wxBOTTOM, ui::pad());
+	lang_row->Add(btn_language_extra_, 0, wxLEFT | wxBOTTOM, ui::pad());
 	menus_sizer->Add(lang_row, 0, wxEXPAND);
 	menus_sizer->Add(list_menus_, 1, wxEXPAND | wxBOTTOM, ui::pad());
 	menus_sizer->Add(block_row, 0, wxEXPAND);
@@ -800,13 +802,92 @@ void MenuConstructorDialog::buildLanguageChoices()
   for (auto& one : languageEntries(archive_))
   { language_files_.push_back(one.first);
     choice_language_->Append(wxString::FromUTF8(one.first)); }
-  choice_language_->Show(!language_files_.empty());
-  if (language_files_.empty()) language_lump_.clear();
+  // The two rows under a separator, so a scroll can't land on them by accident: the first
+  // is nothing, the second makes a new file
+  language_row_ = (int)language_files_.size();
+  choice_language_->Append(wxS("----------------------------"));
+  choice_language_->Append(wxS("Add new language"));
+  bool any = !language_files_.empty();
+  choice_language_->Show(any);
+  btn_language_extra_->Show(any);
+  if (!any) language_lump_.clear();
   else if (!language_lump_.empty()
            && std::find(language_files_.begin(), language_files_.end(), language_lump_) == language_files_.end())
     language_lump_.clear();
   if (!language_lump_.empty()) choice_language_->SetStringSelection(wxString::FromUTF8(language_lump_));
+  else choice_language_->SetSelection(0);
+  btn_language_extra_->SetLabel(
+      language_extra_.empty() ? wxString("Additional")
+                              : wxString::Format(wxS("Additional (%d)"), (int)language_extra_.size()));
   panel_menus_->Layout(); }
+
+// The dropdown answers for itself: a file becomes the one the preview reads and the one a
+// new $KEY is written into
+void MenuConstructorDialog::languageChosen()
+{ auto at = choice_language_->GetSelection();
+  if (at == wxNOT_FOUND) return;
+  string picked = string(choice_language_->GetString(at).utf8_str());
+
+  if (picked == "Add new language")
+  { newLanguageFile(); return; }
+
+  // The separator and anything past it isn't a file: put the pick back where it was
+  if (at >= language_row_)
+  { choice_language_->SetStringSelection(wxString::FromUTF8(language_lump_)); return; }
+
+  language_lump_ = picked;
+  language_extra_.erase(std::remove(language_extra_.begin(), language_extra_.end(), language_lump_), language_extra_.end());
+  readArchiveLanguage();
+  btn_language_extra_->SetLabel(
+      language_extra_.empty() ? wxString("Additional")
+                              : wxString::Format(wxS("Additional (%d)"), (int)language_extra_.size()));
+  if (preview_) updatePreviewWindow(); }
+
+// The files that also get a copy of a new string, as a placeholder under their own language
+void MenuConstructorDialog::chooseAdditionalLanguages()
+{ wxDialog pick(this, wxID_ANY, wxS("Additional languages"), wxDefaultPosition, wxDefaultSize, wxDEFAULT_DIALOG_STYLE);
+  auto     sizer = new wxBoxSizer(wxVERTICAL);
+
+  std::vector<std::pair<string, wxCheckBox*>> boxes;
+  for (const auto& name : language_files_)
+  { if (name == language_lump_) continue;
+    auto* box = new wxCheckBox(&pick, wxID_ANY, wxString::FromUTF8(name));
+    box->SetValue(std::find(language_extra_.begin(), language_extra_.end(), name) != language_extra_.end());
+    boxes.emplace_back(name, box);
+    sizer->Add(box, 0, wxALL, ui::pad()); }
+
+  sizer->Add(new wxStaticText(&pick, wxID_ANY,
+           wxS("Choose lumps to duplicate translation to as 'placeholder'")), 0, wxLEFT | wxRIGHT | wxTOP, ui::pad());
+  sizer->Add(new wxButton(&pick, wxID_OK, wxS("Done")), 0, wxALIGN_RIGHT | wxALL, ui::pad());
+  pick.SetSizerAndFit(sizer);
+  if (pick.ShowModal() != wxID_OK) return;
+
+  language_extra_.clear();
+  for (auto& one : boxes)
+      if (one.second->GetValue()) language_extra_.push_back(one.first);
+  btn_language_extra_->SetLabel(
+      language_extra_.empty() ? wxString("Additional")
+                              : wxString::Format(wxS("Additional (%d)"), (int)language_extra_.size())); }
+
+// A new language file, named by him, made by the panel: it owns the archive
+void MenuConstructorDialog::newLanguageFile()
+{ wxTextEntryDialog ask(this, wxS("Two or three letters, the way the engine names them: ru, es-MX, en-GB"),
+                         wxS("New language"));
+  if (ask.ShowModal() != wxID_OK)
+  { choice_language_->SetStringSelection(wxString::FromUTF8(language_lump_)); return; }
+
+  string code = strutil::lower(strutil::trim(string(ask.GetValue().utf8_str())));
+  if (code.empty() || !language_create_)
+  { choice_language_->SetStringSelection(wxString::FromUTF8(language_lump_)); return; }
+
+  string id;
+  if (!language_create_(code, id) || id.empty())
+  { choice_language_->SetStringSelection(wxString::FromUTF8(language_lump_)); return; }
+
+  language_lump_ = id;
+  buildLanguageChoices();
+  readArchiveLanguage();
+  if (preview_) updatePreviewWindow(); }
 
 // One file's own language, put over the merged table last. The reader the Language
 // Constructor uses knows which [lang] a line sits under, which is the one thing the merge
@@ -830,6 +911,37 @@ void MenuConstructorDialog::applyChosenLanguage()
   string tag   = langs.empty() ? string() : langs[0];
   for (auto* entry : src.strings(tag))
       if (entry && entry->parsed) mod_language_["$" + entry->label] = entry->text(); }
+
+// A key the archive doesn't have yet, written into the file the dropdown names and into the
+// Additional files as a placeholder. Their own text is what stands in the menu line, so the
+// new label isn't born empty. The panel does the writing; this only decides where
+void MenuConstructorDialog::createLanguageKey(string_view key, string_view text)
+{ if (key.empty() || text.empty() || language_lump_.empty() || !language_apply_ || !archive_) return;
+  if (mod_language_.count("$" + string(key))) return;
+
+  auto files = languageEntries(archive_);
+  auto write = [&](const string& id)
+  {
+   auto found = std::find_if(files.begin(), files.end(), [&](const auto& one) { return one.first == id; });
+   if (found == files.end()) return false;
+   auto& data = found->second->data();
+   string raw((const char*)data.data(), data.size());
+   LanguageSource src;
+   if (!src.load(raw)) return false;
+   auto   langs = src.languages();
+   string tag   = langs.empty() ? string() : langs[0];
+   if (src.entry(key, tag) || !src.addString(key, tag, text)) return false;
+   return language_apply_(id, src.serialize());
+  };
+
+  bool made = write(language_lump_);
+  for (const auto& extra : language_extra_)
+      write(extra);
+  if (!made) return;
+
+  // The preview and the completion list read the same map, so both have to hear about it
+  readArchiveLanguage();
+  if (preview_) updatePreviewWindow(); }
 
 // One row of the spreadsheet form. Quotes hide commas, and a doubled quote inside a quoted field
 // is an escaped one
@@ -1291,7 +1403,12 @@ void MenuConstructorDialog::onGridChanged(wxPropertyGridEvent& e)
   auto data = prop->GetName().utf8_string(); string typed = strutil::trim(e.GetValue().GetString().utf8_string());
   if (data == "value") { if (typed.empty() || typed == st->word) { buildGrid(wxString::FromUTF8(data)); return; }
     st->word = typed; st->edited = true; }
-  else if (data == "text") { if (st->args.empty() || typed.empty() || !st->setArg(0, quoteAs(st->args[0].value, typed))) { buildGrid(wxString::FromUTF8(data)); return; } }
+  else if (data == "text") { auto was = st->args.empty() ? string() : st->args[0].value;
+    if (st->args.empty() || typed.empty() || !st->setArg(0, quoteAs(st->args[0].value, typed))) { buildGrid(wxString::FromUTF8(data)); return; }
+    // A '$KEY' the mod doesn't declare yet is a label being named, not a typo: the text that
+    // stood in the field becomes its value, in the file the dropdown names
+    if (typed.size() > 1 && typed.front() == '$' && !mod_language_.count(typed))
+        createLanguageKey(typed.substr(1), was); }
   else if (data == "tooltip") {
       // The third value field. Edit it if the row already has one; add it if the row has a text
       // but no tooltip yet; refuse if there's no text to sit behind

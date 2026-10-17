@@ -5,6 +5,8 @@
 #include <wx/timer.h>
 #include <wx/treectrl.h>
 
+#include <functional>
+
 #include "UI/Dialogs/MenuConstructor/MenuPreview.h"
 
 class wxPropertyGrid;
@@ -117,6 +119,11 @@ public:
 	// The exact text this window was given. The panel compares it with what the editor
 	// holds now before letting a rewrite through
 	string_view sourceText() const { return source_.originalText(); }
+
+	// The LANGUAGE side of this window: the panel is the only thing that can write a lump
+	// or add one to the archive, so the window asks rather than does
+	void setLanguageApply(std::function<bool(string_view lump, string_view text)> fn) { language_apply_ = std::move(fn); }
+	void setLanguageCreate(std::function<bool(string_view code, string& id)> fn) { language_create_ = std::move(fn); }
 
 private:
 	// Which statements a tree item stands for: indices walked down through any
@@ -451,9 +458,20 @@ private:
 	// the menu is being written in rather than whichever file the walk happened to reach last
 	std::vector<string>            language_files_;
 	string                         language_lump_;
+	// Files that also receive a new $KEY, as a placeholder under their own language
+	std::vector<string>            language_extra_;
 	wxChoice*                      choice_language_ = nullptr;
+	wxButton*                      btn_language_extra_ = nullptr;
+	int                            language_row_ = 0;
 	void                           buildLanguageChoices();
 	void                           applyChosenLanguage();
+	void                           languageChosen();
+	void                           chooseAdditionalLanguages();
+	void                           newLanguageFile();
+	void                           createLanguageKey(string_view key, string_view text);
+	// The panel writes LANGUAGE files, not this window: it owns the editor and the archive
+	std::function<bool(string_view lump, string_view text)> language_apply_;
+	std::function<bool(string_view code, string& id)>       language_create_;
 	// One pass of what the game does with a label; resolveLanguageKey runs it the twice the engine does
 	string localizeOnce(string_view text) const;
 	string            resolveLanguageKey(string_view text) const;

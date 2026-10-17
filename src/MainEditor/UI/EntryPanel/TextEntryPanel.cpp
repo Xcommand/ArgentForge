@@ -1013,6 +1013,24 @@ void TextEntryPanel::openMenuConstructor()
 					resyncMenuConstructor();
 				e.Skip();
 			});
+
+		// A new $KEY typed into a menu line is written into a LANGUAGE file, and this panel is
+		// the only thing that can touch the archive. The map a write is checked against is
+		// rebuilt first, so a file added since the window opened still takes the text
+		menu_constructor_->setLanguageApply(
+			[this](string_view lump, string_view text)
+			{
+				languageLumps();
+				return applyLanguageText(lump, text);
+			});
+		menu_constructor_->setLanguageCreate(
+			[this](string_view code, string& id)
+			{
+				if (!createLanguageLump(code, id))
+					return false;
+				languageLumps();
+				return true;
+			});
 	}
 
 	if (auto entry = entry_.lock())
