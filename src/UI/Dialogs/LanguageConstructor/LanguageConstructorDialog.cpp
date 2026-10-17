@@ -1261,20 +1261,41 @@ void LanguageConstructorDialog::editCell(long row, long column)
 	if (column <= key_column || column > (long)columns_.size())
 		return;
 
+	// The click named its cell by numbers. Between then and here the table can have been
+	// rebuilt from under it: the commit below, a sort, or the file switch that picking a row
+	// written in another file causes. So the cell is remembered by what it holds
+	auto   clicked = string(keyAt(row));
+	auto   index   = columnIndex(column);
+	string lump    = index >= 0 ? columns_[index].lump : string();
+
 	// What a menu or a paste put into the field is only in the file once the field closes,
 	// and a field doesn't always hear about closing: after a popup or a picker the keys can
 	// be somewhere else already. So the cell being left is written here, before a new one
 	// opens over it
-	auto clicked = string(keyAt(row));
 	if (edit_row_ >= 0 && (edit_row_ != row || edit_col_ != column))
-	{
 		endCellEdit(true);
 
-		// Writing can re-order the rows under a sort, and the click named its row by number
-		if (clicked != keyAt(row))
-			row = rowForKey(clicked);
+	if (clicked.empty() || clicked != keyAt(row))
+	{
+		row = rowForKey(clicked);
 		if (row < 0)
 			return;
+	}
+	// The same for the column: it belongs to a file, and which files are in view can have
+	// changed under the click
+	index = columnIndex(column);
+	if (!lump.empty() && (index < 0 || columns_[index].lump != lump))
+	{
+		long found = -1;
+		for (size_t i = 0; i < columns_.size(); ++i)
+			if (columns_[i].lump == lump)
+			{
+				found = (long)i + 1;
+				break;
+			}
+		if (found < 0)
+			return;
+		column = found;
 	}
 
 	auto* entry = cellEntry(row, column);
