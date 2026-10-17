@@ -834,6 +834,10 @@ void LanguageConstructorDialog::chooseAdditional()
 			if (box->IsChecked())
 				additional_.push_back(name);
 	}
+	// The picks decide which columns exist, so the table is rebuilt here rather than on the
+	// next thing he happens to edit
+	buildColumns();
+	buildRows();
 	buildLumpChoices();
 }
 
@@ -847,11 +851,21 @@ void LanguageConstructorDialog::buildColumns()
 {
 	languages_ = book_.languages();
 
+	// A column is a file he asked to see: the one in the dropdown, plus the ones ticked in
+	// Additional. Until he ticks something, the archive's other files stay out of the way
+	vector<string> shown_files;
+	if (book_.has(primary_))
+		shown_files.push_back(primary_);
+	for (const auto& one : additional_)
+		if (one != primary_ && book_.has(one))
+			shown_files.push_back(one);
+	if (shown_files.empty())
+		shown_files = book_.lumpNames();
+
 	columns_.clear();
-	auto files = book_.lumpNames();
-	for (size_t l = 0; l < files.size(); ++l)
+	for (const auto& name : shown_files)
 	{
-		auto* lump = book_.lump(files[l]);
+		auto* lump = book_.lump(name);
 		if (!lump)
 			continue;
 
@@ -861,14 +875,14 @@ void LanguageConstructorDialog::buildColumns()
 			bool found = false;
 			for (auto& column : columns_)
 			{
-				if (column.group != group || column.lump != files[l])
+				if (column.group != group || column.lump != name)
 					continue;
 				column.tags.push_back(tag);
 				found = true;
 				break;
 			}
 			if (!found)
-				columns_.push_back({ group, "", { tag }, files[l] });
+				columns_.push_back({ group, "", { tag }, name });
 		}
 	}
 
@@ -1140,6 +1154,12 @@ void LanguageConstructorDialog::buildRows()
 	// from picking a colour would otherwise drop him at the first string and make him hunt
 	// for his place again
 	list_->scrollBy(hpos - list_->GetScrollPos(wxHORIZONTAL), vpos - list_->GetScrollPos(wxVERTICAL));
+
+	// The control doesn't repaint what it thinks it already drew, and a refill changes the
+	// colour of cells it had drawn in the theme's own: without this the new colour only
+	// appeared on the rows the mouse happened to move over
+	list_->Refresh();
+	list_->Update();
 
 	if (counts_)
 		counts_->SetLabel(wxString::Format(
@@ -1519,6 +1539,9 @@ void LanguageConstructorDialog::onLumpChosen(wxCommandEvent& e)
 		}
 	}
 	nameAddButton();
+	// The file in the dropdown is the first column, so the table follows the pick
+	buildColumns();
+	buildRows();
 	buildLumpChoices();
 }
 
