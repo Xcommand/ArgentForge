@@ -1168,19 +1168,48 @@ void LanguageConstructorDialog::editCell(long row, long column)
 		// Clicking away means the same as Enter: what's typed is what he wanted. Only
 		// Escape takes it back. A menu or the colour picker is not 'away': they take the
 		// focus to give it straight back, and committing there would close the cell before
-		// the choice it was asked for even exists
+		// the choice it was asked for even exists. The first loss of a field that has only
+		// just opened is the same kind of lie: it is the click's own aftermath taking the
+		// keys back, so ask for them once and only then believe he left
 		edit_cell_->Bind(
 			wxEVT_KILL_FOCUS,
 			[this](wxFocusEvent& e)
 			{
+				string took;
+				if (auto* now = wxWindow::FindFocus())
+				{
+					wxWindow* top = now;
+					while (top->GetParent())
+						top = top->GetParent();
+
+					auto* frame = wxDynamicCast(top, wxTopLevelWindow);
+					string title = frame ? string(frame->GetTitle().utf8_str()) : string("<no window>");
+					took         = string(wxString(now->GetClassInfo()->GetClassName()).utf8_str()) + " in '" + title + "'";
+				}
+
 				clickLog("cell field lost the keys row=" + std::to_string(edit_row_) + " col="
 				         + std::to_string(edit_col_) + " held=" + std::to_string(keep_edit_open_)
-				         + " opening=" + std::to_string(edit_opening_));
+				         + " opening=" + std::to_string(edit_opening_) + " fresh=" + std::to_string(edit_fresh_)
+				         + " to=" + (took.empty() ? string("<none>") : took));
+
 				if (keep_edit_open_)
 				{
 					e.Skip();
 					return;
 				}
+
+				if (edit_fresh_)
+				{
+					edit_fresh_ = false;
+					CallAfter([ this ]
+						{
+							if (edit_cell_ && edit_row_ >= 0)
+								edit_cell_->SetFocus();
+						});
+					e.Skip();
+					return;
+				}
+
 				endCellEdit(true);
 				e.Skip();
 			});
@@ -1218,6 +1247,7 @@ void LanguageConstructorDialog::editCell(long row, long column)
 	         " shown=" + std::to_string(edit_cell_->IsShown()) + " focus="
 	         + std::to_string(wxWindow::FindFocus() == edit_cell_));
 	edit_opening_ = false;
+	edit_fresh_   = true;
 }
 
 // -----------------------------------------------------------------------------

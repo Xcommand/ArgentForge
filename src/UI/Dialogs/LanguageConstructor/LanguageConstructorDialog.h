@@ -218,6 +218,10 @@ private:
 	// takes the keys with it
 	bool edit_opening_ = false;
 
+	// True from the moment the field opens until it has survived one focus loss. The click
+	// that opened it takes the keys back as it finishes, and that is not him clicking away
+	bool edit_fresh_ = false;
+
 	// What each visible cell is made of, rebuilt with the rows: the runs to draw, and
 	// whether that text is only a copy of another language's
 	std::vector<std::vector<LanguageCellPaint>> paint_;
