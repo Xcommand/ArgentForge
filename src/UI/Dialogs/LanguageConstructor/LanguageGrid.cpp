@@ -524,19 +524,12 @@ void LanguageGrid::onMotion(wxMouseEvent& e)
 // answers its own right button can't count on that notice arriving, so the release is the
 // backstop: whichever of the two comes first shows it and the other one is already done
 // -----------------------------------------------------------------------------
-void LanguageGrid::showCellMenu(wxPoint where, const char* came_from)
+void LanguageGrid::showCellMenu(wxPoint where)
 {
 	rmb_shown_ = true;
 
 	long row = 0, column = 0;
-	bool hit = cellAt(where, row, column);
-
-	if (receipt)
-		receipt(string("rmb ") + came_from + " at " + std::to_string(where.x) + "," + std::to_string(where.y)
-		        + " head=" + std::to_string(head_h_) + " hit=" + std::to_string(hit ? 1 : 0) + " row="
-		        + std::to_string(row) + " col=" + std::to_string(column));
-
-	if (!hit)
+	if (!cellAt(where, row, column))
 		return;
 
 	select(row, column, false);
@@ -554,14 +547,14 @@ void LanguageGrid::onRightDown(wxMouseEvent& e)
 void LanguageGrid::onRightUp(wxMouseEvent& e)
 {
 	if (!rmb_shown_)
-		showCellMenu(e.GetPosition(), "up");
+		showCellMenu(e.GetPosition());
 	e.Skip();
 }
 
 void LanguageGrid::onContextMenu(wxContextMenuEvent& e)
 {
 	if (!rmb_shown_)
-		showCellMenu(ScreenToClient(e.GetPosition()), "menu");
+		showCellMenu(ScreenToClient(e.GetPosition()));
 }
 
 void LanguageGrid::onChar(wxKeyEvent& e)

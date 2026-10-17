@@ -53,10 +53,6 @@ public:
 	// So a field sitting over a cell can follow it when the table moves
 	std::function<void()> scrolled;
 
-	// Temporary: what the table's own hit tests decided, for the round in which the right
-	// button and a column border are being settled. Gone with the rest of the receipts
-	std::function<void(const std::string&)> receipt;
-
 	explicit LanguageGrid(wxWindow* parent, wxWindowID id = wxID_ANY, const wxSize& size = wxDefaultSize);
 
 	// The header titles. Widths a column already had are kept when the count is the same,
@@ -146,7 +142,7 @@ private:
 	void onScroll(wxScrollWinEvent& e);
 
 	// The cell menu, from whichever of the two notices got here first
-	void showCellMenu(wxPoint where, const char* came_from);
+	void showCellMenu(wxPoint where);
 
 	// Which column a point of the header belongs to, and whether it is on a divider
 	long headerColumnAt(int x) const;

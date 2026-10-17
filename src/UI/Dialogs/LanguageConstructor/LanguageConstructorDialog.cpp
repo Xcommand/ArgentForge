@@ -27,7 +27,6 @@
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
 
-#include <fstream>
 #include <cstdlib>
 
 using namespace slade;
@@ -36,9 +35,6 @@ using namespace slade;
 // the file already being worked in. Set under Preferences > Extra Features
 CVAR(Int, lngc_new_language_style, 0, CVar::Flag::Save)
 
-
-// Temporary: what a click and a cell paint decided. Gone once both answers are in
-static void clickLog(const string& line);
 
 
 // 'RRGGBB' or '#RRGGBB' as written in a TEXTCOLO or in the vocabulary's own table
@@ -121,18 +117,6 @@ static std::vector<slade::LanguageCellRun> languageRuns(const string& text)
 	}
 	flush(ink);
 	return runs;
-}
-
-// Temporary: what a click decided and why. Gone as soon as the single-click answer is in
-static void clickLog(const string& line)
-{
-	// The off-screen harness sets this so its own runs don't land in his log. Read through
-	// Win32 rather than getenv: the CRT keeps its own copy of the environment, and the
-	// harness sets the variable after that copy was made
-	if (::GetEnvironmentVariableA("SLADE_HEADLESS", nullptr, 0) > 0)
-		return;
-	std::ofstream f("H:/rttools/af_langclick.log", std::ios::app);
-	f << line << "\n";
 }
 
 // The colour a value begins with, which is what the picker opens on
@@ -347,8 +331,6 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 	// it just got, and a focus loss is what closes a cell
 	grid_->cellClicked = [ this ](long row, long column)
 	{
-		clickLog("click row=" + std::to_string(row) + " col=" + std::to_string(column) + " of "
-		         + std::to_string(columns_.size()));
 		if (column == key_column)
 			return;
 		edit_opening_ = true;
@@ -363,10 +345,6 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 	// A field sitting over a cell goes with it when the table moves
 	grid_->scrolled = [ this ]
 	{ placeCellEditor(); };
-
-	// Temporary: what the table's own hit tests said about a right button
-	grid_->receipt = [ this ](const string& line)
-	{ clickLog(line); };
 
 	// Picking a row names the language the Add button writes into, and asks the editor to
 	// show where that string is written. The keyboard stays here: the editor is told, never
@@ -390,10 +368,7 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 		// looking at that line in the editor: the editor's window would take the keys from
 		// the field a moment later
 		if (edit_opening_)
-		{
-			clickLog("jump skipped, a cell is opening row=" + std::to_string(row));
 			return;
-		}
 
 		size_t offset = 0;
 		string lump;
@@ -1146,11 +1121,7 @@ void LanguageConstructorDialog::sortByColumn(long column)
 void LanguageConstructorDialog::editCell(long row, long column)
 {
 	if (column <= key_column || column > (long)columns_.size())
-	{
-		clickLog("refused row=" + std::to_string(row) + " col=" + std::to_string(column) +
-		         " of " + std::to_string(columns_.size()));
 		return;
-	}
 
 	auto* entry = cellEntry(row, column);
 	if (!edit_cell_)
@@ -1176,23 +1147,6 @@ void LanguageConstructorDialog::editCell(long row, long column)
 			wxEVT_KILL_FOCUS,
 			[this](wxFocusEvent& e)
 			{
-				string took;
-				if (auto* now = wxWindow::FindFocus())
-				{
-					wxWindow* top = now;
-					while (top->GetParent())
-						top = top->GetParent();
-
-					auto* frame = wxDynamicCast(top, wxTopLevelWindow);
-					string title = frame ? string(frame->GetTitle().utf8_str()) : string("<no window>");
-					took         = string(wxString(now->GetClassInfo()->GetClassName()).utf8_str()) + " in '" + title + "'";
-				}
-
-				clickLog("cell field lost the keys row=" + std::to_string(edit_row_) + " col="
-				         + std::to_string(edit_col_) + " held=" + std::to_string(keep_edit_open_)
-				         + " opening=" + std::to_string(edit_opening_) + " fresh=" + std::to_string(edit_fresh_)
-				         + " to=" + (took.empty() ? string("<none>") : took));
-
 				if (keep_edit_open_)
 				{
 					e.Skip();
@@ -1247,9 +1201,6 @@ void LanguageConstructorDialog::editCell(long row, long column)
 					edit_cell_->SetFocus();
 			});
 
-	clickLog("opened row=" + std::to_string(row) + " col=" + std::to_string(column) +
-	         " shown=" + std::to_string(edit_cell_->IsShown()) + " focus="
-	         + std::to_string(wxWindow::FindFocus() == edit_cell_));
 	edit_opening_ = false;
 	edit_fresh_   = true;
 }
