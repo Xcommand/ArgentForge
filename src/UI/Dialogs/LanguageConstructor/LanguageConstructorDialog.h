@@ -122,10 +122,6 @@ private:
 	void editCell(long row, long column);
 	void endCellEdit(bool keep);
 
-	// Which cell a click landed on, since the activation notice doesn't say
-	long columnFor(wxListEvent& e) const;
-	long columnAtPoint(int x) const;
-
 	// The colour menu over a cell
 	void onCellColourMenu(long row, long column, wxPoint where);
 

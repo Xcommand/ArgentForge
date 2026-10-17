@@ -12,7 +12,9 @@
 #include "General/Misc.h"
 #include "General/UI.h"
 #include "UI/WxUtils.h"
+#include "UI/Controls/ColourPicker.h"
 #include "UI/Dialogs/MenuConstructor/MenuVocabulary.h"
+#include "Utility/Colour.h"
 #include "Utility/StringUtils.h"
 
 #include <wx/button.h>
@@ -59,6 +61,19 @@ public:
 	// In virtual mode the control asks for the text of a cell when it is about to draw it,
 	// so a refill is a row count and nothing else
 	std::function<wxString(long, long)> cellText;
+
+	// The control knows which cell a point is in, and says so even when the table is
+	// scrolled sideways or a column has been dragged. Measuring the header widths by hand
+	// got it wrong as soon as either happened, and a click landed on the key column
+	long cellAt(wxPoint where, long& column) const
+	{
+		LVHITTESTINFO hit{};
+		hit.pt.x = where.x;
+		hit.pt.y = where.y;
+		long row = ListView_SubItemHitTest(GetHwnd(), &hit);
+		column   = hit.iSubItem;
+		return row;
+	}
 
 protected:
 	wxString OnGetItemText(long item, long column) const override
@@ -113,8 +128,19 @@ WXLRESULT LanguageList::MSWWindowProc(WXUINT msg, WXWPARAM wParam, WXLPARAM lPar
 					break;
 
 				auto* dc = (HDC)draw->nmcd.hdc;
-				auto  back = GetBkColor(dc);
-				int   x    = box.left;
+
+				// The cell's own background first, then the text with a transparent
+				// background. Left as it came, ExtTextOut fills behind every glyph with
+				// whatever the control had set, and a coloured string comes out as a grey
+				// bar with unreadable letters inside it
+				{
+					auto* brush = CreateSolidBrush(draw->clrTextBk);
+					FillRect(dc, &box, brush);
+					DeleteObject(brush);
+				}
+				SetBkMode(dc, TRANSPARENT);
+
+				int x = box.left;
 				for (const auto& one : runs)
 				{
 					auto wide = one.text.wc_str();
@@ -122,7 +148,6 @@ WXLRESULT LanguageList::MSWWindowProc(WXUINT msg, WXWPARAM wParam, WXLPARAM lPar
 					GetTextExtentPoint32W(dc, wide, (int)wcslen(wide), &size);
 					SetTextColor(dc, one.ink.IsOk() ? RGB(one.ink.Red(), one.ink.Green(), one.ink.Blue())
 					                                : GetTextColor(dc));
-					SetBkColor(dc, back);
 					RECT part{ x, box.top, x + size.cx + 1, box.bottom };
 					ExtTextOutW(dc, x, box.top, ETO_CLIPPED, &part, wide, (int)wcslen(wide), nullptr);
 					x += size.cx;
@@ -215,6 +240,68 @@ static std::vector<slade::LanguageCellRun> languageRuns(const string& text)
 	}
 	flush(ink);
 	return runs;
+}
+
+// The colour a value begins with, which is what the picker opens on
+static wxColour leadingInk(const string& text)
+{
+	auto runs = languageRuns(text);
+	if (!runs.empty() && runs[0].ink.IsOk())
+		return runs[0].ink;
+	return wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOWTEXT);
+}
+
+// A LANGUAGE value can only ask for one of the game's own text colours, so a picked
+// colour becomes the nearest of those
+static char nearestRangeLetter(const wxColour& c)
+{
+	int  best  = -1;
+	long bestd = 1L << 30;
+	for (size_t i = 0; i < 64; ++i)
+	{
+		auto name = MenuVocabulary::colorRangeName(i);
+		if (name.empty())
+			break;
+		auto ink = colourFromHex(MenuVocabulary::instance().rangeColour(name));
+		if (!ink.IsOk())
+			continue;
+		long dr = (long)ink.Red() - c.Red(), dg = (long)ink.Green() - c.Green(), db = (long)ink.Blue() - c.Blue();
+		long d  = dr * dr + dg * dg + db * db;
+		if (d < bestd)
+		{
+			bestd = d;
+			best  = (int)i;
+		}
+	}
+	return best < 0 ? (char)0 : (char)('a' + best);
+}
+
+// Our own picker - the panel the menu constructor and the drawing tools use - so the colour
+// he chooses here is picked the same way as everywhere else in the app
+static bool askCellColour(wxWindow* parent, const wxColour& from, wxColour& out)
+{
+	wxDialog ask(parent, wxID_ANY, wxS("Colour"), wxDefaultPosition, wxDefaultSize, wxDEFAULT_DIALOG_STYLE);
+	auto*    pick = new ColourPicker(&ask);
+	pick->SetMinSize({ ui::scalePx(280), ui::scalePx(210) });
+	pick->setColour(ColRGBA(from));
+
+	wxColour chosen = from;
+	pick->colourChanged.connect([&chosen](const ColRGBA& c)
+	{ chosen = wxColour(c.r, c.g, c.b); });
+
+	auto sizer   = new wxBoxSizer(wxVERTICAL);
+	auto buttons = new wxBoxSizer(wxHORIZONTAL);
+	buttons->AddStretchSpacer();
+	buttons->Add(new wxButton(&ask, wxID_OK, wxS("OK")), 0, wxLEFT, ui::pad());
+	buttons->Add(new wxButton(&ask, wxID_CANCEL, wxS("Cancel")), 0, wxLEFT, ui::pad());
+	sizer->Add(pick, 1, wxEXPAND | wxALL, ui::pad());
+	sizer->Add(buttons, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, ui::pad());
+	ask.SetSizerAndFit(sizer);
+
+	if (ask.ShowModal() != wxID_OK)
+		return false;
+	out = chosen;
+	return true;
 }
 
 
@@ -359,8 +446,8 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 
 	text_filter_->Bind(wxEVT_TEXT, &LanguageConstructorDialog::onFilterChanged, this);
 	list_->Bind(wxEVT_LIST_ITEM_ACTIVATED, &LanguageConstructorDialog::onItemActivated, this);
-	// The activation notice doesn't carry the column, so remember where the mouse last was
-	// over the table
+	// Where the mouse last was, so a keyboard activation (Enter, F2) still knows which cell
+	// he means when the notice itself carries no point
 	list_->Bind(
 		wxEVT_MOTION,
 		[ this ](wxMouseEvent& e)
@@ -378,26 +465,26 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 		{
 			hover_ = e.GetPosition();
 			e.Skip();
-			long row   = -1;
-			int  where = 0;
-			if (list_->HitTest(e.GetPosition(), where, &row) < 0 || row < 0)
+			long column = 0;
+			long row    = list_->cellAt(e.GetPosition(), column);
+			if (row < 0)
 				return;
-			long column = columnAtPoint(e.GetPosition().x);
 			CallAfter([ this, row, column ]
 				{ editCell(row, column); });
 		});
 	// The right-click that asks for a colour comes through the context-menu message, which
-	// carries the point: the list's own item notification names the row and not the cell
+	// carries the screen point; the list's own item notification names the row but not the
+	// cell, so the cell comes from the control's hit test either way
 	list_->Bind(
 		wxEVT_CONTEXT_MENU,
 		[ this ](wxContextMenuEvent& e)
 		{
-			auto where = list_->ScreenToClient(e.GetPosition());
-			long row   = -1;
-			int  flags = 0;
-			if (list_->HitTest(where, flags, &row) < 0 || row < 0)
+			auto    where  = list_->ScreenToClient(e.GetPosition());
+			long    column = 0;
+			long    row    = list_->cellAt(where, column);
+			if (row < 0)
 				return;
-			onCellColourMenu(row, columnAtPoint(where.x), where);
+			onCellColourMenu(row, column, where);
 		});
 	list_->Bind(wxEVT_LIST_ITEM_SELECTED, &LanguageConstructorDialog::onItemSelected, this);
 	list_->Bind(wxEVT_LIST_COL_CLICK, &LanguageConstructorDialog::onColClicked, this);
@@ -1373,37 +1460,18 @@ void LanguageConstructorDialog::onBtnAdditional(wxCommandEvent& e)
 
 void LanguageConstructorDialog::onItemActivated(wxListEvent& e)
 {
-	editCell(e.GetIndex(), columnFor(e));
-}
+	// Windows names the row in the activation notice and never the column, so the cell comes
+	// from the control's own hit test. A keyboard activation carries no point at all, and
+	// there the last place the mouse was over the table is what says which cell he meant
+	auto where = hover_;
+	if (where.x < 0)
+		where = e.GetPoint();
 
-// -----------------------------------------------------------------------------
-// Which cell he double-clicked. Windows names the row in the activation notice and leaves
-// the column at zero, which is the 'String' column, so a double-click anywhere opened
-// nothing at all. The mouse's own place answers it: where it last moved over the table,
-// measured across the column widths and the horizontal scroll
-// -----------------------------------------------------------------------------
-long LanguageConstructorDialog::columnFor(wxListEvent& e) const
-{
-	if (e.GetColumn() > key_column)
-		return e.GetColumn();
-	return columnAtPoint(hover_.x >= 0 ? hover_.x : e.GetPoint().x);
-}
-
-long LanguageConstructorDialog::columnAtPoint(int x) const
-{
-	x -= list_->GetScrollPos(wxHORIZONTAL);
-
-	// The key column first, then one data column at a time, walking the widths the header
-	// shows. Past the last one the answer is the last column, not nothing
-	long column = key_column + 1;
-	for (int i = 0; i < (int)list_->GetColumnCount(); ++i)
-	{
-		x -= list_->GetColumnWidth(i);
-		if (x < 0)
-			return i;
-		column = i;
-	}
-	return column;
+	long column = 0;
+	long row    = list_->cellAt(where, column);
+	if (row < 0)
+		row = e.GetIndex();
+	editCell(row, column);
 }
 
 // -----------------------------------------------------------------------------
@@ -1428,30 +1496,34 @@ void LanguageConstructorDialog::onCellColourMenu(long row, long column, wxPoint 
 		return;
 	}
 
-	const int first = wxID_HIGHEST + 1;
-	const int clear = first + 512;
+	const int colour_id = wxID_HIGHEST + 1;
+	const int clear_id  = wxID_HIGHEST + 2;
 
-	wxMenu colours;
-	for (size_t i = 0; i < 512; ++i)
-	{
-		auto name = MenuVocabulary::colorRangeName(i);
-		if (name.empty())
-			break;
-		// Say what will be written, not just what it's called: the file keeps the letter
-		colours.Append(first + (int)i, wxString::FromUTF8(name) + wxString::Format(wxS("  (\\c%c)"), (char)('a' + i)));
-	}
-	colours.AppendSeparator();
-	colours.Append(clear, wxS("Remove the colours from this cell"));
-	colours.SetTitle(wxS("Colour"));
+	wxMenu menu;
+	menu.Append(colour_id, wxS("Colour..."));
+	menu.Append(clear_id, wxS("Remove the colour from this cell"));
 
-	int picked = list_->GetPopupMenuSelectionFromUser(colours, where);
+	int picked = list_->GetPopupMenuSelectionFromUser(menu, where);
 	if (picked == wxID_NONE)
 		return;
 
 	string was = entry->text();
-	string now;
-	if (picked == clear)
+	auto   write = [&](const string& now)
 	{
+		if (now == was)
+			return;
+		entry->setText(now);
+		// The editor may be standing over this cell; it has to show what was chosen
+		if (edit_cell_ && edit_row_ == row && edit_col_ == column)
+			edit_cell_->SetValue(wxString::FromUTF8(now));
+		applyChange();
+	};
+
+	// Taking the colours out is a whole-cell job: a string with codes inside it has more
+	// than one to lose
+	if (picked == clear_id)
+	{
+		string now;
 		for (size_t i = 0; i < was.size(); i++)
 		{
 			if (was[i] == '\\' && i + 2 < was.size() && was[i + 1] == 'c')
@@ -1461,21 +1533,39 @@ void LanguageConstructorDialog::onCellColourMenu(long row, long column, wxPoint 
 			}
 			now += was[i];
 		}
-	}
-	else
-	{
-		char sel = (char)('a' + (picked - first));
-		now      = "\\c" + string(1, sel) + was;
+		write(now);
+		return;
 	}
 
-	if (now == was)
+	wxColour chosen;
+	if (!askCellColour(this, leadingInk(was), chosen))
 		return;
 
-	entry->setText(now);
-	// The editor is standing over this cell while he picks: it has to show what he chose
+	char letter = nearestRangeLetter(chosen);
+	if (!letter)
+	{
+		say("No text colour of the game is near that one, so nothing was written");
+		return;
+	}
+
+	string code = "\\c";
+	code += letter;
+
+	// Where the caret stands, so a label can begin in one colour and carry on in another
+	// the way a mod writes it by hand
 	if (edit_cell_ && edit_row_ == row && edit_col_ == column)
-		edit_cell_->SetValue(wxString::FromUTF8(now));
-	applyChange();
+	{
+		auto text = edit_cell_->GetValue();
+		auto at   = std::max(0L, edit_cell_->GetInsertionPoint());
+		text.insert((size_t)at, wxString::FromUTF8(code));
+		edit_cell_->ChangeValue(text);
+		edit_cell_->SetInsertionPoint(at + 3);
+		edit_cell_->SetFocus();
+		say("The code is in place - Enter, or a click away, writes the cell");
+		return;
+	}
+
+	write(code + was);
 }
 
 void LanguageConstructorDialog::onItemSelected(wxListEvent& e)
