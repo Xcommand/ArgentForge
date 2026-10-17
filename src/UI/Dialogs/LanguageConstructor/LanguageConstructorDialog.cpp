@@ -390,15 +390,21 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 // -----------------------------------------------------------------------------
 bool LanguageConstructorDialog::loadLumps(const vector<LanguageLump>& lumps, string_view current)
 {
+	auto was = current_;
 	current_ = string(current);
 
 	book_.clear();
 	for (const auto& lump : lumps)
 		book_.open(lump.name, lump.text);
 
-	// The dropdown keeps its pick across a refill, and falls back to the file on screen
-	if (primary_.empty() || !book_.has(primary_))
+	// The dropdown keeps its pick across a refill, and falls back to the file on screen. But
+	// a file he just opened somewhere else is a newer wish than a pick made in this window
+	// about the file he left, so that one is followed
+	if (primary_.empty() || !book_.has(primary_) || (was != current_ && primary_ == was))
+	{
 		primary_ = current_;
+		keepAddLanguage();
+	}
 	additional_.erase(std::remove_if(additional_.begin(), additional_.end(), [&](const string& one)
 		{ return !book_.has(one); }),
 		additional_.end());
@@ -1173,14 +1179,15 @@ void LanguageConstructorDialog::editCell(long row, long column)
 					e.Skip();
 			});
 
-		// The field covers its cell, so the right button over an open cell is answered here
-		// and not by the table underneath it
+		// The field covers its cell, so the button over an open cell is answered here and not
+		// by the table underneath it. The notice carries a screen point; the menu wants the
+		// field's own
 		edit_cell_->Bind(
 			wxEVT_CONTEXT_MENU,
 			[this](wxContextMenuEvent& e)
 			{
 				if (edit_row_ >= 0)
-					onCellColourMenu(edit_row_, edit_col_, e.GetPosition(), edit_cell_);
+					onCellColourMenu(edit_row_, edit_col_, edit_cell_->ScreenToClient(e.GetPosition()), edit_cell_);
 			});
 	}
 
@@ -1400,9 +1407,19 @@ void LanguageConstructorDialog::onLumpChosen(wxCommandEvent& e)
 	primary_ = string(choice_lump_->GetString(row).utf8_str());
 	say("");
 
-	// A different file is a different language to add under: keep the pick when this one
-	// declares it, otherwise take the first one it does. The column he clicked keeps its
-	// own say over this, later
+	keepAddLanguage();
+	// The file in the dropdown is the first column, so the table follows the pick
+	buildColumns();
+	buildRows();
+	buildLumpChoices();
+}
+
+// -----------------------------------------------------------------------------
+// The language the Add button writes into has to be one the file in the dropdown
+// declares, or the button promises a string in a language that file doesn't read
+// -----------------------------------------------------------------------------
+void LanguageConstructorDialog::keepAddLanguage()
+{
 	if (auto* lump = book_.lump(primary_))
 	{
 		auto own = lump->languages();
@@ -1418,10 +1435,6 @@ void LanguageConstructorDialog::onLumpChosen(wxCommandEvent& e)
 		}
 	}
 	nameAddButton();
-	// The file in the dropdown is the first column, so the table follows the pick
-	buildColumns();
-	buildRows();
-	buildLumpChoices();
 }
 
 void LanguageConstructorDialog::onBtnAdditional(wxCommandEvent& e)

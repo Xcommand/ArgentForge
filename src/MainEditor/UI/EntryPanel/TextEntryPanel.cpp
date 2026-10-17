@@ -280,6 +280,10 @@ bool TextEntryPanel::loadEntry(ArchiveEntry* entry)
 	updateMenuConstructor();
 	updateConstructorTools(entry);
 
+	// A LANGUAGE window that is up follows the file he just opened, the same way the actor
+	// and menu windows follow the text
+	resyncLanguageConstructor();
+
 	return true;
 }
 

@@ -141,6 +141,9 @@ private:
 	void say(string_view what);
 	void nameAddButton();
 
+	// Keeps the language the Add button names one the file in the dropdown declares
+	void keepAddLanguage();
+
 	// Puts the table's rows in the order of [column], and the arrow on that header
 	void sortByColumn(long column);
 
