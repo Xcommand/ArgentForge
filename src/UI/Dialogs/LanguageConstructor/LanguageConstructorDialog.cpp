@@ -1155,10 +1155,11 @@ void LanguageConstructorDialog::editCell(long row, long column)
 	auto* entry = cellEntry(row, column);
 	if (!edit_cell_)
 	{
-		// A child of the window, not of the table: the field must stay on its cell when the
-		// table is scrolled, and a child of a scrolled window would be drawn at a place that
-		// moves under it
-		edit_cell_ = new wxTextCtrl(this, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, wxTE_PROCESS_ENTER);
+		// A child of the table, over the cell it belongs to. A child of the window would be a
+		// sibling of the table, and the table paints that square again on every refill - the
+		// field's own pixels go under it and only the system caret, which is drawn above all
+		// windows, is left to show that anything is there at all
+		edit_cell_ = new wxTextCtrl(grid_, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, wxTE_PROCESS_ENTER);
 
 		edit_cell_->Bind(
 			wxEVT_TEXT_ENTER,
@@ -1262,6 +1263,8 @@ void LanguageConstructorDialog::placeCellEditor()
 	if (!edit_cell_ || edit_row_ < 0)
 		return;
 
+	// The field's parent is the table, so the cell's own square is already in the right
+	// coordinates; it only has to follow them when the table moves
 	auto cell = grid_->cellRect(edit_row_, edit_col_);
 	if (cell.width <= 0 || cell.height <= 0)
 	{
@@ -1269,11 +1272,8 @@ void LanguageConstructorDialog::placeCellEditor()
 		return;
 	}
 
-	// The cell is a place in the table, the field is a child of the window: the table's point
-	// goes out to the screen and back in as the window's own
-	auto topleft = ScreenToClient(grid_->ClientToScreen(cell.GetTopLeft()));
 	edit_cell_->SetSize(cell.width, cell.height + ui::scalePx(2));
-	edit_cell_->Move(topleft);
+	edit_cell_->Move(cell.GetTopLeft());
 }
 
 void LanguageConstructorDialog::endCellEdit(bool keep)
