@@ -53,6 +53,10 @@ public:
 	// So a field sitting over a cell can follow it when the table moves
 	std::function<void()> scrolled;
 
+	// Temporary: what the table's own hit tests decided, for the round in which the right
+	// button and a column border are being settled. Gone with the rest of the receipts
+	std::function<void(const std::string&)> receipt;
+
 	explicit LanguageGrid(wxWindow* parent, wxWindowID id = wxID_ANY, const wxSize& size = wxDefaultSize);
 
 	// The header titles. Widths a column already had are kept when the count is the same,
@@ -126,11 +130,16 @@ private:
 	void onSize(wxSizeEvent& e);
 	void onLeftDown(wxMouseEvent& e);
 	void onLeftUp(wxMouseEvent& e);
+	void onRightDown(wxMouseEvent& e);
+	void onRightUp(wxMouseEvent& e);
 	void onMotion(wxMouseEvent& e);
 	void onLeave(wxMouseEvent& e);
 	void onContextMenu(wxContextMenuEvent& e);
 	void onChar(wxKeyEvent& e);
 	void onScroll(wxScrollWinEvent& e);
+
+	// The cell menu, from whichever of the two notices got here first
+	void showCellMenu(wxPoint where, const char* came_from);
 
 	// Which column a point of the header belongs to, and whether it is on a divider
 	long headerColumnAt(int x) const;
@@ -173,5 +182,8 @@ private:
 	int  drag_width_ = 0;
 	int  press_x_    = -1;
 	int  press_y_    = -1;
+
+	// A right button waiting for its menu: the notice that shows it is the one that arrives
+	bool rmb_shown_ = true;
 };
 } // namespace slade

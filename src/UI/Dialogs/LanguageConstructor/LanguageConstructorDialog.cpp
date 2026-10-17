@@ -342,14 +342,17 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 	text_filter_->Bind(wxEVT_TEXT, &LanguageConstructorDialog::onFilterChanged, this);
 
 	// One click opens a cell. The window is nothing but text fields, and making him
-	// double-click each one charges him a click per edit
+	// double-click each one charges him a click per edit. It has to wait for the click to
+	// finish: a field opened while the mouse message is still being handled loses the focus
+	// it just got, and a focus loss is what closes a cell
 	grid_->cellClicked = [ this ](long row, long column)
 	{
 		clickLog("click row=" + std::to_string(row) + " col=" + std::to_string(column) + " of "
 		         + std::to_string(columns_.size()));
 		if (column == key_column)
 			return;
-		editCell(row, column);
+		CallAfter([ this, row, column ]
+			{ editCell(row, column); });
 	};
 	grid_->cellRightClicked = [ this ](long row, long column, wxPoint where)
 	{ onCellColourMenu(row, column, where); };
@@ -359,6 +362,10 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 	// A field sitting over a cell goes with it when the table moves
 	grid_->scrolled = [ this ]
 	{ placeCellEditor(); };
+
+	// Temporary: what the table's own hit tests said about a right button
+	grid_->receipt = [ this ](const string& line)
+	{ clickLog(line); };
 
 	// Picking a row names the language the Add button writes into, and asks the editor to
 	// show where that string is written. The keyboard stays here: the editor is told, never
@@ -1184,6 +1191,15 @@ void LanguageConstructorDialog::editCell(long row, long column)
 	edit_cell_->Raise();
 	edit_cell_->SetFocus();
 	edit_cell_->SetInsertionPointEnd();
+
+	// The click that brought us here is still being answered and can take the keys back. Ask
+	// once more when it's done, or the field dies of a focus loss before a key reaches it
+	if (wxWindow::FindFocus() != edit_cell_)
+		CallAfter([ this ]
+			{
+				if (edit_cell_ && edit_row_ >= 0)
+					edit_cell_->SetFocus();
+			});
 
 	clickLog("opened row=" + std::to_string(row) + " col=" + std::to_string(column) +
 	         " shown=" + std::to_string(edit_cell_->IsShown()) + " focus="

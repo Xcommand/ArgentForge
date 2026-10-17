@@ -91,6 +91,8 @@ LanguageGrid::LanguageGrid(wxWindow* parent, wxWindowID id, const wxSize& size) 
 	Bind(wxEVT_SIZE, &LanguageGrid::onSize, this);
 	Bind(wxEVT_LEFT_DOWN, &LanguageGrid::onLeftDown, this);
 	Bind(wxEVT_LEFT_UP, &LanguageGrid::onLeftUp, this);
+	Bind(wxEVT_RIGHT_DOWN, &LanguageGrid::onRightDown, this);
+	Bind(wxEVT_RIGHT_UP, &LanguageGrid::onRightUp, this);
 	Bind(wxEVT_MOTION, &LanguageGrid::onMotion, this);
 	Bind(wxEVT_ENTER_WINDOW, &LanguageGrid::onMotion, this);
 	Bind(wxEVT_LEAVE_WINDOW, &LanguageGrid::onLeave, this);
@@ -356,6 +358,10 @@ long LanguageGrid::headerColumnAt(int x) const
 	return std::upper_bound(left_.begin(), left_.end(), logical) - left_.begin() - 1;
 }
 
+// -----------------------------------------------------------------------------
+// The divider between two columns is the right border of the one on its left, and dragging
+// it sizes that one
+// -----------------------------------------------------------------------------
 bool LanguageGrid::dividerAt(wxPoint where, long& column) const
 {
 	if (where.y >= head_h_)
@@ -366,7 +372,7 @@ bool LanguageGrid::dividerAt(wxPoint where, long& column) const
 	{
 		if (std::abs(logical - left_[c]) <= ui::scalePx(3))
 		{
-			column = c;
+			column = c - 1;
 			return true;
 		}
 	}
@@ -533,20 +539,49 @@ void LanguageGrid::onLeave(wxMouseEvent& e)
 	e.Skip();
 }
 
-void LanguageGrid::onContextMenu(wxContextMenuEvent& e)
+// -----------------------------------------------------------------------------
+// The cell menu. Windows asks for it with the context-menu notice, but a window that
+// answers its own right button can't count on that notice arriving, so the release is the
+// backstop: whichever of the two comes first shows it and the other one is already done
+// -----------------------------------------------------------------------------
+void LanguageGrid::showCellMenu(wxPoint where, const char* came_from)
 {
-	auto where = ScreenToClient(e.GetPosition());
+	rmb_shown_ = true;
 
 	long row = 0, column = 0;
-	if (!cellAt(where, row, column))
-	{
-		e.Skip();
+	bool hit = cellAt(where, row, column);
+
+	if (receipt)
+		receipt(string("rmb ") + came_from + " at " + std::to_string(where.x) + "," + std::to_string(where.y)
+		        + " head=" + std::to_string(head_h_) + " hit=" + std::to_string(hit ? 1 : 0) + " row="
+		        + std::to_string(row) + " col=" + std::to_string(column));
+
+	if (!hit)
 		return;
-	}
 
 	select(row, column, false);
 	if (cellRightClicked)
 		cellRightClicked(row, column, where);
+}
+
+void LanguageGrid::onRightDown(wxMouseEvent& e)
+{
+	SetFocus();
+	rmb_shown_ = false;
+	e.Skip();
+}
+
+void LanguageGrid::onRightUp(wxMouseEvent& e)
+{
+	if (!rmb_shown_)
+		showCellMenu(e.GetPosition(), "up");
+	e.Skip();
+}
+
+void LanguageGrid::onContextMenu(wxContextMenuEvent& e)
+{
+	if (!rmb_shown_)
+		showCellMenu(ScreenToClient(e.GetPosition()), "menu");
 }
 
 void LanguageGrid::onChar(wxKeyEvent& e)
