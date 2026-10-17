@@ -669,16 +669,27 @@ void LanguageGrid::drawTable(wxDC& dc, const wxSize& size) const
 				need += width;
 			}
 
-			// Words longer than the column are cut at its edge, the way a spreadsheet cuts
-			// them, rather than run into the neighbour
-			bool clipping = need + 2 * xpad_ > w;
+			// A value longer than its column runs into the ones to its right that hold
+			// nothing, the way a spreadsheet lets it, and is cut only by a neighbour that has
+			// text or by the edge of the window
+			int room = w;
+			for (long n = c + 1; n < columnCount(); ++n)
+			{
+				if (!cell(row, n).text.empty())
+					break;
+				room += columns_[n].width;
+			}
+			if (c + 1 == columnCount())
+				room = std::max(room, size.x - x);
+
+			bool clipping = need + 2 * xpad_ > room;
 			if (clipping)
-				dc.SetClippingRegion(wxRect(x, y, w, row_h_));
+				dc.SetClippingRegion(wxRect(x, y, room, row_h_));
 
 			int tx = x + xpad_;
 			for (size_t r = 0; r < runs.size(); ++r)
 			{
-				if (tx > x + w)
+				if (tx > x + room)
 					break;
 				dc.SetTextForeground(runs[r].ink.IsOk() ? runs[r].ink : theme.ink);
 				dc.DrawText(runs[r].text, tx, y + ty);

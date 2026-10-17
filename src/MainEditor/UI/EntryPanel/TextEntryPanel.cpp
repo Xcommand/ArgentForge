@@ -1143,10 +1143,31 @@ void TextEntryPanel::selectLanguageString(string_view lump, size_t offset)
 	if (!language_constructor_)
 		return;
 
-	// The editor shows one file at a time, so a string from one of the others can't be
-	// scrolled to from here. Saying so beats a row that looks like it did nothing
+	auto self = entry_.lock();
+
+	// The editor shows one file at a time. A string from another one used to be a message; a
+	// table pointed at a file the editor isn't showing is how he loses his place in three
+	// similar files, so the file is opened instead, with the caret on that line
 	if (lump != language_constructor_->currentLump())
 	{
+		for (auto& record : language_files_)
+		{
+			if (std::get<0>(record) != lump)
+				continue;
+
+			auto* other = languageEntryAt(self ? self->parent() : nullptr, std::get<1>(record));
+			if (!other)
+				break;
+
+			other->exProp("TextPosition") = (int)offset;
+			if (auto* panel = maineditor::currentArchivePanel())
+			{
+				panel->openEntryAsText(other);
+				language_constructor_->note("");
+			}
+			return;
+		}
+
 		language_constructor_->note("That string is written in " + string(lump) + ", not in the lump this panel is showing");
 		return;
 	}
