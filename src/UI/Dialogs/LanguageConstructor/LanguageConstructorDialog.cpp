@@ -897,9 +897,23 @@ void LanguageConstructorDialog::buildRows()
 
 	string filter = text_filter_ ? text_filter_->GetValue().utf8_str() : "";
 
+	// The rows are the strings of the files he is looking at: the one in the dropdown plus the
+	// ones Additional ticks. Every other file of the archive is in the tree under its own
+	// name, and a row no column can fill is a row that only ever answers 'not in this lump'
 	keys_.clear();
-	for (const auto& lump : book_.lumps())
+	vector<string> from;
+	for (const auto& column : columns_)
+		if (std::find(from.begin(), from.end(), column.lump) == from.end())
+			from.push_back(column.lump);
+	if (from.empty())
+		from = book_.lumpNames();
+
+	for (const auto& name : from)
 	{
+		auto* lump = book_.lump(name);
+		if (!lump)
+			continue;
+
 		for (const auto& entry : lump->entries())
 		{
 			if (!entry.parsed)
