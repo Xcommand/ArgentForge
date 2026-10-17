@@ -25,6 +25,24 @@
     <li>The Properties page has a divider you can drag to give the values room, and it remembers where
       you left it.</li>
   </ul>
+  <h4>Menus and languages</h4>
+  <ul>
+    <li>The <strong>Menu Constructor</strong> edits the blocks of a MENUDEF the same way: pick the
+      widget from the engine's own list and its arguments arrive with their names and their types,
+      and <strong>Preview</strong> draws the menu the way the game will.</li>
+    <li>The <strong>Language Constructor</strong> shows a LANGUAGE lump as a table of strings by
+      language. Colour codes are drawn in the colour the game will use, and a string one language
+      file doesn't define stands in a quieter colour, which is the table saying it isn't
+      translated.</li>
+    <li>A <code>$key</code> you invent while writing a menu is written for you: type a name no
+      language file defines into a field the player reads, and it's created in the file you pointed
+      at and as a placeholder in the others.</li>
+    <li>Both windows follow the text cursor, and the editor follows them: pick a row and the text
+      goes to that line, and a string kept in another file of the archive opens that file.</li>
+    <li>The three constructor buttons appear in the text toolbar only over a file one of them can
+      edit, and <strong>Tools</strong> lists all three for the times you want one without the file
+      in front of you.</li>
+  </ul>
   <h4>Code editor</h4>
   <ul>
     <li>Hovering a sprite frame in a state line pops up the picture it points at; hold SHIFT to run

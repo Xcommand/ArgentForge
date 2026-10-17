@@ -3,6 +3,44 @@ Changes in this fork
 
 What we added on top of upstream SLADE, feature by feature. Kept short on purpose.
 
+New in 1.2.0
+------------
+
+This release is the Language Constructor: a `LANGUAGE` lump as a table of strings by language. The
+guide page is [Translating a language](docs/user/language.md).
+
+* One row per string, one column per language file. The dropdown says which file new strings go
+  into and which column is the original; **Additional** ticks the other files you want beside it.
+  A file you didn't tick isn't in the table, so an archive with nine language files doesn't put
+  nine columns in front of you.
+* A string a second file doesn't define is filled with the first file's text in a quieter colour: a
+  placeholder, which is the table saying "this one isn't translated" without a report. Translate it
+  and it stops being quiet.
+* Colour inside the text. The engine reads a colour as `\c` plus a letter inside the string, and the
+  table shows the words in that colour with the code hidden, which is what the menu will look like.
+  Right-click a cell for **Colour...** (the program's own picker, snapped to the nearest colour the
+  game can draw, written in at the caret), **Remove the colour from this cell**, **Copy** and
+  **Paste**.
+* One click opens a cell. `Enter` writes it, so does moving to another cell, `Esc` takes back what
+  you typed, and `Ctrl+Z` / `Ctrl+Y` in the window are the editor's undo. A long value opens a field
+  tall enough to read all of it, and shows the file's `\n` markers where it breaks the line, so a
+  break is something you can see yourself deleting.
+* Table and editor follow each other: pick a row and the editor goes to its line, and a string kept
+  in another file of the archive opens that file rather than telling you it isn't here. Only the
+  strings of the files in view are listed, so a row is never an empty promise.
+* A `$key` you invent is written for you. Type a name no language file defines into any field the
+  player reads in the Menu Constructor and the key is created in the chosen file and as a
+  placeholder in every Additional one. The Menu Constructor got the same language dropdown, and its
+  preview draws in the language you picked there.
+* Fixed: `MENUDEF.txt` and `MENUDEF.dat` are the archive's MENUDEF, which a comparison that
+  included the extension missed; a binary lump isn't a language table and no longer opens as one; a
+  string added to a block copies the indentation of the line above it instead of putting a tab on
+  top of the default.
+* The three constructor buttons in the text toolbar show only over a file one of them can edit, and
+  `Tools` still lists all three for a constructor called without the file in front of you.
+* `Preferences > Extra Features` split up: the image editor, the three constructors and the launcher
+  integration each have a page of their own now.
+
 New in 1.1.2
 ------------
 

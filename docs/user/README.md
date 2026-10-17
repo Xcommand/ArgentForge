@@ -10,6 +10,8 @@ one.
   constructor won't touch.
 * [Building a menu](menu.md): the MENUDEF blocks, the keys that arrange them, and a preview that
   draws the menu the way the game does.
+* [Translating a language](language.md): a LANGUAGE lump as a table of strings by language, which
+  ones aren't translated yet, and what the colours in the text mean.
 * [Drawing pictures](image-editor.md): the brush, the mouse gestures, and a texture that tiles without
   a seam.
 
