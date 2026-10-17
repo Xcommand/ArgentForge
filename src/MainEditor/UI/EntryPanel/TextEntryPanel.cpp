@@ -1152,8 +1152,17 @@ void TextEntryPanel::selectLanguageString(string_view lump, size_t offset)
 	}
 
 	language_constructor_->note("");
+
+	// This caret move is ours. Without the word about it, the editor's own UI notice points
+	// the table back at wherever the caret landed, and the row he just clicked runs away
+	// under the mouse between the press and the release
+	following_editor_ = true;
 	text_area_->SetSelection(offset, offset);
 	centreLine(lineAtOffset(language_constructor_->sourceText(), offset));
+	CallAfter([ this ]
+		{
+			following_editor_ = false;
+		});
 }
 
 // -----------------------------------------------------------------------------
@@ -1162,6 +1171,10 @@ void TextEntryPanel::selectLanguageString(string_view lump, size_t offset)
 void TextEntryPanel::followLanguageCaret()
 {
 	if (!language_constructor_ || !language_constructor_->IsShown())
+		return;
+
+	// The move we asked for a moment ago is not him moving the caret
+	if (following_editor_)
 		return;
 
 	language_constructor_->followCaret((size_t)text_area_->GetCurrentPos());

@@ -367,7 +367,11 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 
 		size_t offset = 0;
 		string lump;
-		if (stringOffset(key, selectedTag(row, column), lump, offset))
+		// The file on screen first, so a click anywhere on a row moves the caret to that
+		// row's string. Only a string this file doesn't hold is somebody else's business
+		if (offsetInCurrent(key, offset))
+			select_(current_, offset);
+		else if (stringOffset(key, selectedTag(row, column), lump, offset))
 			select_(lump, offset);
 	};
 
@@ -1393,6 +1397,31 @@ void LanguageConstructorDialog::applyChange()
 bool LanguageConstructorDialog::stringOffset(string_view label, string_view language, string& lump, size_t& offset) const
 {
 	return book_.locate(label, language, lump, offset);
+}
+
+// -----------------------------------------------------------------------------
+// Where a row's string stands in the file the editor is showing. The general lookup answers
+// with any file that writes the language, which for a click meant a message about somebody
+// else's file instead of a caret move
+// -----------------------------------------------------------------------------
+bool LanguageConstructorDialog::offsetInCurrent(string_view label, size_t& offset) const
+{
+	auto* lump = book_.lump(current_);
+	if (!lump)
+		return false;
+
+	for (const auto& tag : lump->languages())
+	{
+		auto* entry = lump->entry(label, tag);
+		if (!entry)
+			continue;
+		// A definition added since the file was read has no bytes behind it yet
+		if (entry->end <= entry->begin)
+			return false;
+		offset = entry->begin;
+		return true;
+	}
+	return false;
 }
 
 // -----------------------------------------------------------------------------

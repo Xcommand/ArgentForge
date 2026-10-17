@@ -96,6 +96,9 @@ public:
 	// there. False when no lump has the string in that language
 	bool stringOffset(string_view label, string_view language, string& lump, size_t& offset) const;
 
+	// Where a row's string stands in the file the editor is showing, if it stands in it
+	bool offsetInCurrent(string_view label, size_t& offset) const;
+
 private:
 	void buildColumns();
 	void buildRows();

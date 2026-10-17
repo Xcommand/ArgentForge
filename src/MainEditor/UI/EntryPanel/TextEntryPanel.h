@@ -241,6 +241,10 @@ private:
 	// the actor it holds into the file that's just taken its place
 	bool loading_entry_ = false;
 
+	// True while the caret move we asked for is still travelling through the editor's own
+	// UI notice, so the language window isn't pointed back at wherever it landed
+	bool following_editor_ = false;
+
 	// Events
 	void onTextModified(wxCommandEvent& e);
 	void onChoiceLanguageChanged(wxCommandEvent& e);
