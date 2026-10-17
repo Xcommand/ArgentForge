@@ -58,6 +58,11 @@ public:
 	const vector<string>& colourRanges() const { return range_names_; }
 	string_view           rangeColour(string_view name) const;
 
+	// The engine's own order of the colour ranges: EColorRange (v_font.h:39-71), which is
+	// what a '\c' letter selector counts into. The list above is a name-to-colour dictionary
+	// with aliases in it, so its order is not that order
+	static string_view colorRangeName(size_t index);
+
 	// The widgets to offer for [family], in the order the resource lists them
 	const vector<string>& palette(string_view family) const;
 

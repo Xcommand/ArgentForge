@@ -1471,14 +1471,14 @@ void MenuConstructorDialog::showPreviewWindow()
     // the escape says "range 17" and only that order turns it into DarkRed
     preview_->setRangeInk([this](int range, const wxString& name) -> wxColour
     {
-        static const char* const ranges[] = { "Brick", "Tan", "Gray", "Green", "Brown", "Gold", "Red",
-                                              "Blue", "Orange", "White", "Yellow", "Untranslated",
-                                              "Black", "LightBlue", "Cream", "Olive", "DarkGreen",
-                                              "DarkRed", "DarkBrown", "Purple", "DarkGray", "Cyan",
-                                              "Ice", "Fire", "Sapphire", "Teal" };
+        // The engine's own order of the ranges, from the same list the language table reads
+        // a '\c' letter out of
         if (name.empty())
-            return range >= 0 && range < (int)(sizeof(ranges) / sizeof(*ranges)) ? argColour(ranges[range], true)
-                                                                                : wxColour{};
+        {
+            if (range < 0) return {};
+            auto word = MenuVocabulary::colorRangeName((size_t)range);
+            return word.empty() ? wxColour{} : argColour(string(word), true);
+        }
         return argColour(std::string(name.ToUTF8().data()), true);
     });
     auto sizer = new wxBoxSizer(wxVERTICAL); sizer->Add(preview_, 1, wxEXPAND); preview_frame_->SetSizer(sizer);

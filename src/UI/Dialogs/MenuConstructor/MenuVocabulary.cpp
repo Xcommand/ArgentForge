@@ -351,6 +351,22 @@ string_view MenuVocabulary::rangeColour(string_view name) const
 	return it == range_colours_.end() ? string_view{} : string_view{ it->second };
 }
 
+// The order the engine's own EColorRange enum uses (v_font.h:39-71). A '\c' letter in a
+// LANGUAGE value means "the range at this place", so the aliases the resource carries
+// ('Grey' beside 'Gray', 'Light Blue' beside 'LightBlue') can't be counted through
+string_view MenuVocabulary::colorRangeName(size_t index)
+{
+	static const char* const order[] = {
+		"Brick",   "Tan",     "Gray",    "Green",  "Brown",   "Gold",     "Red",      "Blue",
+		"Orange",  "White",   "Yellow",  "Untranslated", "Black", "LightBlue", "Cream",  "Olive",
+		"DarkGreen", "DarkRed", "DarkBrown", "Purple", "DarkGray", "Cyan",   "Ice",      "Fire",
+		"Sapphire", "Teal"
+	};
+	if (index >= std::size(order))
+		return {};
+	return order[index];
+}
+
 const vector<string>& MenuVocabulary::palette(string_view family) const
 {
 	auto it = palettes_.find(key(family));

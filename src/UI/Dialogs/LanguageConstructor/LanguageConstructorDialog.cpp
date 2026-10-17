@@ -161,7 +161,6 @@ static std::vector<slade::LanguageCellRun> languageRuns(const string& text)
 {
 	std::vector<slade::LanguageCellRun> runs;
 	auto&                               vocab = MenuVocabulary::instance();
-	auto                                inks  = vocab.colourRanges();
 
 	wxString cur;
 	auto     flush = [&](const wxColour& ink)
@@ -201,9 +200,14 @@ static std::vector<slade::LanguageCellRun> languageRuns(const string& text)
 		}
 		else if (sel == '-' || sel == '+' || sel == '!' || sel == '*')
 			ink = wxColour{};
-		else if ((sel >= 'A' && sel - 'A' < (char)inks.size()) || (sel >= 'a' && sel - 'a' < (char)inks.size()))
+		else if (sel >= 'A' && sel <= 'z')
 		{
-			auto picked = colourFromHex(vocab.rangeColour(inks[(size_t)((sel | 0x20) - 'a')]));
+			// A letter is that range's place in the engine's own enum, not in the resource's
+			// list of names, which carries aliases beside them
+			auto name = MenuVocabulary::colorRangeName((size_t)((sel | 0x20) - 'a'));
+			if (name.empty())
+				continue;
+			auto picked = colourFromHex(vocab.rangeColour(name));
 			if (picked.IsOk())
 				ink = picked;
 		}
@@ -365,9 +369,11 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 			e.Skip();
 		});
 	// One click opens a cell. The window is nothing but text fields, and making him
-	// double-click each one charges him a click per edit
+	// double-click each one charges him a click per edit. It has to be the release: the
+	// list takes the focus while it handles the press, and an editor opened from the press
+	// loses the focus it just got and commits itself away before he types
 	list_->Bind(
-		wxEVT_LEFT_DOWN,
+		wxEVT_LEFT_UP,
 		[ this ](wxMouseEvent& e)
 		{
 			hover_ = e.GetPosition();
@@ -380,11 +386,18 @@ LanguageConstructorDialog::LanguageConstructorDialog(wxWindow* parent) :
 			CallAfter([ this, row, column ]
 				{ editCell(row, column); });
 		});
+	// The right-click that asks for a colour comes through the context-menu message, which
+	// carries the point: the list's own item notification names the row and not the cell
 	list_->Bind(
-		wxEVT_LIST_ITEM_RIGHT_CLICK,
-		[ this ](wxListEvent& e)
+		wxEVT_CONTEXT_MENU,
+		[ this ](wxContextMenuEvent& e)
 		{
-			onCellColourMenu(e.GetIndex(), columnFor(e), e.GetPoint());
+			auto where = list_->ScreenToClient(e.GetPosition());
+			long row   = -1;
+			int  flags = 0;
+			if (list_->HitTest(where, flags, &row) < 0 || row < 0)
+				return;
+			onCellColourMenu(row, columnAtPoint(where.x), where);
 		});
 	list_->Bind(wxEVT_LIST_ITEM_SELECTED, &LanguageConstructorDialog::onItemSelected, this);
 	list_->Bind(wxEVT_LIST_COL_CLICK, &LanguageConstructorDialog::onColClicked, this);
@@ -1152,6 +1165,16 @@ void LanguageConstructorDialog::editCell(long row, long column)
 	edit_cell_->Show(true);
 	edit_cell_->SetFocus();
 	edit_cell_->SetInsertionPointEnd();
+
+	// The list is still finishing the click that brought us here and can take the focus
+	// back. Ask once more when it's done, or the editor dies of a focus loss before a key
+	// reaches it
+	if (wxWindow::FindFocus() != edit_cell_)
+		CallAfter([ this ]
+			{
+				if (edit_cell_ && edit_row_ >= 0)
+					edit_cell_->SetFocus();
+			});
 }
 
 void LanguageConstructorDialog::endCellEdit(bool keep)
@@ -1408,10 +1431,15 @@ void LanguageConstructorDialog::onCellColourMenu(long row, long column, wxPoint 
 	const int first = wxID_HIGHEST + 1;
 	const int clear = first + 512;
 
-	wxMenu  colours;
-	auto&   names = MenuVocabulary::instance().colourRanges();
-	for (size_t i = 0; i < names.size() && i < 512; ++i)
-		colours.Append(first + (int)i, wxString::FromUTF8(names[i]));
+	wxMenu colours;
+	for (size_t i = 0; i < 512; ++i)
+	{
+		auto name = MenuVocabulary::colorRangeName(i);
+		if (name.empty())
+			break;
+		// Say what will be written, not just what it's called: the file keeps the letter
+		colours.Append(first + (int)i, wxString::FromUTF8(name) + wxString::Format(wxS("  (\\c%c)"), (char)('a' + i)));
+	}
 	colours.AppendSeparator();
 	colours.Append(clear, wxS("Remove the colours from this cell"));
 	colours.SetTitle(wxS("Colour"));
