@@ -814,6 +814,10 @@ void MenuConstructorDialog::buildLanguageChoices()
   else if (!language_lump_.empty()
            && std::find(language_files_.begin(), language_files_.end(), language_lump_) == language_files_.end())
     language_lump_.clear();
+  // The first file is the one the window means, not only the one it shows: SetSelection() writes
+  // no language_lump_ of its own, and a dropdown that displays a file the code thinks is unset
+  // refuses a new $key in silence
+  if (any && language_lump_.empty()) language_lump_ = language_files_[0];
   if (!language_lump_.empty()) choice_language_->SetStringSelection(wxString::FromUTF8(language_lump_));
   else choice_language_->SetSelection(0);
   btn_language_extra_->SetLabel(
