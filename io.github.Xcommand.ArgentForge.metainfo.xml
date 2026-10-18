@@ -29,6 +29,21 @@
 		</p>
 	</description>
 	<releases>
+		<release date="2026-10-18" version="1.2.1">
+			<description>
+				<ul>
+					<li>A LANGUAGE file written as a spreadsheet, the shape a modern port uses
+					for itself, opens in the Language Constructor: one line per string and one
+					column per language.</li>
+					<li>For such a file the Additional button asks which languages of it to put
+					on the screen, since one file holds thirty of them at once.</li>
+					<li>A language the file leaves as an empty field shows the source text
+					quietly, which is the table saying it isn't translated.</li>
+					<li>A table of two thousand lines redraws in a tenth of a second instead of
+					fourteen seconds.</li>
+				</ul>
+			</description>
+		</release>
 		<release date="2026-10-17" version="1.2.0">
 			<description>
 				<ul>

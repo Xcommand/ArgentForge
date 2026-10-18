@@ -3,6 +3,33 @@ Changes in this fork
 
 What we added on top of upstream SLADE, feature by feature. Kept short on purpose.
 
+New in 1.2.1
+------------
+
+The Language Constructor reads a `LANGUAGE` file written as a spreadsheet, which is the shape a
+modern port uses for itself: `default,Identifier,Filter,` and then one column per language, one
+line per string. The port's own table on this disk is 33 columns and 2369 lines, and it opens.
+
+* The dropdown picks the file as ever. Over a table like this the `Additional` button asks which of
+  *its* languages to put on the screen, because one file holds thirty of them and nobody wants
+  thirty columns at once. The first one you tick leads.
+* A language the file leaves as an empty field shows the source text in the quieter colour, the way
+  an untranslated copy in a mod's own lump does. That is the engine's rule made visible: an empty
+  cell isn't a string at all, and the game falls back to English.
+* A line break inside one of those cells is written as a real newline, where a mod's lump writes
+  the two characters `\n`. The table shows the marker either way, and the file gets back the
+  spelling it uses.
+* Reading a table of two thousand lines cell by cell is what cost fourteen seconds per redraw until
+  the reader got an index by label and a kept list of its languages. It redraws in a tenth of a
+  second now.
+* What it doesn't do yet: `Add new language` over such a file, because a language there is a column
+  of the header rather than a block to open; and the Menu Constructor's preview resolves a `$KEY`
+  through the `default` column, so a port's table hands it English whatever language is picked.
+* Checked headlessly before the build, over the whole port table: read, edited and written back with
+  nothing lost beyond the cell that was edited, one edit moving one field and no other, an empty
+  field filled in place rather than as a second line for the same string, and a new line taken back
+  out leaving the file byte for byte what it was.
+
 New in 1.2.0
 ------------
 

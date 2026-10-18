@@ -50,8 +50,8 @@ END
 // Version
 //
 
-#define SLADE_VERSION 1,2,0,0
-#define SLADE_VERSION_STR "1.2.0"
+#define SLADE_VERSION 1,2,1,0
+#define SLADE_VERSION_STR "1.2.1"
 #define SLADE_COPYRIGHT "Copyright (C) 2008-2026"
 #define SLADE_BASED_ON "Based on SLADE 3.2.12"
 

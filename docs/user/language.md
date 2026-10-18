@@ -57,6 +57,26 @@ give two English columns, each with the file's name in its header, because they 
 have to fill in separately. One column shows the most specific tag the file declares, so a
 `[enu eng en default]` header is one English column rather than four.
 
+## One file can be a whole table
+
+A modern port doesn't keep one file per language. It ships one `language.csv` whose first line says
+`default,Identifier,Filter,` and then names every language it has, and each line after that is one
+string with a cell per language. That file opens here too, on the same rules with one difference: the
+columns come out of the file rather than out of the archive. Over such a file the `Additional` button
+asks which of *its* languages you want beside the first one, because thirty columns at once is
+nobody's idea of a table.
+
+The rest is what you'd expect. A cell the file left empty is a language that hasn't got the string,
+which is exactly what the engine reads, so the column shows the source text quietly and you can type
+into it. A line break inside a cell is written there as a real newline where a mod's own lump writes
+the two characters `\n`; the table shows the marker either way and gives the file back the spelling it
+uses.
+
+Two things it won't do yet. `Add new language` can't add a language to such a file, because there the
+language is a column of the header and not a block to open. And the Menu Constructor's preview reads
+the `default` column of a table like this, so a port's strings come out in English whatever language
+you picked there.
+
 ## Editing where it stands
 
 One click opens the cell. `Enter` writes it, clicking another cell writes it too, `Esc` takes back
