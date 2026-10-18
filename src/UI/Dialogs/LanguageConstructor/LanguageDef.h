@@ -26,17 +26,56 @@ public:
 	// gives two of them, because the engine inserts the string into both tables
 	vector<string> langs;
 
+	// One language column of a spreadsheet row. A LANGUAGE table can also be a CSV file,
+	// where the line names the string and every other column is a language
+	// (stringtable.cpp:497-587), so one line carries values for several languages at once.
+	// [tags] is what the header cell wrote for the column, which can name more than one
+	// ('en default'); [begin] and [end] are the whole field, quotes included, and
+	// [value_begin] equals [value_end] when the file left the cell untranslated
+	struct Cell
+	{
+		vector<string> tags;
+		size_t         begin = 0;
+		size_t         end = 0;
+		size_t         value_begin = 0;
+		size_t         value_end = 0;
+		bool           quoted = false;
+	};
+
+	// Non-empty for a row of a CSV table; empty for the 'NAME = "text";' shape
+	vector<Cell> cells;
+
 	// False for a line the reader couldn't make a definition of. It is still carried out
 	// to the file, just not offered for editing
 	bool parsed = false;
 
 	// The text between the quotes, with the runs joined the way the engine joins them.
-	// Escapes are left as the file wrote them: this is a reader, not the game
+	// Escapes are left as the file wrote them: this is a reader, not the game. For a CSV
+	// row it's the first column of that row that has any text, which is the file's own
+	// wording of the string
 	string text() const;
+
+	// The text of one language's cell in a CSV row. Empty when the file left it untranslated
+	string text(string_view language) const;
+
+	// The field a language's text lives in, or null when the row has no such column. An
+	// empty language asks for the cell the row's own text() reads
+	const Cell* cell(string_view language) const;
+
+	// Points the row's own text at the first cell that has any, which is the file's own
+	// wording of the string
+	void retargetText();
 
 	// Writes [text] over the value, keeping the label, the '$ifgame' and the ';' where
 	// they were. False for a line that never parsed
 	bool setText(string_view text);
+
+	// The same into one cell of a CSV row, quoting the field the way the line quotes its
+	// own fields. Also what fills a cell the file left empty
+	bool setText(string_view text, string_view language);
+
+	// Whether this row is a line of a CSV table
+	bool isCsv() const { return !cells.empty(); }
 
 private:
 	friend class LanguageSource;
@@ -98,6 +137,23 @@ public:
 private:
 	// Whether this definition belongs to the language being asked about
 	static bool holds(const LanguageEntry& entry, string_view language);
+
+	// A spreadsheet table: the columns its header declared. One entry per position in the
+	// header line, so a row's cells line up with it; [label] marks the column that names the
+	// string and [tags] is empty for the columns the engine doesn't read as languages
+	struct CsvColumn
+	{
+		vector<string> tags;
+		bool           label = false;
+	};
+
+	bool loadCsv(string_view text);
+
+	// A row at the bottom of a CSV table, with the text in the one column asked for
+	bool addCsvLine(string_view label, string_view language, string_view text);
+
+	std::vector<CsvColumn> csv_cols_;
+	bool                   csv_ = false;
 
 	// The line ending in use at [at], so a block added to a CRLF file doesn't come in
 	// with bare newlines

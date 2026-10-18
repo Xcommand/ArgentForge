@@ -1,0 +1,63 @@
+default,Identifier,Filter,de,ru,zh_Hans
+Double-click Threshold,ACCMNU_DOUBLECLICK_THRESHOLD,,Schwellenwert für Doppelklick,Порог двойного щелчка,双击阈值
+Lighting,ACCMNU_LIGHT,,Beleuchtung,Освещение,光照
+Extra Lighting,ACCMNU_LIGHT_EXTRA,,Zusätzliche Beleuchtung,Дополнительное освещение,附加光照
+Player Light Radius,ACCMNU_LIGHT_RADIUS,,Licht-Radius des Spielers,Радиус освещения игрока,玩家光照半径
+Accessibility Options,ACCMNU_TITLE,,Optionen zur Barrierefreiheit,Настройки доступности,辅助选项
+Tooltips,ACCMNU_TOOLTIP,,Kurzinfos,Подсказки,提示信息
+Tooltip Background Alpha,ACCMNU_TOOLTIP_ALPHA,,Hintergrund-Alpha Kurzinfos,Прозрачность фона подсказки,提示信息背景透明度
+Limit Tooltip Width,ACCMNU_TOOLTIP_CAP,,Kurzinfo-Breite begrenzen,Границы ширины подсказки,提示信息宽度限制
+"This is an example tooltip.
+Here is some supplementary text.
+...
+Here is a very long line of text that just seems to go on and on without ever having anything interesting to say, seemingly only being so long because the developers are having a hard time explaining what an option does.",ACCMNU_TOOLTIP_EXAMPLE,,"Dies ist ein Beispieltext für Kurzinfos.
+Her ist noch mehr Text.
+...
+Hier ist eine sehr lange Textzeile, die weiter und weiter zu gehen scheint ohne je etwas Interessantes auszusagen, anscheinend nur so länglich weil die Entwickler Schwierigkeiten haben auszudrücken wofür eine Funktion nützlich ist.","Это пример подсказки.
+Это сопровождающий текст.
+...
+Это очень длинная строка текста, которая, кажется, будет продолжаться все дальше и дальше, не давая никакой важной информации, только потому, что разработчику трудно объяснить, что делает эта опция.","这是一个提示信息示例。
+这里是一些补充说明文字。
+…
+这是一行非常长的文字，似乎一直说个不停，但又没有提到任何有趣的内容，这么长似乎仅仅是因为开发者难以解释该选项的具体功能。"
+ADLMidi,ADVSNDMNU_ADLMIDI,,,,
+FluidSynth,ADVSNDMNU_FLUIDSYNTH,,,Синтезатор FluidSynth,
+Freeverb,ADVSNDMNU_FREEVERB,,,Ревербератор Freeverb,
+Phasing Zorcher Charge,AMMO_CELLS,chex,Phasenzorcher-Ladung,Заряд фазерного зорчера,相位Zorcher充能
+"Mission accomplished.
+
+Are you prepared for the next mission?
+
+
+
+
+
+
+Press the escape key to continue...",CE1TEXT,,"Mission erfüllt.
+
+Bist du für die nächste Mission bereit?
+
+
+
+
+
+
+Drücke die Esc-Taste um fortzufahren...","Миссия выполнена.
+
+Готовы к следующей миссии?
+
+
+
+
+
+
+Нажмите Esc для продолжения...","任务圆满完成。
+
+你准备好下个任务了吗？
+
+
+
+
+
+
+按Esc键继续……"

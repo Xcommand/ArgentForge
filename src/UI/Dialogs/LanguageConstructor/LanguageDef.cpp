@@ -146,6 +146,180 @@ string valueOf(string_view value)
 		out += token.text;
 	return out;
 }
+
+// -----------------------------------------------------------------------------
+// One field of a spreadsheet line, with the bytes it was written as. [value] is what
+// the engine ends up reading: the text between the quotes with a doubled quote folded
+// back into one (stringtable.cpp:392-460)
+// -----------------------------------------------------------------------------
+struct CsvField
+{
+	size_t begin = 0;
+	size_t end = 0;
+	size_t value_begin = 0;
+	size_t value_end = 0;
+	bool   quoted = false;
+	string value;
+};
+
+// -----------------------------------------------------------------------------
+// One line of a CSV table, scanned the way the engine scans it: a quote opens a field
+// only where the field starts, a doubled quote inside a quoted field is one quote mark,
+// every CR is dropped wherever it sits, and a newline between quotes belongs to the
+// field rather than ending the line. [next] is where the line after this one starts.
+// The spans are the bytes as the file wrote them and stop before the line ending, so a
+// rewrite leaves the file's own CRLF outside the piece it replaces
+// -----------------------------------------------------------------------------
+vector<CsvField> csvLine(string_view text, size_t at, size_t& next)
+{
+	vector<CsvField> out;
+	CsvField         field;
+	field.begin = at;
+	string value;
+	bool quoted = false;
+
+	size_t i = at;
+	while (i < text.size())
+	{
+		char c = text[i];
+
+		if (c == '"')
+		{
+			if (quoted && i + 1 < text.size() && text[i + 1] == '"')
+			{
+				value += '"';
+				i += 2;
+				continue;
+			}
+			if (value.empty() || quoted)
+			{
+				if (!quoted)
+					field.value_begin = i + 1;
+				else
+					field.value_end = i;
+				field.quoted = true;
+				quoted = !quoted;
+			}
+			// A quote that turns up in the middle of a bare field isn't part of the text
+			// the engine keeps, so it isn't part of ours either
+			++i;
+			continue;
+		}
+
+		if (c == ',')
+		{
+			if (quoted)
+			{
+				value += c;
+				++i;
+				continue;
+			}
+			field.end        = i;
+			if (!field.quoted)
+				field.value_begin = field.begin, field.value_end = i;
+			field.value = value;
+			out.push_back(field);
+			value.clear();
+			field = CsvField{};
+			field.begin = i + 1;
+			++i;
+			continue;
+		}
+
+		if (c == '\r')
+		{
+			++i;
+			continue;
+		}
+
+		if (c == '\n')
+		{
+			if (quoted)
+			{
+				value += c;
+				++i;
+				continue;
+			}
+			// The file's own CRLF is not part of the line: the engine drops every CR, and a
+			// span that swallowed one would write it back in the wrong place after an edit
+			field.end = i;
+			if (field.end > field.begin && text[field.end - 1] == '\r')
+				--field.end;
+			if (!field.quoted)
+				field.value_begin = field.begin, field.value_end = field.end;
+			field.value = value;
+			out.push_back(field);
+			next = i + 1;
+			return out;
+		}
+
+		value += c;
+		++i;
+	}
+
+	// The last line of a file that doesn't end in a newline is still a line
+	field.end = text.size();
+	while (field.end > field.begin && text[field.end - 1] == '\r')
+		--field.end;
+	if (!field.quoted)
+		field.value_begin = field.begin, field.value_end = field.end;
+	field.value = value;
+	out.push_back(field);
+	next = text.size();
+	return out;
+}
+
+// The engine's own test on the first bytes of the file (stringtable.cpp:500), case aside
+bool startsCI(string_view text, string_view start)
+{
+	return text.size() >= start.size() && strutil::equalCI(text.substr(0, start.size()), start);
+}
+
+// Whether a text has to go between quotes for a CSV field to still be one field
+bool csvNeedsQuote(string_view text)
+{
+	if (text.empty())
+		return false;
+	for (char c : text)
+		if (c == ',' || c == '"' || c == '\n' || c == '\r')
+			return true;
+	if (text.front() == ' ' || text.back() == ' ')
+		return true;
+	return false;
+}
+
+// [text] as a quoted CSV field: every quote in it doubles, which is what the engine folds
+// back when it reads the file
+string csvQuoted(string_view text)
+{
+	string out = "\"";
+	for (char c : text)
+	{
+		if (c == '"')
+			out += '"';
+		out += c;
+	}
+	out += '"';
+	return out;
+}
+
+// The bytes a quoted field holds between its quotes, with a doubled quote folded back
+// into the one quote mark the text really has
+string csvInner(string_view raw)
+{
+	string out;
+	for (size_t i = 0; i < raw.size(); ++i)
+	{
+		if (raw[i] == '"' && i + 1 < raw.size() && raw[i + 1] == '"')
+		{
+			out += '"';
+			++i;
+			continue;
+		}
+		out += raw[i];
+	}
+	return out;
+}
 } // namespace
 
 // -----------------------------------------------------------------------------
@@ -166,7 +340,105 @@ string LanguageEntry::text() const
 	if (from > to || to > raw.size())
 		return {};
 
-	return valueOf(string_view(raw).substr(from, to - from));
+	auto value = string_view(raw).substr(from, to - from);
+	if (isCsv())
+		return csvInner(value);
+
+	return valueOf(value);
+}
+
+// -----------------------------------------------------------------------------
+// The cell a language's text sits in. A CSV row has one per column the header wrote;
+// the empty language is the row's own, which is the first column that has any text
+// -----------------------------------------------------------------------------
+const LanguageEntry::Cell* LanguageEntry::cell(string_view language) const
+{
+	if (!isCsv())
+		return nullptr;
+
+	if (language.empty())
+	{
+		for (const auto& one : cells)
+			if (one.value_begin == value_begin && one.value_end == value_end)
+				return &one;
+		return &cells.front();
+	}
+
+	for (const auto& one : cells)
+		for (const auto& tag : one.tags)
+			if (strutil::equalCI(tag, language))
+				return &one;
+	return nullptr;
+}
+
+void LanguageEntry::retargetText()
+{
+	value_begin = value_end = 0;
+	for (const auto& one : cells)
+	{
+		if (one.value_end <= one.value_begin)
+			continue;
+		value_begin = one.value_begin;
+		value_end   = one.value_end;
+		return;
+	}
+}
+
+string LanguageEntry::text(string_view language) const
+{
+	if (!isCsv() || language.empty())
+		return text();
+
+	auto* one = cell(language);
+	if (!one || one->value_end <= one->value_begin || one->value_end > begin + raw.size())
+		return {};
+
+	auto value = string_view(raw).substr(one->value_begin - begin, one->value_end - one->value_begin);
+	return one->quoted ? csvInner(value) : string(value);
+}
+
+bool LanguageEntry::setText(string_view text, string_view language)
+{
+	if (!parsed)
+		return false;
+	if (!isCsv() || language.empty())
+		return setText(text);
+
+	auto* one = const_cast<Cell*>(cell(language));
+	if (!one)
+		return false;
+
+	bool   quote = one->quoted || csvNeedsQuote(text);
+	string value = quote ? csvQuoted(text) : string(text);
+
+	size_t from = one->begin - begin;
+	size_t to   = one->end - begin;
+	if (from > to || to > raw.size())
+		return false;
+
+	auto cut_end = one->end;
+	auto before  = raw.size();
+	raw          = raw.substr(0, from) + value + raw.substr(to);
+	long delta   = (long)raw.size() - (long)before;
+
+	one->end         = one->begin + value.size();
+	one->value_begin = quote ? one->begin + 1 : one->begin;
+	one->value_end   = quote ? one->end - 1 : one->end;
+	one->quoted      = quote;
+
+	// Everything past the field that was rewritten has moved with it. [end] doesn't: it is
+	// the span of bytes as the file was read, and that's where the writer puts the line back
+	for (auto& other : cells)
+	{
+		if (other.begin < cut_end || &other == one)
+			continue;
+		other.begin       = (size_t)((long)other.begin + delta);
+		other.end         = (size_t)((long)other.end + delta);
+		other.value_begin = (size_t)((long)other.value_begin + delta);
+		other.value_end   = (size_t)((long)other.value_end + delta);
+	}
+	retargetText();
+	return true;
 }
 
 bool LanguageEntry::setText(string_view text)
@@ -214,6 +486,14 @@ bool LanguageSource::load(string_view text)
 	entries_.clear();
 	spots_.clear();
 	extra_.clear();
+	csv_cols_.clear();
+	csv_ = false;
+
+	// A spreadsheet table says so in its own first line, and one of its lines carries a
+	// value for every language the file has, which is no shape the scanner below knows.
+	// A file that only looks like one is read on through, by the scanner that fits it
+	if (loadCsv(text))
+		return true;
 
 	auto toks = tokenize(text);
 
@@ -349,6 +629,218 @@ bool LanguageSource::load(string_view text)
 	return true;
 }
 
+// -----------------------------------------------------------------------------
+// A LANGUAGE file written as a spreadsheet: the engine takes the lump as CSV when its
+// first line starts with 'default,' or 'identifier,' (stringtable.cpp:497-587). The
+// header names the columns, one of them the string's identifier and the rest a language
+// each; a cell that's empty is a string that language hasn't got, which is exactly the
+// engine's own rule (it deletes the string from that table). 'Filter' picks the game the
+// row is for and 'Remarks' is a note, so neither is offered for translating.
+//
+// Nothing here is normalised: every cell keeps the bytes the file wrote it with, so an
+// edit to one cell leaves the line's other cells, its quoting and its line ending alone.
+// -----------------------------------------------------------------------------
+bool LanguageSource::loadCsv(string_view text)
+{
+	auto head = strutil::trim(text.substr(0, text.find('\n')));
+	if (!startsCI(head, "default,") && !startsCI(head, "identifier,"))
+		return false;
+
+	size_t at = 0, next = 0;
+	auto   header = csvLine(text, at, next);
+
+	size_t label_col = SIZE_MAX;
+	for (size_t c = 0; c < header.size(); ++c)
+	{
+		CsvColumn column;
+		auto      name = strutil::trim(header[c].value);
+		if (strutil::equalCI(name, "identifier"))
+		{
+			column.label = true;
+			label_col    = c;
+		}
+		else if (!strutil::equalCI(name, "filter") && !strutil::equalCI(name, "remarks"))
+		{
+			// One column can name more than one language, the engine splits its header on
+			// spaces; the tags are kept as written because they're what a write looks up
+			for (const auto& tag : strutil::split(header[c].value, ' '))
+				if (!strutil::trim(tag).empty())
+					column.tags.push_back(strutil::trim(tag));
+		}
+		csv_cols_.push_back(column);
+	}
+	if (label_col == SIZE_MAX)
+	{
+		csv_cols_.clear();
+		return false;
+	}
+
+	string eol = eolAt(text, 0);
+	at         = next;
+	while (at < text.size())
+	{
+		size_t after  = at;
+		auto   fields = csvLine(text, at, after);
+		at            = after;
+		if (fields.empty())
+			continue;
+		// A line with nothing on it, which is how a file ends itself
+		if (fields.size() == 1 && fields.front().value.empty())
+			continue;
+		if (fields.size() <= label_col)
+			continue;
+
+		auto label = strutil::trim(fields[label_col].value);
+		if (label.empty() || isdigit((unsigned char)label[0]))
+			continue;
+
+		LanguageEntry entry;
+		entry.label  = string(label);
+		entry.begin  = fields.front().begin;
+		entry.end    = fields.back().end;
+		entry.raw    = string(text.substr(entry.begin, entry.end - entry.begin));
+		entry.parsed = true;
+
+		for (size_t c = 0; c < csv_cols_.size(); ++c)
+		{
+			if (csv_cols_[c].tags.empty())
+				continue;
+
+			LanguageEntry::Cell cell;
+			cell.tags = csv_cols_[c].tags;
+			if (c < fields.size())
+			{
+				cell.begin       = fields[c].begin;
+				cell.end         = fields[c].end;
+				cell.value_begin = fields[c].value_begin;
+				cell.value_end   = fields[c].value_end;
+				cell.quoted      = fields[c].quoted;
+			}
+			else
+			{
+				// The line stopped short of this column. Its cell is empty and sits at the
+				// end of what the line did write, which is where a translation can go
+				cell.begin = cell.end = cell.value_begin = cell.value_end = fields.back().end;
+			}
+
+			if (cell.value_end > cell.value_begin)
+				for (const auto& tag : cell.tags)
+					entry.langs.push_back(tag);
+			entry.cells.push_back(cell);
+		}
+		if (entry.cells.empty())
+			continue;
+		entry.retargetText();
+
+		// Where a language's rows end, and how the file writes a line: a new string is put
+		// at the bottom of the table, flush left, under the line ending already in use
+		for (const auto& tag : (entry.langs.empty() ? vector<string>{ "" } : entry.langs))
+		{
+			auto& spot   = spots_[tag];
+			spot.indent  = "";
+			spot.eol     = eol;
+			spot.seen    = true;
+			if (entry.end >= spot.end)
+				spot.end = entry.end;
+		}
+		// A column every row leaves empty is still a language the file has, and a table
+		// that hides it can't be translated into
+		for (const auto& column : csv_cols_)
+			for (const auto& tag : column.tags)
+			{
+				auto& spot  = spots_[tag];
+				spot.indent = "";
+				spot.eol    = eol;
+			}
+
+		entries_.push_back(std::move(entry));
+	}
+
+	csv_ = true;
+	return true;
+}
+
+// -----------------------------------------------------------------------------
+// A row the table doesn't have yet: the identifier in its column, the text in the one
+// the language was asked for, and an empty field everywhere else, which is what the
+// engine reads as 'this language has no such string'
+// -----------------------------------------------------------------------------
+bool LanguageSource::addCsvLine(string_view label, string_view language, string_view text)
+{
+	if (csv_cols_.empty())
+		return false;
+
+	size_t label_col = 0;
+	for (size_t c = 0; c < csv_cols_.size(); ++c)
+		if (csv_cols_[c].label)
+			label_col = c;
+
+	size_t at  = text_.size();
+	string eol = eolAt(text_, at);
+	if (!entries_.empty())
+		at = entries_.back().end;
+
+	string                       line;
+	std::vector<LanguageEntry::Cell> cells;
+	for (size_t c = 0; c < csv_cols_.size(); ++c)
+	{
+		if (c)
+			line += ',';
+		const auto& column = csv_cols_[c];
+		string      value;
+		bool        quoted = false;
+		if (column.label)
+			value = string(label);
+		else if (!column.tags.empty())
+		{
+			bool wants = false;
+			for (const auto& tag : column.tags)
+				if (strutil::equalCI(tag, language))
+					wants = true;
+			if (wants && !text.empty())
+			{
+				quoted = true;
+				value  = csvQuoted(text);
+			}
+		}
+
+		LanguageEntry::Cell cell;
+		cell.tags  = column.tags;
+		cell.begin = at + eol.size() + line.size();
+		cell.end   = cell.begin + value.size();
+		if (column.label || column.tags.empty())
+		{
+			// Not a language's cell: it holds no text a column would show
+			cell.value_begin = cell.value_end = cell.end;
+		}
+		else
+		{
+			cell.value_begin = quoted ? cell.begin + 1 : cell.begin;
+			cell.value_end   = quoted ? cell.end - 1 : cell.end;
+			cell.quoted      = quoted;
+		}
+		cells.push_back(cell);
+		line += value;
+	}
+
+	LanguageEntry add;
+	add.label  = string(label);
+	add.parsed = true;
+	add.begin  = at;
+	add.end    = at;
+	add.raw    = eol + line;
+	add.cells  = std::move(cells);
+	for (const auto& tag : add.cells)
+		if (tag.value_end > tag.value_begin)
+			for (const auto& one : tag.tags)
+				add.langs.push_back(one);
+	if (add.langs.empty())
+		add.langs.push_back(string(language));
+	add.retargetText();
+	entries_.push_back(std::move(add));
+	return true;
+}
+
 string LanguageSource::serialize() const
 {
 	// What changed, and where it goes in the text as it was read. An added string is
@@ -460,7 +952,7 @@ bool LanguageSource::setString(string_view label, string_view language, string_v
 	auto e = entry(label, language);
 	if (!e)
 		return false;
-	return e->setText(text);
+	return e->setText(text, language);
 }
 
 // -----------------------------------------------------------------------------
@@ -474,6 +966,16 @@ bool LanguageSource::addString(string_view label, string_view language, string_v
 {
 	if (entry(label, language))
 		return false;
+
+	if (csv_)
+	{
+		// A row the table already writes, with this cell left empty, isn't a new string: it's
+		// the same string waiting to be translated, and the file has the line for it
+		for (auto& e : entries_)
+			if (e.parsed && e.isCsv() && strutil::equalCI(e.label, label) && e.cell(language))
+				return e.setText(text, language);
+		return addCsvLine(label, language, text);
+	}
 
 	string indent = "\t";
 	string eol    = "\n";
@@ -522,6 +1024,11 @@ bool LanguageSource::addString(string_view label, string_view language, string_v
 
 bool LanguageSource::openBlock(string_view language)
 {
+	// In a spreadsheet table a language is a column of the header, not a block to open, and
+	// writing one means touching every line of the file. The reader offers what's there
+	if (csv_)
+		return false;
+
 	if (language.empty() || spots_.find(string(language)) != spots_.end())
 		return false;
 
