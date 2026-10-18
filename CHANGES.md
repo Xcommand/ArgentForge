@@ -41,6 +41,10 @@ guide page is [Translating a language](docs/user/language.md).
   `Tools` still lists all three for a constructor called without the file in front of you.
 * `Preferences > Extra Features` split up: the image editor, the three constructors and the launcher
   integration each have a page of their own now.
+* The Menu Constructor read the language files once, when its window opened, so a translation typed
+  in the Language Constructor kept showing its old text in the preview. The preview re-reads them on
+  every redraw now, and a cell written in the table goes into the archive entry as it goes into the
+  editor, which is what any other window of the archive reads.
 
 New in 1.1.2
 ------------

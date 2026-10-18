@@ -1853,6 +1853,11 @@ bool TextEntryPanel::applyLanguageText(string_view lump, string_view text)
 
 		setModified();
 		std::get<2>(*at) = string(text);
+
+		// The entry gets the same bytes now, not on the next save. Another window reading this
+		// archive, the Menu Constructor's preview above all, has to see a translation the moment
+		// it's typed, and what's written here is what an archive save would write anyway
+		saveEntry();
 		return true;
 	}
 

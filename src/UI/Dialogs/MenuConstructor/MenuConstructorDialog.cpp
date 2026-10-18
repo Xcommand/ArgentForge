@@ -438,6 +438,14 @@ MenuConstructorDialog::MenuConstructorDialog(wxWindow* parent) :
 		menucon_x = GetPosition().x; menucon_y = GetPosition().y;
 		if (split_outer_->IsSplit()) menucon_sash_menus = split_outer_->GetSashPosition();
 		e.Skip(); });
+
+	// Coming back to this window is the moment a translation may have been typed elsewhere - in
+	// the Language Constructor or straight into the lump - so the preview gets fresh strings
+	// before it draws again rather than the ones read when the window opened
+	Bind(wxEVT_ACTIVATE, [this](wxActivateEvent& e) {
+		if (e.GetActive() && preview_)
+		{ readArchiveLanguage(); updatePreviewWindow(); }
+		e.Skip(); });
 }
 
 bool MenuConstructorDialog::loadText(string_view text)
@@ -778,6 +786,7 @@ void MenuConstructorDialog::readArchivePatches()
 void MenuConstructorDialog::openPortArchive()
 { port_pk3_tried_ = strutil::trim((string)zdoom_pk3_path);
   port_archive_   = nullptr;
+  base_language_ready_ = false;
   if (port_pk3_tried_.empty()) return;
   port_archive_ = app::archiveManager().openArchive(port_pk3_tried_, false, true); }
 
@@ -785,9 +794,16 @@ void MenuConstructorDialog::openPortArchive()
 // order the mod comes after the port. Counting the result into the status line is deliberate,
 // "no keys found" and "keys found but this one isn't among them" need different fixes
 void MenuConstructorDialog::readArchiveLanguage()
-{ mod_language_.clear();
-  readLanguageFrom(port_archive_.get());
-  readLanguageFrom(app::archiveManager().baseResourceArchive());
+{ // The port's and the resource archive's own labels don't move while the program runs, and their
+  // files are the large ones, so they are read once and copied. The mod's lumps are re-walked every
+  // time: that is where a translation typed in the Language Constructor has just landed
+  if (!base_language_ready_)
+  { mod_language_.clear();
+    readLanguageFrom(port_archive_.get());
+    readLanguageFrom(app::archiveManager().baseResourceArchive());
+    base_language_ = mod_language_;
+    base_language_ready_ = true; }
+  else mod_language_ = base_language_;
   readLanguageFrom(archive_);
   applyChosenLanguage();
   language_keys_ = (int)mod_language_.size(); }
@@ -1919,6 +1935,9 @@ void MenuConstructorDialog::previewBackground()
       preview_->setBackground(resolveMenuTexture(bg), bg); }}
 void MenuConstructorDialog::updatePreviewWindow()
 { auto* def = currentDefinition(); if (!def || !preview_) return;
+  // Every redraw reads the strings again, because the edit that changed one may have happened in
+  // the other window a second ago
+  readArchiveLanguage();
   previewBackground();
   auto rows = buildPreviewRows();
   auto* sel = currentStatement();

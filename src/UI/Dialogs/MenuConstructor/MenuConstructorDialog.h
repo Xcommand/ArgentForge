@@ -453,6 +453,10 @@ private:
 	// Stored as key -> value so the preview can resolve $KEY to the actual text
 	std::map<string, string> mod_language_;
 	void              readArchiveLanguage();
+	// The port's and the resource archive's part of that map, kept because their files are big and
+	// never change under us. The mod's own lumps are re-read on every preview redraw
+	std::map<string, string> base_language_;
+	bool              base_language_ready_ = false;
 	// The LANGUAGE files the archive holds, and the one picked above the block list. Its own
 	// language goes over the merged table last, so the preview shows the text of the language
 	// the menu is being written in rather than whichever file the walk happened to reach last
