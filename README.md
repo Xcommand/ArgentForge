@@ -103,6 +103,37 @@ and a line you didn't touch comes back byte for byte the way the mod wrote it.
 
 <img width="525" height="397" alt="Where the first menu of a mod hangs" src="https://github.com/Xcommand/ArgentForge/releases/download/v1.1.0/start-a-menu.png" /> <img width="476" height="576" alt="The archive's own cvar names offered under a field" src="https://github.com/Xcommand/ArgentForge/releases/download/v1.1.0/name-offers.png" />
 
+**Languages, as a table**
+
+The **Language Constructor**: a `LANGUAGE` lump as one row per string and one column per language
+file. It opens from the text toolbar over a language lump, or from `Tools > Language Constructor...`,
+and it edits the text you have open, so the editor's undo is the window's undo.
+
+<img width="988" height="812" alt="The Language Constructor with a cell open, the colour codes visible while you type" src="https://github.com/Xcommand/ArgentForge/releases/download/v1.2.0/language-constructor.png" /> <img width="831" height="699" alt="Two language files as two columns, and the right-click menu over a cell" src="https://github.com/Xcommand/ArgentForge/releases/download/v1.2.0/language-colour-menu.png" />
+
+* The dropdown says which file new strings go into and which column is the original; `Additional`
+  ticks the other files you want beside it. A file you didn't tick isn't in the table, so an archive
+  with nine language files doesn't put nine columns in front of you.
+* A string the second file doesn't define yet stands in the first file's text, in a quieter colour.
+  That's a placeholder, and it's the table saying 'this one isn't translated' without making you run
+  a report. Translate it and it stops being quiet.
+* The engine reads a colour inside a string as `\c` plus a letter. The table shows the words in that
+  colour with the code hidden, which is what the menu will look like; right-click a cell for
+  `Colour...`, `Remove the colour from this cell`, `Copy` and `Paste`. The picker is the program's
+  own and snaps to the nearest colour the game can actually draw.
+* One click opens a cell. `Enter` writes it, so does moving to another cell, `Esc` takes back what you
+  typed. A long value opens a field tall enough to read all of it, and keeps the file's `\n` markers
+  visible where it breaks the line, so a line break is something you can see yourself deleting.
+* Table and editor follow each other: pick a row and the editor goes to its line, pick a line and the
+  row lights up, and a string kept in another file of the archive opens that file rather than telling
+  you it isn't here.
+* A `$key` you invent is written for you. Type a name no language file defines into any field the
+  player reads in the Menu Constructor, and the key is created in the file you pointed at and as a
+  placeholder in the others.
+* The reader behind the table is checked headlessly against real mod files before a build ships:
+  4801 labels across 29 language lumps, and every one of them comes back byte for byte except the
+  line you were on.
+
 **Image editor**
 
 
