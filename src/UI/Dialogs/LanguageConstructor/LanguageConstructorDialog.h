@@ -50,6 +50,10 @@ public:
 	// Takes the texts the caller has already accepted, so the window's copies stay the truth
 	void adopt(const vector<LanguageLump>& lumps, string_view current);
 
+	// Which languages of a spreadsheet file the table shows. The window's own picker sets
+	// it; a caller can too, which is how the off-screen view gets the same picture
+	void setShownTags(const vector<string>& tags) { shown_tags_ = tags; }
+
 	// What to call with the whole new text of one lump after a change. False means the
 	// caller didn't take it, which is how the window learns to stop trying
 	void setApplyFunction(std::function<bool(string_view lump, string_view text)> apply) { apply_ = std::move(apply); }
@@ -154,6 +158,13 @@ private:
 	// The little window of checkboxes for which files also get a placeholder copy
 	void chooseAdditional();
 
+	// The same button over a spreadsheet file, where the columns to narrow are the
+	// languages inside the one file rather than the archive's other files
+	void chooseSpreadsheetColumns(const LanguageSource& lump);
+
+	// What the button's label counts: other files, or other languages of this one
+	int additionalCount() const;
+
 	// Says why something didn't happen, in the window's own space where it stays read-
 	// able. An action that does nothing quietly costs a session of guessing
 	void say(string_view what);
@@ -187,6 +198,23 @@ private:
 
 	// The string a row shows in a column: the most specific tag the row has a value under
 	const LanguageEntry* cellAt(string_view key, const LanguageColumn& column) const;
+
+	// The line of a spreadsheet file that holds this key, whichever column of it has text
+	const LanguageEntry* rowOf(const LanguageSource& lump, string_view key) const;
+	LanguageEntry*       rowOf(LanguageSource& lump, string_view key) const;
+
+	// The text one column of the table shows for a row: the cell of that language when the
+	// file is a spreadsheet, the line's own value when it writes one string per line
+	string cellText(const LanguageEntry* entry, string_view key, const LanguageColumn& column) const;
+
+	// A spreadsheet's real newline and a mod lump's two-character '\n' are the same thing to
+	// the game and two different things on the screen: the field shows the marker, the file
+	// gets back whichever spelling it writes
+	static string breaksToMarkers(string_view text);
+	static string markersToBreaks(string_view text);
+
+	// The cell at a row and a header column, as the table shows it
+	string cellTextOf(long row, long column) const;
 
 	// Which tag a cell was taken from, so an edit writes the file that holds it
 	string tagAt(string_view key, const LanguageColumn& column) const;
@@ -223,6 +251,10 @@ private:
 	wxButton* btn_additional_ = nullptr;
 	string    primary_;
 	vector<string> additional_;
+
+	// The languages of a spreadsheet file he wants as columns. Its own table holds thirty
+	// of them, and one file can't be narrowed by picking files
+	vector<string> shown_tags_;
 	int        lump_row_ = 0; // where the files stop and the dashed line begins
 
 	wxStaticText* note_      = nullptr;

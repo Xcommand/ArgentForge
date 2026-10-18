@@ -578,11 +578,21 @@ void LanguageConstructorDialog::buildLumpChoices()
 	}
 	choice_lump_->SetSelection(pick);
 
-	btn_additional_->SetLabel(
-		additional_.empty() ? wxString::FromUTF8("Additional")
-		                    : wxString::Format(wxS("Additional (%d)"), (int)additional_.size()));
+	btn_additional_->SetLabel(wxString::Format(
+		additionalCount() ? wxS("Additional (%d)") : wxS("Additional"), additionalCount()));
 
 	updating_ = false;
+}
+
+// How many columns the ticks put beside the leading one. For a file per language those are
+// the other files; for a spreadsheet, which holds them all in one table, they are the other
+// languages of that file
+int LanguageConstructorDialog::additionalCount() const
+{
+	auto* lump = book_.lump(primary_);
+	if (lump && lump->isSpreadsheet())
+		return shown_tags_.empty() ? 0 : std::max(0, (int)shown_tags_.size() - 1);
+	return (int)additional_.size();
 }
 
 // -----------------------------------------------------------------------------
@@ -755,6 +765,19 @@ void LanguageConstructorDialog::askNewLanguage()
 // -----------------------------------------------------------------------------
 void LanguageConstructorDialog::chooseAdditional()
 {
+	// Two questions that look alike and aren't: which of the archive's other files to put
+	// beside this one, or - when the file is one table of every language - which of its
+	// languages to show. A spreadsheet has no other files to pick, so the same button asks
+	// the only question that exists for it
+	if (auto* lump = book_.lump(primary_); lump && lump->isSpreadsheet())
+	{
+		chooseSpreadsheetColumns(*lump);
+		buildColumns();
+		buildRows();
+		buildLumpChoices();
+		return;
+	}
+
 	wxDialog pick(this, wxID_ANY, wxS("Additional languages"), wxDefaultPosition, wxDefaultSize, wxDEFAULT_DIALOG_STYLE);
 	auto     sizer = new wxBoxSizer(wxVERTICAL);
 
@@ -791,6 +814,41 @@ void LanguageConstructorDialog::chooseAdditional()
 }
 
 // -----------------------------------------------------------------------------
+// The languages one spreadsheet file holds, as the columns to show. Its table carries
+// thirty of them at once, so this is the only list that can narrow the screen without
+// leaving the file
+// -----------------------------------------------------------------------------
+void LanguageConstructorDialog::chooseSpreadsheetColumns(const LanguageSource& lump)
+{
+	wxDialog pick(this, wxID_ANY, wxS("Languages of this file"), wxDefaultPosition, wxDefaultSize,
+	              wxDEFAULT_DIALOG_STYLE);
+	auto     sizer = new wxBoxSizer(wxVERTICAL);
+
+	auto tags = lump.languages();
+	auto* list = new wxCheckListBox(&pick, wxID_ANY, wxDefaultPosition, { ui::scalePx(340), ui::scalePx(400) });
+	for (size_t i = 0; i < tags.size(); ++i)
+	{
+		list->Append(wxString::FromUTF8(languageName(tags[i]) + " (" + tags[i] + ")"));
+		if (std::find(shown_tags_.begin(), shown_tags_.end(), tags[i]) != shown_tags_.end())
+			list->Check((int)i);
+	}
+
+	sizer->Add(list, 1, wxALL | wxEXPAND, ui::pad());
+	sizer->Add(
+		new wxStaticText(&pick, wxID_ANY, wxS("The columns to show, in this order")), 0, wxLEFT | wxRIGHT, ui::pad());
+	sizer->Add(new wxButton(&pick, wxID_OK, wxS("Done")), 0, wxALIGN_RIGHT | wxALL, ui::padLarge());
+
+	pick.SetSizerAndFit(sizer);
+	if (pick.ShowModal() != wxID_OK)
+		return;
+
+	shown_tags_.clear();
+	for (size_t i = 0; i < tags.size(); ++i)
+		if (list->IsChecked((int)i))
+			shown_tags_.push_back(tags[i]);
+}
+
+// -----------------------------------------------------------------------------
 // One column per language, and one per file when several files write the same language.
 // A mod that splits its strings by purpose - language.Menu, language.Tally, language.tips,
 // all of them English - has nothing to show if those files are folded into one column, and
@@ -818,7 +876,22 @@ void LanguageConstructorDialog::buildColumns()
 		if (!lump)
 			continue;
 
-		for (const auto& tag : lump->languages())
+		// One spreadsheet line holds every language of the mod, so the file alone would put
+		// thirty columns on the screen. The one he picked leads and the ticked ones follow;
+		// until he ticks anything, the table shows the first language of the file
+		auto tags = lump->languages();
+		if (lump->isSpreadsheet())
+		{
+			vector<string> asked;
+			for (const auto& one : shown_tags_)
+				if (std::find(tags.begin(), tags.end(), one) != tags.end())
+					asked.push_back(one);
+			if (asked.empty() && !tags.empty())
+				asked.push_back(tags.front());
+			tags = asked;
+		}
+
+		for (const auto& tag : tags)
 		{
 			auto group = languageGroup(tag);
 			bool found = false;
@@ -945,7 +1018,89 @@ const LanguageEntry* LanguageConstructorDialog::cellAt(string_view key, const La
 		if (auto* entry = lump->entry(key, tag))
 			return entry;
 	}
+	return rowOf(*lump, key);
+}
+
+// A spreadsheet line carries every language at once, so the row is there even when the
+// column asked for has no text in it. That's the untranslated case, and the table has to
+// see the row to be able to show the source text quietly in it
+const LanguageEntry* LanguageConstructorDialog::rowOf(const LanguageSource& lump, string_view key) const
+{
+	if (!lump.isSpreadsheet())
+		return nullptr;
+	for (const auto& tag : lump.languages())
+		if (auto* entry = lump.entry(key, tag))
+			return entry;
 	return nullptr;
+}
+
+LanguageEntry* LanguageConstructorDialog::rowOf(LanguageSource& lump, string_view key) const
+{
+	if (!lump.isSpreadsheet())
+		return nullptr;
+	for (const auto& tag : lump.languages())
+		if (auto* entry = lump.entry(key, tag))
+			return entry;
+	return nullptr;
+}
+
+// The text a column shows for a row. A classic lump writes one value per line, so the
+// entry's own text is it; a spreadsheet line holds a cell per language, and the column
+// says which one
+string LanguageConstructorDialog::cellText(const LanguageEntry* entry, string_view key, const LanguageColumn& column) const
+{
+	if (!entry)
+		return {};
+	if (!entry->isCsv())
+		return entry->text();
+
+	// A spreadsheet writes a line break as a real newline inside the quoted field, where a
+	// mod's own LANGUAGE lump writes the two characters '\n'. The table and the field over
+	// it speak the second spelling, which is the one that can carry a visible marker
+	auto text = entry->text(tagAt(key, column));
+	return breaksToMarkers(text);
+}
+
+// The two spellings of a line break, one for the screen and one for the file
+string LanguageConstructorDialog::breaksToMarkers(string_view text)
+{
+	string out;
+	for (size_t i = 0; i < text.size(); ++i)
+	{
+		if (text[i] == '\n')
+		{
+			out += "\\n";
+			continue;
+		}
+		out += text[i];
+	}
+	return out;
+}
+
+string LanguageConstructorDialog::markersToBreaks(string_view text)
+{
+	string out;
+	for (size_t i = 0; i < text.size(); ++i)
+	{
+		if (text[i] == '\\' && i + 1 < text.size() && text[i + 1] == 'n')
+		{
+			out += '\n';
+			++i;
+			continue;
+		}
+		out += text[i];
+	}
+	return out;
+}
+
+// The cell at a row and a header column, in the spelling the screen uses
+string LanguageConstructorDialog::cellTextOf(long row, long column) const
+{
+	auto index = columnIndex(column);
+	auto key   = string(keyAt(row));
+	if (index < 0 || key.empty())
+		return {};
+	return cellText(cellAt(key, columns_[index]), key, columns_[index]);
 }
 
 // The same cell for writing. A column belongs to one file, so an edit lands in that file
@@ -963,7 +1118,7 @@ LanguageEntry* LanguageConstructorDialog::cellEntryOf(long row, long column)
 	for (const auto& tag : columns_[index].tags)
 		if (auto* entry = lump->entry(key, tag))
 			return entry;
-	return nullptr;
+	return rowOf(*lump, key);
 }
 
 string LanguageConstructorDialog::tagAt(string_view key, const LanguageColumn& column) const
@@ -1034,7 +1189,7 @@ void LanguageConstructorDialog::buildRows()
 			bool hit = strutil::containsCI(keys_[i], filter);
 			for (const auto& column : columns_)
 				if (auto* entry = cellAt(keys_[i], column))
-					hit |= strutil::containsCI(entry->text(), filter);
+					hit |= strutil::containsCI(cellText(entry, keys_[i], column), filter);
 			if (!hit)
 				continue;
 		}
@@ -1059,8 +1214,8 @@ void LanguageConstructorDialog::buildRows()
 			{
 				auto* ea = cellAt(keys_[left], *sort_by);
 				auto* eb = cellAt(keys_[right], *sort_by);
-				a = fold(ea ? ea->text() : string());
-				b = fold(eb ? eb->text() : string());
+				a = fold(ea ? cellText(ea, keys_[left], *sort_by) : string());
+				b = fold(eb ? cellText(eb, keys_[right], *sort_by) : string());
 			}
 			return sort_up_ ? a < b : a > b;
 		});
@@ -1082,7 +1237,7 @@ void LanguageConstructorDialog::buildRows()
 			for (const auto& tag : home->languages())
 				if (auto* one = home->entry(key, tag))
 				{
-					own  = one->text();
+					own  = home->isSpreadsheet() ? breaksToMarkers(one->text()) : one->text();
 					from = one;
 					break;
 				}
@@ -1095,8 +1250,21 @@ void LanguageConstructorDialog::buildRows()
 			if (!entry)
 				continue;
 
-			cells[c].runs        = languageRuns(entry->text());
-			cells[c].placeholder = entry != from && !own.empty() && entry->text() == own;
+			string shown = cellText(entry, key, columns_[c]);
+
+			// A spreadsheet leaves an untranslated column as an empty field, and the game
+			// answers that with the source text. The table shows the same pair: the words
+			// it would fall back to, in the quieter colour that means 'not translated'
+			if (shown.empty() && entry->isCsv() && !own.empty())
+			{
+				shown                  = own;
+				cells[c].placeholder   = true;
+			}
+			else
+			{
+				cells[c].placeholder = entry != from && !own.empty() && shown == own;
+			}
+			cells[c].runs = languageRuns(shown);
 		}
 	}
 
@@ -1388,7 +1556,7 @@ void LanguageConstructorDialog::editCell(long row, long column)
 
 	// The text goes in before the field is measured and placed: sized first, it would be
 	// tall enough for the cell he left rather than the one he picked
-	edit_cell_->SetValue(entry ? displayedValue(entry->text()) : wxEmptyString);
+	edit_cell_->SetValue(displayedValue(cellTextOf(row, column)));
 	placeCellEditor();
 
 	// The table leaves this cell alone until the field is gone
@@ -1499,9 +1667,9 @@ void LanguageConstructorDialog::endCellEdit(bool keep)
 
 	if (entry)
 	{
-		if (entry->text() == value)
+		if (cellTextOf(row, column) == value)
 			return;
-		entry->setText(value);
+		entry->setText(entry->isCsv() ? markersToBreaks(value) : value, language);
 		say("");
 	}
 	else if (!value.empty())
@@ -1773,14 +1941,19 @@ void LanguageConstructorDialog::onCellColourMenu(long row, long column, wxPoint 
 	bool editing = edit_cell_ && edit_row_ == row && edit_col_ == column;
 	long caret   = editing ? std::max(0L, edit_cell_->GetInsertionPoint()) : 0;
 
-	string was = entry->text();
+	// Which cell of the line this is: the whole line has one text in the classic shape, and
+	// a spreadsheet line has one per language column
+	string lang = selectedTag(row, column);
+	auto   cellValue = [&]() { return cellTextOf(row, column); };
+
+	string was = cellValue();
 
 	// The cell's text lives in the editor while he is inside it, and in the file otherwise.
 	// A change has to go to whichever of the two is standing, or it lands where nothing can
 	// see it
 	auto source = [&]()
 	{
-		return editing ? storedValue(edit_cell_->GetValue()) : entry->text();
+		return editing ? storedValue(edit_cell_->GetValue()) : cellValue();
 	};
 	auto write = [&](const string& now)
 	{
@@ -1791,7 +1964,7 @@ void LanguageConstructorDialog::onCellColourMenu(long row, long column, wxPoint 
 			edit_cell_->ChangeValue(displayedValue(now));
 			return;
 		}
-		entry->setText(now);
+		entry->setText(entry->isCsv() ? markersToBreaks(now) : now, lang);
 		applyChange();
 	};
 

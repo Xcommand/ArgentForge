@@ -111,6 +111,9 @@ public:
 	// 'default' counts as one, because the lump writes it as one
 	vector<string> languages() const;
 
+	// Whether this file is the spreadsheet shape, where one line holds a cell per language
+	bool isSpreadsheet() const { return csv_; }
+
 	// The definitions that belong to [language], in file order. An empty [language] asks
 	// for the ones written before any header
 	vector<const LanguageEntry*> strings(string_view language) const;
@@ -154,6 +157,16 @@ private:
 
 	std::vector<CsvColumn> csv_cols_;
 	bool                   csv_ = false;
+
+	// A spreadsheet table is looked at cell by cell: two thousand lines times the columns on
+	// the screen, every time the table is drawn. Walking the file for each of those is what
+	// a refill costs fourteen seconds, so the labels are indexed once and the language list
+	// kept. Both are thrown away by anything that adds or removes a line
+	mutable std::map<string, std::vector<LanguageEntry*>> index_;
+	mutable vector<string>                                langs_;
+
+	// The index, rebuilt if anything has made it stale
+	void buildIndex();
 
 	// The line ending in use at [at], so a block added to a CRLF file doesn't come in
 	// with bare newlines

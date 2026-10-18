@@ -305,6 +305,8 @@ string csvQuoted(string_view text)
 
 // The bytes a quoted field holds between its quotes, with a doubled quote folded back
 // into the one quote mark the text really has
+// The bytes a quoted field holds between its quotes, with a doubled quote folded back
+// into the one quote mark the text really has
 string csvInner(string_view raw)
 {
 	string out;
@@ -318,6 +320,17 @@ string csvInner(string_view raw)
 		}
 		out += raw[i];
 	}
+	return out;
+}
+
+// A label as the index keeps it. The engine's own lookup ignores case, so the index has to
+// as well, and the file's spelling is what a row shows back
+string lowered(string_view text)
+{
+	string out(text);
+	for (auto& c : out)
+		if (c >= 'A' && c <= 'Z')
+			c = (char)(c - 'A' + 'a');
 	return out;
 }
 } // namespace
@@ -479,6 +492,8 @@ bool LanguageSource::load(string_view text)
 		entries_.clear();
 		spots_.clear();
 		extra_.clear();
+		index_.clear();
+		langs_.clear();
 		return false;
 	}
 
@@ -486,6 +501,8 @@ bool LanguageSource::load(string_view text)
 	entries_.clear();
 	spots_.clear();
 	extra_.clear();
+	index_.clear();
+	langs_.clear();
 	csv_cols_.clear();
 	csv_ = false;
 
@@ -838,6 +855,9 @@ bool LanguageSource::addCsvLine(string_view label, string_view language, string_
 		add.langs.push_back(string(language));
 	add.retargetText();
 	entries_.push_back(std::move(add));
+	// The line is new to both lookups
+	index_.clear();
+	langs_.clear();
 	return true;
 }
 
@@ -902,6 +922,11 @@ bool LanguageSource::modified() const
 
 vector<string> LanguageSource::languages() const
 {
+	// The same list is asked for once per column of the table, and building it walks every
+	// line of the file
+	if (!langs_.empty())
+		return langs_;
+
 	vector<string> out;
 	for (const auto& entry : entries_)
 		for (const auto& lang : entry.langs)
@@ -916,7 +941,8 @@ vector<string> LanguageSource::languages() const
 			continue;
 		out.push_back(spot.first);
 	}
-	return out;
+	langs_ = out;
+	return langs_;
 }
 
 vector<const LanguageEntry*> LanguageSource::strings(string_view language) const
@@ -933,13 +959,29 @@ vector<const LanguageEntry*> LanguageSource::strings(string_view language) const
 LanguageEntry* LanguageSource::entry(string_view label, string_view language)
 {
 	// The engine keeps the last write of a label, so the reader offers that one too
+	buildIndex();
+	auto at = index_.find(lowered(label));
+	if (at == index_.end())
+		return nullptr;
+
 	LanguageEntry* found = nullptr;
+	for (auto* one : at->second)
+		if (holds(*one, language))
+			found = one;
+	return found;
+}
+
+// Every label once, so a table of two thousand lines isn't walked for every cell drawn
+void LanguageSource::buildIndex()
+{
+	if (!index_.empty())
+		return;
 	for (auto& e : entries_)
 	{
-		if (e.parsed && strutil::equalCI(e.label, label) && holds(e, language))
-			found = &e;
+		if (!e.parsed)
+			continue;
+		index_[lowered(e.label)].push_back(&e);
 	}
-	return found;
 }
 
 const LanguageEntry* LanguageSource::entry(string_view label, string_view language) const
@@ -1015,6 +1057,10 @@ bool LanguageSource::addString(string_view label, string_view language, string_v
 
 	entries_.push_back(std::move(add));
 
+	// The line is new to both lookups
+	index_.clear();
+	langs_.clear();
+
 	// The spot stays where the file ends that block, in the file's own coordinates: the
 	// next addition goes to the same place and the writer keeps them in the order asked
 	if (spot == spots_.end())
@@ -1048,6 +1094,7 @@ bool LanguageSource::openBlock(string_view language)
 	// same place and ordered after the header by serialize()
 	spot.end = at;
 	spots_[string(language)] = spot;
+	langs_.clear();
 	return true;
 }
 
