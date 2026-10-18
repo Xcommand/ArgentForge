@@ -920,8 +920,11 @@ void MenuConstructorDialog::applyChosenLanguage()
 // Additional files as a placeholder. Their own text is what stands in the menu line, so the
 // new label isn't born empty. The panel does the writing; this only decides where
 void MenuConstructorDialog::createLanguageKey(string_view key, string_view text)
-{ if (key.empty() || text.empty() || language_lump_.empty() || !language_apply_ || !archive_) return;
+{ if (key.empty() || language_lump_.empty() || !language_apply_ || !archive_) return;
   if (mod_language_.count("$" + string(key))) return;
+  // A field that was empty has no text to hand over. The name is the better answer than silence:
+  // the menu shows something, and the Language Constructor has the row to translate
+  if (text.empty()) text = key;
 
   auto files = languageEntries(archive_);
   auto write = [&](const string& id)

@@ -34,7 +34,9 @@ guide page is [Translating a language](docs/user/language.md).
 * Fixed: `MENUDEF.txt` and `MENUDEF.dat` are the archive's MENUDEF, which a comparison that
   included the extension missed; a binary lump isn't a language table and no longer opens as one; a
   string added to a block copies the indentation of the line above it instead of putting a tab on
-  top of the default.
+  top of the default; the Menu Constructor's language dropdown showed a file while the window still
+  thought none was picked, which made it refuse a new `$key` without a word, and a `$key` typed into
+  an empty field now gets its own name as the text instead of nothing.
 * The three constructor buttons in the text toolbar show only over a file one of them can edit, and
   `Tools` still lists all three for a constructor called without the file in front of you.
 * `Preferences > Extra Features` split up: the image editor, the three constructors and the launcher
