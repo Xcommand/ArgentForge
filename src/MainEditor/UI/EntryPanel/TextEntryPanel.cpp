@@ -2253,9 +2253,6 @@ void TextEntryPanel::refreshDefinitionIndex()
 	vector<ArchiveEntry*> files;
 	archive->putEntryTreeAsList(files);
 
-	// What turned lumps away, so a menu line can say why a name wasn't found
-	size_t refused_empty = 0, refused_big = 0, refused_binary = 0, refused_name = 0;
-
 	vector<ScriptLump> lumps;
 	for (auto* one : files)
 	{
@@ -2264,21 +2261,10 @@ void TextEntryPanel::refreshDefinitionIndex()
 
 		const auto& data = one->data();
 		size_t      n    = data.size();
-		if (n == 0)
-		{
-			++refused_empty;
+		if (n == 0 || n > (2u << 20))
 			continue;
-		}
-		if (n > (2u << 20))
-		{
-			++refused_big;
-			continue;
-		}
 		if (memchr(data.data(), 0, std::min<size_t>(n, 512)))
-		{
-			++refused_binary;
 			continue;
-		}
 
 		bool zs = one->type() == etype_zscript, dc = one->type() == etype_decorate;
 		if (!zs && !dc)
@@ -2292,10 +2278,7 @@ void TextEntryPanel::refreshDefinitionIndex()
 			// A mod's classes also sit in plain .txt files. Taking them costs a scan that finds
 			// nothing in the ones that aren't scripts, which is cheaper than missing a file
 			if (!endsWith(strutil::lower(one->name()), ".txt"))
-			{
-				++refused_name;
 				continue;
-			}
 		}
 
 		string text;
@@ -2304,13 +2287,11 @@ void TextEntryPanel::refreshDefinitionIndex()
 		else
 			text.assign((const char*)data.data(), n);
 
-		lumps.push_back({ one->path(), std::move(text), zs });
+		// path() alone is the folder; the name is what tells two files in one directory apart
+		lumps.push_back({ one->path(true), std::move(text), zs });
 	}
 
 	definitions_.build(lumps, archive->filename());
-	definition_note_ = wxString::Format(wxS("walked %d lumps, %d no data, %d big, %d binary, %d not a script"),
-	                                    (int)files.size(), (int)refused_empty, (int)refused_big, (int)refused_binary,
-	                                    (int)refused_name);
 }
 
 // -----------------------------------------------------------------------------
@@ -2346,19 +2327,10 @@ void TextEntryPanel::onEditorContextMenu(wxContextMenuEvent& e)
 		refreshDefinitionIndex();
 		if (!word.empty())
 			if (auto self = entry_.lock())
-				found = definitions_.resolve(word, self->path(), pos);
+				found = definitions_.resolve(word, self->path(true), pos);
 	}
 
 	wxMenu menu;
-	menu.Append(wxID_UNDO, wxS("Undo"));
-	menu.Append(wxID_REDO, wxS("Redo"));
-	menu.AppendSeparator();
-	menu.Append(wxID_CUT, wxS("Cut"));
-	menu.Append(wxID_COPY, wxS("Copy"));
-	menu.Append(wxID_PASTE, wxS("Paste"));
-	menu.Append(wxID_DELETE, wxS("Delete"));
-	menu.AppendSeparator();
-	menu.Append(wxID_SELECTALL, wxS("Select All"));
 
 	// Over a script the menu always answers, even when the answer is "nothing here". Silence
 	// can't be told apart from the feature not running at all, and the number of lumps read
@@ -2387,15 +2359,27 @@ void TextEntryPanel::onEditorContextMenu(wxContextMenuEvent& e)
 			auto stats = definitions_.stats();
 			auto* none = new wxMenuItem(&menu, wxID_NONE,
 				word.empty()
-					? wxString::Format(wxS("No name under the pointer (%d lumps, %d classes, %d KB)"),
-					                   (int)stats.lumps, (int)stats.classes, (int)(stats.bytes / 1024))
-					: wxString::Format(wxS("No definition for %s (%d lumps, %d classes). %s"),
-					                   wxString::FromUTF8(word), (int)stats.lumps, (int)stats.classes,
-					                   definition_note_));
+					? wxString::Format(wxS("No name under the pointer (%d classes read)"), (int)stats.classes)
+					: wxString::Format(wxS("No definition for %s (%d classes read)"), wxString::FromUTF8(word),
+					                   (int)stats.classes));
 			none->Enable(false);
 			menu.Append(none);
 		}
+
+		menu.AppendSeparator();
 	}
+
+	// Where a name is defined is the reason the right button was pressed; the edit items are
+	// what the keyboard is for, and stay underneath
+	menu.Append(wxID_UNDO, wxS("Undo"));
+	menu.Append(wxID_REDO, wxS("Redo"));
+	menu.AppendSeparator();
+	menu.Append(wxID_CUT, wxS("Cut"));
+	menu.Append(wxID_COPY, wxS("Copy"));
+	menu.Append(wxID_PASTE, wxS("Paste"));
+	menu.Append(wxID_DELETE, wxS("Delete"));
+	menu.AppendSeparator();
+	menu.Append(wxID_SELECTALL, wxS("Select All"));
 
 	int picked = text_area_->GetPopupMenuSelectionFromUser(menu, where);
 	switch (picked)
@@ -2440,7 +2424,7 @@ void TextEntryPanel::goToDefinition(const Definition& def)
 	if (!archive)
 		return;
 
-	if (self && self->path() == def.lump)
+	if (self && self->path(true) == def.lump)
 	{
 		text_area_->SetSelection((long)def.offset, (long)(def.offset + def.name.size()));
 		text_area_->SetCurrentPos((long)def.offset);

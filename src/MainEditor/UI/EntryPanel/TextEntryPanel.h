@@ -214,8 +214,6 @@ private:
 	// and the text behind them has changed size
 	DefinitionIndex definitions_;
 
-	// What the last walk turned away, for the menu line that says a name leads nowhere
-	wxString definition_note_;
 
 	// Which file each of the table's ids is - its place in the archive, so a write can't
 	// land on a re-used name - the bytes it was read with, and an id. An id rather than a
