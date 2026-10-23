@@ -37,7 +37,8 @@ struct EntryRef
 {
 	string name;
 	string path;
-	bool   map = false; // The folder a map is made of, which the caller can tell and a name can't
+	bool   map  = false; // The folder a map is made of, which the caller can tell and a name can't
+	bool   flat = false; // A flat by what the file is, not by the folder it sits in (a WAD has none)
 };
 
 // One place a name written in a script is defined. The engine reads the ZSCRIPT lumps before

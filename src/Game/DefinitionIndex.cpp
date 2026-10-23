@@ -684,6 +684,12 @@ void DefinitionIndex::setEntries(const vector<EntryRef>& entries, const string& 
 			key  = string(stem);
 			kind = "sound";
 		}
+		else if (one.flat)
+		{
+			// A WAD flat says what it is by its own type; it has no folder to read it from
+			key  = string(stem);
+			kind = "flat";
+		}
 		else if (stem.size() >= 4 && stem.size() <= 8)
 		{
 			// A picture filed for one of the three uses the engine names by folder

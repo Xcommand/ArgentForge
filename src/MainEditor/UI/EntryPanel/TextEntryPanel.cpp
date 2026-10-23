@@ -2339,12 +2339,16 @@ void TextEntryPanel::refreshDefinitionIndex()
 
 	vector<EntryRef> entries;
 	entries.reserve(files.size());
+	auto* flat_type = EntryType::fromId("gfx_flat");
 	for (auto* one : files)
 	{
 		if (!one)
 			continue;
 		auto path = one->path(true);
-		entries.push_back({ one->name(), path, std::find(maps.begin(), maps.end(), path) != maps.end() });
+		entries.push_back({ one->name(),
+		                    path,
+		                    std::find(maps.begin(), maps.end(), path) != maps.end(),
+		                    (flat_type && one->type() == flat_type) || one->isInNamespace("flats") });
 	}
 
 	vector<ScriptLump> lumps;
