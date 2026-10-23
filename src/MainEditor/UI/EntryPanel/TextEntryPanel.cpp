@@ -2253,6 +2253,9 @@ void TextEntryPanel::refreshDefinitionIndex()
 	vector<ArchiveEntry*> files;
 	archive->putEntryTreeAsList(files);
 
+	// What turned lumps away, so a menu line can say why a name wasn't found
+	size_t refused_empty = 0, refused_big = 0, refused_binary = 0, refused_name = 0;
+
 	vector<ScriptLump> lumps;
 	for (auto* one : files)
 	{
@@ -2261,10 +2264,21 @@ void TextEntryPanel::refreshDefinitionIndex()
 
 		const auto& data = one->data();
 		size_t      n    = data.size();
-		if (n == 0 || n > (2u << 20))
+		if (n == 0)
+		{
+			++refused_empty;
 			continue;
+		}
+		if (n > (2u << 20))
+		{
+			++refused_big;
+			continue;
+		}
 		if (memchr(data.data(), 0, std::min<size_t>(n, 512)))
+		{
+			++refused_binary;
 			continue;
+		}
 
 		bool zs = one->type() == etype_zscript, dc = one->type() == etype_decorate;
 		if (!zs && !dc)
@@ -2278,7 +2292,10 @@ void TextEntryPanel::refreshDefinitionIndex()
 			// A mod's classes also sit in plain .txt files. Taking them costs a scan that finds
 			// nothing in the ones that aren't scripts, which is cheaper than missing a file
 			if (!endsWith(strutil::lower(one->name()), ".txt"))
+			{
+				++refused_name;
 				continue;
+			}
 		}
 
 		string text;
@@ -2291,6 +2308,9 @@ void TextEntryPanel::refreshDefinitionIndex()
 	}
 
 	definitions_.build(lumps, archive->filename());
+	definition_note_ = wxString::Format(wxS("walked %d lumps, %d no data, %d big, %d binary, %d not a script"),
+	                                    (int)files.size(), (int)refused_empty, (int)refused_big, (int)refused_binary,
+	                                    (int)refused_name);
 }
 
 // -----------------------------------------------------------------------------
@@ -2369,9 +2389,9 @@ void TextEntryPanel::onEditorContextMenu(wxContextMenuEvent& e)
 				word.empty()
 					? wxString::Format(wxS("No name under the pointer (%d lumps, %d classes, %d KB)"),
 					                   (int)stats.lumps, (int)stats.classes, (int)(stats.bytes / 1024))
-					: wxString::Format(wxS("No definition for %s (%d lumps, %d classes, %d KB)"),
+					: wxString::Format(wxS("No definition for %s (%d lumps, %d classes). %s"),
 					                   wxString::FromUTF8(word), (int)stats.lumps, (int)stats.classes,
-					                   (int)(stats.bytes / 1024)));
+					                   definition_note_));
 			none->Enable(false);
 			menu.Append(none);
 		}
