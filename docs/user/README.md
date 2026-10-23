@@ -12,6 +12,8 @@ one.
   draws the menu the way the game does.
 * [Translating a language](language.md): a LANGUAGE lump as a table of strings by language, which
   ones aren't translated yet, and what the colours in the text mean.
+* [Reading a mod's code](navigation.md): right-click a name to get to where it is defined, and back
+  again the way a browser does it.
 * [Drawing pictures](image-editor.md): the brush, the mouse gestures, and a texture that tiles without
   a seam.
 
