@@ -210,9 +210,28 @@ private:
 	// The language constructor, one per panel as well
 	LanguageConstructorDialog* language_constructor_ = nullptr;
 
+	// One place on that trail: the file, and the caret inside it
+	struct JumpStop
+	{
+		string lump;
+		size_t offset = 0;
+	};
+
+	// The jump history: where each jump started, so the mouse's back button returns him
+	void openAt(string_view lump, size_t offset, string_view select);
+	void jumpBack();
+	void jumpForward();
+	void jumpToStop(vector<JumpStop>& from, vector<JumpStop>& to);
+	void onEditorSideButton(wxMouseEvent& e);
+	JumpStop currentStop() const;
+
 	// Where the names in this archive's scripts are defined, rebuilt when a right-click asks
 	// and the text behind them has changed size
 	DefinitionIndex definitions_;
+
+	// The trail of jumps, forward cleared by a new jump the way a browser does
+	std::vector<JumpStop> jump_back_, jump_forward_;
+
 
 
 	// Which file each of the table's ids is - its place in the archive, so a write can't

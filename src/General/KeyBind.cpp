@@ -526,6 +526,8 @@ void KeyBind::initBinds()
 	addBind("ted_replacenext", Keypress("R", KPM_ALT), "Replace next", group);
 	addBind("ted_replaceall", Keypress("R", KPM_ALT | KPM_SHIFT), "Replace all", group);
 	addBind("ted_jumptoline", Keypress("G", KPM_CTRL), "Jump to Line", group);
+	addBind("ted_jump_back", Keypress("left", KPM_ALT), "Jump back", group);
+	addBind("ted_jump_forward", Keypress("right", KPM_ALT), "Jump forward", group);
 	addBind("ted_fold_foldall", Keypress("[", KPM_CTRL | KPM_SHIFT), "Fold All", group);
 	addBind("ted_fold_unfoldall", Keypress("]", KPM_CTRL | KPM_SHIFT), "Fold All", group);
 	addBind("ted_line_comment", Keypress("/", KPM_CTRL), "Line Comment", group);

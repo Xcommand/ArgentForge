@@ -96,6 +96,14 @@ public:
 	// state lines stays quiet
 	void setSpritePreviewArchive(const Archive* archive) { preview_archive_ = archive; }
 
+	// What the jump history keys do. The editor knows the keys; the panel knows the
+	// places, so the trail lives there and these just pass the press along
+	void setJumpHistoryFunctions(std::function<void()> back, std::function<void()> forward)
+	{
+		jump_back_fn_    = std::move(back);
+		jump_forward_fn_ = std::move(forward);
+	}
+
 	// Jump To
 	void setJumpToControl(wxChoice* jump_to);
 	void updateJumpToList();
@@ -119,6 +127,8 @@ private:
 	const Archive*  preview_archive_ = nullptr;
 	wxChoice*         choice_jump_to_     = nullptr;
 	JumpToCalculator* jump_to_calculator_ = nullptr;
+	// The trail of definition jumps, owned by the panel that shows the text
+	std::function<void()> jump_back_fn_, jump_forward_fn_;
 	unique_ptr<Lexer> lexer_;
 	wxString          prev_word_match_;
 	string            autocomp_list_;

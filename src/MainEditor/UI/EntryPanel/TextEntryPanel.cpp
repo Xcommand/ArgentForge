@@ -175,6 +175,11 @@ TextEntryPanel::TextEntryPanel(wxWindow* parent) : EntryPanel(parent, "text")
 	text_area_->UsePopUp(wxSTC_POPUP_NEVER);
 	text_area_->Bind(wxEVT_CONTEXT_MENU, &TextEntryPanel::onEditorContextMenu, this);
 
+	// The jump trail: Alt+Left and the mouse's back button return to where the last jump started
+	text_area_->setJumpHistoryFunctions([this]() { jumpBack(); }, [this]() { jumpForward(); });
+	text_area_->Bind(wxEVT_AUX1_DOWN, &TextEntryPanel::onEditorSideButton, this);
+	text_area_->Bind(wxEVT_AUX2_DOWN, &TextEntryPanel::onEditorSideButton, this);
+
 
 	// --- Custom menu ---
 	menu_custom_ = new wxMenu();
@@ -2302,7 +2307,16 @@ void TextEntryPanel::onEditorContextMenu(wxContextMenuEvent& e)
 {
 	enum
 	{
-		ID_GOTO = wxID_HIGHEST + 400,
+		ID_BACK = wxID_HIGHEST + 400,
+		ID_FORWARD,
+		ID_GOTO   = ID_FORWARD + 32,
+	};
+
+	// The folder is noise when the choice is which file to go back to
+	auto baseName = [](string_view path)
+	{
+		auto slash = path.find_last_of('/');
+		return slash == string_view::npos ? string(path) : string(path.substr(slash + 1));
 	};
 
 	// The event's point is on screen; the editor wants its own, and the word it offers is the
@@ -2332,26 +2346,34 @@ void TextEntryPanel::onEditorContextMenu(wxContextMenuEvent& e)
 
 	wxMenu menu;
 
+	// Where he came from is the other reason the right button was pressed, so it leads
+	bool trail = false;
+	if (!jump_back_.empty())
+	{
+		menu.Append(ID_BACK, wxS("Back to ") + wxString::FromUTF8(baseName(jump_back_.back().lump)));
+		trail = true;
+	}
+	if (!jump_forward_.empty())
+	{
+		menu.Append(ID_FORWARD, wxS("Forward to ") + wxString::FromUTF8(baseName(jump_forward_.back().lump)));
+		trail = true;
+	}
+	if (trail)
+		menu.AppendSeparator();
+
 	// Over a script the menu always answers, even when the answer is "nothing here". Silence
 	// can't be told apart from the feature not running at all, and the number of lumps read
 	// says whether the walk found the archive's scripts
 	if (script)
 	{
-		menu.AppendSeparator();
-
 		if (!found.empty())
 		{
 			// Eight is more answers than one name ever has, and a longer menu stops being a menu
 			for (size_t i = 0; i < found.size() && i < 8; ++i)
 			{
-				string file = found[i].lump;
-				auto   slash = file.find_last_of('/');
-				if (slash != string::npos)
-					file = file.substr(slash + 1);
-
 				menu.Append(ID_GOTO + (int)i,
 				            wxString::Format(wxS("Go to %s (%s, %s)"), wxString::FromUTF8(word),
-				                             wxString::FromUTF8(found[i].where), wxString::FromUTF8(file)));
+				                             wxString::FromUTF8(found[i].where), wxString::FromUTF8(baseName(found[i].lump))));
 			}
 		}
 		else
@@ -2384,6 +2406,12 @@ void TextEntryPanel::onEditorContextMenu(wxContextMenuEvent& e)
 	int picked = text_area_->GetPopupMenuSelectionFromUser(menu, where);
 	switch (picked)
 	{
+	case ID_BACK:
+		jumpBack();
+		break;
+	case ID_FORWARD:
+		jumpForward();
+		break;
 	case wxID_UNDO:
 		text_area_->Undo();
 		break;
@@ -2413,30 +2441,129 @@ void TextEntryPanel::onEditorContextMenu(wxContextMenuEvent& e)
 }
 
 // -----------------------------------------------------------------------------
-// Moves the editor to a definition. In this lump that's a caret move; in another one the
-// file is opened with the caret on the name, which is the whole point: a mod with forty
-// script files can't be read by hunting
+// Puts the editor on [offset] in [lump]. In this lump that's a caret move; in another
+// one the file is opened with the caret on the name, which is the whole point: a mod
+// with forty script files can't be read by hunting. [select] is the name to highlight,
+// empty for a stop the history remembered, where there is no name to point at
 // -----------------------------------------------------------------------------
-void TextEntryPanel::goToDefinition(const Definition& def)
+void TextEntryPanel::openAt(string_view lump, size_t offset, string_view select)
 {
 	auto  self    = entry_.lock();
 	auto* archive = self ? self->parent() : nullptr;
 	if (!archive)
 		return;
 
-	if (self && self->path(true) == def.lump)
+	// The view goes to the line rather than the byte, so the name is where he can read it
+	auto point = [&](bool loaded)
 	{
-		text_area_->SetSelection((long)def.offset, (long)(def.offset + def.name.size()));
-		text_area_->SetCurrentPos((long)def.offset);
-		centreLine(lineAtOffset(editorText(), def.offset));
+		if (!loaded)
+			return;
+		if (!select.empty())
+			text_area_->SetSelection((long)offset, (long)(offset + select.size()));
+		text_area_->SetCurrentPos((long)offset);
+		centreLine(lineAtOffset(editorText(), offset));
 		text_area_->SetFocus();
+	};
+
+	if (self && self->path(true) == string(lump))
+	{
+		point(true);
 		return;
 	}
 
-	if (auto* other = archive->entryAtPath(def.lump))
+	auto* other = archive->entryAtPath(lump);
+	if (!other)
+		return;
+
+	other->exProp("TextPosition") = (int)offset;
+	auto* panel = maineditor::currentArchivePanel();
+	if (!panel)
+		return;
+	panel->openEntryAsText(other);
+
+	// Only point when the text came into this panel: an entry that has its own tab opens
+	// there, and moving the caret here would move it in the file that stayed behind
+	point(entry_.lock().get() == other);
+}
+
+// -----------------------------------------------------------------------------
+// Where the reading is right now, so a jump can be undone
+// -----------------------------------------------------------------------------
+TextEntryPanel::JumpStop TextEntryPanel::currentStop() const
+{
+	JumpStop stop;
+	if (auto self = entry_.lock())
+		stop.lump = self->path(true);
+
+	long pos = text_area_->GetCurrentPos();
+	stop.offset = pos > 0 ? (size_t)pos : 0;
+	return stop;
+}
+
+// -----------------------------------------------------------------------------
+// Moves one stop from [from] to [to] and shows it. A stop whose lump is gone gets
+// dropped and the next one tried, so the button keeps working after a rename instead
+// of sitting dead on a place that isn't there anymore
+// -----------------------------------------------------------------------------
+void TextEntryPanel::jumpToStop(vector<JumpStop>& from, vector<JumpStop>& to)
+{
+	auto  self    = entry_.lock();
+	auto* archive = self ? self->parent() : nullptr;
+	if (!archive)
+		return;
+
+	while (!from.empty())
 	{
-		other->exProp("TextPosition") = (int)def.offset;
-		if (auto* panel = maineditor::currentArchivePanel())
-			panel->openEntryAsText(other);
+		auto stop = from.back();
+		from.pop_back();
+
+		if (archive->entryAtPath(stop.lump))
+		{
+			to.push_back(currentStop());
+			openAt(stop.lump, stop.offset, {});
+			return;
+		}
 	}
+}
+
+// -----------------------------------------------------------------------------
+// Back and forward along the trail of jumps
+// -----------------------------------------------------------------------------
+void TextEntryPanel::jumpBack()
+{
+	jumpToStop(jump_back_, jump_forward_);
+}
+
+void TextEntryPanel::jumpForward()
+{
+	jumpToStop(jump_forward_, jump_back_);
+}
+
+// -----------------------------------------------------------------------------
+// The mouse's two side buttons, which are the same jumps Alt+Left and Alt+Right make
+// -----------------------------------------------------------------------------
+void TextEntryPanel::onEditorSideButton(wxMouseEvent& e)
+{
+	if (e.GetButton() == wxMOUSE_BTN_AUX1)
+		jumpBack();
+	else if (e.GetButton() == wxMOUSE_BTN_AUX2)
+		jumpForward();
+}
+
+// -----------------------------------------------------------------------------
+// Moves along the definition trail: this place goes on it, the forward end is dropped
+// the way a browser drops what was ahead of you once you jump somewhere new
+// -----------------------------------------------------------------------------
+void TextEntryPanel::goToDefinition(const Definition& def)
+{
+	if (auto self = entry_.lock(); self && !self->path(true).empty())
+	{
+		jump_back_.push_back(currentStop());
+		// A hundred jumps is more than anyone reads back through; older ones fall off
+		if (jump_back_.size() > 100)
+			jump_back_.erase(jump_back_.begin());
+	}
+
+	jump_forward_.clear();
+	openAt(def.lump, def.offset, def.name);
 }
