@@ -175,16 +175,8 @@ TextEntryPanel::TextEntryPanel(wxWindow* parent) : EntryPanel(parent, "text")
 	text_area_->UsePopUp(wxSTC_POPUP_NEVER);
 	text_area_->Bind(wxEVT_CONTEXT_MENU, &TextEntryPanel::onEditorContextMenu, this);
 
-	// The jump trail: Alt+Left and the mouse's back button return to where the last jump
-	// started. The trail belongs to the archive panel, because a jump can land on a picture
-	auto jump = [](bool back)
-	{
-		if (auto* panel = maineditor::currentArchivePanel())
-			back ? panel->jumpBack() : panel->jumpForward();
-	};
-	text_area_->setJumpHistoryFunctions([jump]() { jump(true); }, [jump]() { jump(false); });
-	text_area_->Bind(wxEVT_AUX1_DOWN, &TextEntryPanel::onEditorSideButton, this);
-	text_area_->Bind(wxEVT_AUX2_DOWN, &TextEntryPanel::onEditorSideButton, this);
+	// The jump trail itself is the archive panel's, and its keys and mouse buttons are taken
+	// in SLADEWxApp::FilterEvent, because a jump can land on a picture
 
 
 	// --- Custom menu ---
@@ -2578,19 +2570,4 @@ void TextEntryPanel::showAt(size_t offset, string_view select)
 	// The view goes to the line rather than the byte, so the name is where he can read it
 	centreLine(lineAtOffset(editorText(), offset));
 	text_area_->SetFocus();
-}
-
-// -----------------------------------------------------------------------------
-// The mouse's two side buttons, which ask for the same jumps Alt+Left and Alt+Right make
-// -----------------------------------------------------------------------------
-void TextEntryPanel::onEditorSideButton(wxMouseEvent& e)
-{
-	auto* panel = maineditor::currentArchivePanel();
-	if (!panel)
-		return;
-
-	if (e.GetButton() == wxMOUSE_BTN_AUX1)
-		panel->jumpBack();
-	else if (e.GetButton() == wxMOUSE_BTN_AUX2)
-		panel->jumpForward();
 }

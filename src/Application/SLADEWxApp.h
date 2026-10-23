@@ -17,6 +17,11 @@ public:
 	void OnFatalException() override;
 	bool OnExceptionInMainLoop() override;
 
+	// The jump trail's keys and mouse buttons, taken before any control sees them: the trail
+	// belongs to the archive panel, and the window it has to work from isn't only the text
+	// editor but whatever a jump landed on
+	int FilterEvent(wxEvent& event) override;
+
 #ifdef __APPLE__
 	virtual void MacOpenFile(const wxString& fileName) override;
 #endif // __APPLE__

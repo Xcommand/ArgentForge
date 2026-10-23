@@ -217,10 +217,6 @@ private:
 	// The language constructor, one per panel as well
 	LanguageConstructorDialog* language_constructor_ = nullptr;
 
-	// The mouse's side buttons, which ask the archive panel for the same jumps Alt+Left and
-	// Alt+Right make
-	void onEditorSideButton(wxMouseEvent& e);
-
 	// Where the names in this archive's scripts and files are defined, rebuilt when a
 	// right-click asks and the text behind them has changed size
 	DefinitionIndex definitions_;

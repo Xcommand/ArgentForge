@@ -34,9 +34,11 @@
 #include "App.h"
 #include "Archive/ArchiveManager.h"
 #include "General/Console.h"
+#include "General/KeyBind.h"
 #include "General/UI.h"
 #include "MainEditor/MainEditor.h"
 #include "MainEditor/UI/ArchiveManagerPanel.h"
+#include "MainEditor/UI/ArchivePanel.h"
 #include "MainEditor/UI/MainWindow.h"
 #include "MainEditor/UI/StartPage.h"
 #include "OpenGL/OpenGL.h"
@@ -708,6 +710,60 @@ void SLADEWxApp::onActivate(wxActivateEvent& e)
 		theMainWindow->archiveManagerPanel()->checkDirArchives();
 
 	e.Skip();
+}
+
+// -----------------------------------------------------------------------------
+// The jump trail, before any control sees the key. Alt+Left and Alt+Right are asked for
+// from wherever the last jump landed, and a picture or a sound doesn't pass its keys to
+// the text editor that remembers the trail. Only the main window: the map editor has its
+// own idea about what the arrows mean. Event_Ignore is what eats the event
+// -----------------------------------------------------------------------------
+int SLADEWxApp::FilterEvent(wxEvent& event)
+{
+	auto type = event.GetEventType();
+	if (type != wxEVT_KEY_DOWN && type != wxEVT_AUX1_DOWN && type != wxEVT_AUX2_DOWN)
+		return Event_Skip;
+
+	auto* top = theMainWindow;
+	if (!top)
+		return Event_Skip;
+
+	// The control with the keyboard, and whether it hangs off the main window at all
+	auto* focus = wxWindow::FindFocus();
+	bool  under_main = false;
+	for (auto* w = focus; w; w = w->GetParent())
+		if (w == top)
+		{
+			under_main = true;
+			break;
+		}
+	if (!under_main)
+		return Event_Skip;
+
+	auto* panel = maineditor::currentArchivePanel();
+	if (!panel)
+		return Event_Skip;
+
+	if (type == wxEVT_AUX1_DOWN)
+	{
+		panel->jumpBack();
+		return Event_Ignore;
+	}
+	if (type == wxEVT_AUX2_DOWN)
+	{
+		panel->jumpForward();
+		return Event_Ignore;
+	}
+
+	auto& key = (wxKeyEvent&)event;
+	for (auto& bind : KeyBind::bindsForKey(KeyBind::asKeyPress(key.GetKeyCode(), key.GetModifiers())))
+		if (bind == "ted_jump_back" || bind == "ted_jump_forward")
+		{
+			bind == "ted_jump_back" ? panel->jumpBack() : panel->jumpForward();
+			return Event_Ignore;
+		}
+
+	return Event_Skip;
 }
 
 // -----------------------------------------------------------------------------

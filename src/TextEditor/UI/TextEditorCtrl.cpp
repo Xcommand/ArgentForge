@@ -1443,21 +1443,6 @@ void TextEditorCtrl::onKeyDown(wxKeyEvent& e)
 			handled = true;
 		}
 
-		// Back and forward along the definition trail, the way a browser moves
-		else if (name == "ted_jump_back")
-		{
-			if (jump_back_fn_)
-				jump_back_fn_();
-			handled = true;
-		}
-
-		else if (name == "ted_jump_forward")
-		{
-			if (jump_forward_fn_)
-				jump_forward_fn_();
-			handled = true;
-		}
-
 		// Comments
 		else if (name == "ted_line_comment")
 		{
