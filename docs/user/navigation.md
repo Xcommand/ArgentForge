@@ -20,6 +20,8 @@ view just moves to the line and the name is selected.
   `replaces X` points at.
 * State labels, the bare word in a frame line or a `goto`. A label the actor only inherits is
   found in the class that writes it.
+* Functions the mod writes, `function` and DECORATE's `action`, from wherever they are called. A
+  routine the parent writes is found in the file that writes the parent.
 * Sounds: the alias a `SNDINFO` line writes, the file that line quotes, and the audio file itself.
 * Cvars from `CVARINFO`, levels from `MAPINFO` (both `map MAP01` and its `lookup` name), and
   `LANGUAGE` keys, whether the file writes them as `NAME = "text";` or as a spreadsheet.
