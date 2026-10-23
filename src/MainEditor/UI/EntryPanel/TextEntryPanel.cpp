@@ -2353,12 +2353,14 @@ void TextEntryPanel::onEditorContextMenu(wxContextMenuEvent& e)
 		}
 		else
 		{
+			auto stats = definitions_.stats();
 			auto* none = new wxMenuItem(&menu, wxID_NONE,
 				word.empty()
-					? wxString::Format(wxS("No name under the pointer (%d script lumps read)"),
-					                   (int)definitions_.lumpCount())
-					: wxString::Format(wxS("No definition for %s (%d script lumps read)"), wxString::FromUTF8(word),
-					                   (int)definitions_.lumpCount()));
+					? wxString::Format(wxS("No name under the pointer (%d lumps, %d classes, %d KB)"),
+					                   (int)stats.lumps, (int)stats.classes, (int)(stats.bytes / 1024))
+					: wxString::Format(wxS("No definition for %s (%d lumps, %d classes, %d KB)"),
+					                   wxString::FromUTF8(word), (int)stats.lumps, (int)stats.classes,
+					                   (int)(stats.bytes / 1024)));
 			none->Enable(false);
 			menu.Append(none);
 		}

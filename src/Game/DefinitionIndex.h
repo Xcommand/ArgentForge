@@ -51,6 +51,23 @@ public:
 	// window says this number, because "no lumps read" and "no such class" need different fixes
 	size_t lumpCount() const { return cache_.size(); }
 
+	// And how much of them was text, and how many classes came out of it: the three numbers
+	// apart say whether the archive gave us nothing, the reader did, or the lookup did
+	size_t classCount() const { return actors_.size(); }
+
+	// What the last read saw, so the same numbers are testable from outside the window
+	struct ReadStats
+	{
+		size_t lumps = 0, classes = 0, bytes = 0;
+	};
+	ReadStats stats() const
+	{
+		size_t bytes = 0;
+		for (const auto& one : cache_)
+			bytes += one.second.size;
+		return { cache_.size(), actors_.size(), bytes };
+	}
+
 	// The places [name] can lead to, in the order the engine reads them. [lump] and [offset]
 	// say where the word was written, which decides whether a state label counts.
 	vector<Definition> resolve(string_view name, string_view lump, size_t offset) const;
