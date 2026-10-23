@@ -30,6 +30,16 @@ struct ScriptLump
 	LumpKind kind = LumpKind::script;
 };
 
+// One file of the archive, for the names a *file* answers rather than a line of text:
+// a sprite's frames, a flat, a texture, a patch, a map's own folder. [name] is the file
+// without its extension, [path] is where it sits, which is what a jump opens.
+struct EntryRef
+{
+	string name;
+	string path;
+	bool   map = false; // The folder a map is made of, which the caller can tell and a name can't
+};
+
 // One place a name written in a script is defined. The engine reads the ZSCRIPT lumps before
 // the DECORATE ones (thingdef.cpp:456-459), and the answers come back in that order, so the
 // first one is the definition the game reads first.
@@ -53,11 +63,17 @@ public:
 	// tenth of a second on a 400-file mod; a rename that happens to keep the byte count is the
 	// one thing this misses, and it costs a stale entry rather than a wrong jump.
 	void build(const vector<ScriptLump>& lumps, const string& archive_name);
+
+	// The archive's files, for the names that are answered by a graphic rather than by a
+	// line of text. Given whole each time, because the panel walks the archive anyway and
+	// a file list this cheap isn't worth caching
+	void setEntries(const vector<EntryRef>& entries, const string& archive_name);
 	void clear()
 	{
 		actors_.clear();
 		records_.clear();
 		kinds_.clear();
+		graphics_.clear();
 		cache_.clear();
 	}
 
@@ -66,6 +82,10 @@ public:
 	// How many script lumps the last read took in. When the answer to a name is "nothing", the
 	// window says this number, because "no lumps read" and "no such class" need different fixes
 	size_t lumpCount() const { return cache_.size(); }
+
+	// How many files the last entry list held, which is what a name that no lump writes can
+	// still answer: a sprite, a flat, a map
+	size_t fileCount() const { return graphics_count_; }
 
 	// And how much of them was text, and how many classes came out of it: the three numbers
 	// apart say whether the archive gave us nothing, the reader did, or the lookup did
@@ -150,6 +170,18 @@ private:
 	// kind the last read comes first, since that is the definition the engine kept
 	void pushRecords(std::vector<Definition>& out, const string& name, LumpKind first) const;
 
+	// The files that answer [name]: a sprite under its four letters, and a flat, texture,
+	// patch or map under its own. A file has no line to point at, so these carry no offset
+	void pushGraphics(std::vector<Definition>& out, const string& name) const;
+
+	// One file as an answer to a name. [file] is the entry's name, which is what the menu
+	// shows; a sprite's frames are one entry each and the first of them is the answer
+	struct Graphic
+	{
+		string path, kind;
+		string stem; // The file's own name without its extension, which is what a frame is
+	};
+
 	// What one lump read as, kept so a rebuild touches only the files that changed size
 	struct Cached
 	{
@@ -168,5 +200,14 @@ private:
 	// Which kind each read lump was, so a lookup can rank the answer by the file the word
 	// was written in
 	std::map<string, LumpKind> kinds_;
+
+	// The archive's files, under the name each answers: four letters for a sprite, since
+	// every frame of it is the same picture anyone would ask for
+	std::map<string, std::vector<Graphic>> graphics_;
+
+	// Which archive [graphics_] was read from, and how many files it held: a panel that
+	// switches archives, or an archive that gained or lost a file, gets a rebuild
+	string graphics_archive_;
+	size_t graphics_count_ = 0;
 };
 } // namespace slade

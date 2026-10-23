@@ -2226,12 +2226,33 @@ string TextEntryPanel::editorText() const
 // -----------------------------------------------------------------------------
 string TextEntryPanel::wordAt(size_t position) const
 {
+	auto text = editorText();
+
+	// Inside a quoted run, the name is the whole run: SNDINFO writes its sound files as
+	// "weapons/sshoto" and a script plays them by that same spelling, which carries a
+	// slash the word rules would break on. An odd number of quotes before the pointer says
+	// it sits inside one
+	size_t line_start = text.rfind('\n', position);
+	line_start       = line_start == string::npos ? 0 : line_start + 1;
+
+	int quotes = 0;
+	for (size_t i = line_start; i < position && i < text.size(); ++i)
+		if (text[i] == '"' && (i == line_start || text[i - 1] != '\\'))
+			++quotes;
+
+	if (quotes % 2 == 1)
+	{
+		auto begin = text.find_last_of('"', position);
+		auto end   = text.find('"', position);
+		if (begin != string::npos && end != string::npos && end > begin && text.find('\n', begin) >= end)
+			return string(text.substr(begin + 1, end - begin - 1));
+	}
+
 	auto start = text_area_->WordStartPosition((long)position, true);
 	auto end   = text_area_->WordEndPosition((long)position, true);
 	if (end <= start)
 		return {};
 
-	auto text = editorText();
 	while (start > 0 && text[start - 1] == '.' && (start < 2 || text[start - 2] != '.'))
 		start = text_area_->WordStartPosition((long)start - 1, true);
 	while (end < (long)text.size() && text[end] == '.' && (end + 2 >= (long)text.size() || text[end + 1] != '.'))
@@ -2299,6 +2320,34 @@ void TextEntryPanel::refreshDefinitionIndex()
 	vector<ArchiveEntry*> files;
 	archive->putEntryTreeAsList(files);
 
+	// Every file and folder by name, which is how a sprite's four letters, a flat, a texture
+	// and a map answer a jump: those are files, not lines of text. A folder counts as well,
+	// because a map is one and a mod can file a sprite's frames in one
+	vector<string> maps;
+	for (auto* one : files)
+	{
+		// Which folders are maps: the ones holding the lumps a map is made of. A name can't
+		// say it, because 'MAP01' and 'MAPINFO' look alike written down
+		if (!one)
+			continue;
+		auto name = strutil::lower(one->name());
+		if (name != "things" && name != "linedefs" && name != "vertexes" && name != "behavior")
+			continue;
+		auto* dir = one->parentDir();
+		if (auto* folder = dir ? dir->dirEntry() : nullptr)
+			maps.push_back(folder->path(true));
+	}
+
+	vector<EntryRef> entries;
+	entries.reserve(files.size());
+	for (auto* one : files)
+	{
+		if (!one)
+			continue;
+		auto path = one->path(true);
+		entries.push_back({ one->name(), path, std::find(maps.begin(), maps.end(), path) != maps.end() });
+	}
+
 	vector<ScriptLump> lumps;
 	for (auto* one : files)
 	{
@@ -2328,6 +2377,7 @@ void TextEntryPanel::refreshDefinitionIndex()
 	}
 
 	definitions_.build(lumps, archive->filename());
+	definitions_.setEntries(entries, archive->filename());
 }
 
 // -----------------------------------------------------------------------------
@@ -2430,10 +2480,11 @@ void TextEntryPanel::onEditorContextMenu(wxContextMenuEvent& e)
 			auto stats = definitions_.stats();
 			auto* none = new wxMenuItem(&menu, wxID_NONE,
 				word.empty()
-					? wxString::Format(wxS("No name under the pointer (%d classes, %d names read)"), (int)stats.classes,
-					                   (int)stats.names)
-					: wxString::Format(wxS("No definition for %s (%d classes, %d names read)"), wxString::FromUTF8(word),
-					                   (int)stats.classes, (int)stats.names));
+					? wxString::Format(wxS("No name under the pointer (%d classes, %d names, %d files read)"),
+					                   (int)stats.classes, (int)stats.names, (int)definitions_.fileCount())
+					: wxString::Format(wxS("No definition for %s (%d classes, %d names, %d files read)"),
+					                   wxString::FromUTF8(word), (int)stats.classes, (int)stats.names,
+					                   (int)definitions_.fileCount()));
 			none->Enable(false);
 			menu.Append(none);
 		}
@@ -2508,9 +2559,12 @@ void TextEntryPanel::openAt(string_view lump, size_t offset, string_view select)
 	{
 		if (!loaded)
 			return;
+		// SetSelection picks both ends of the range. SetCurrentPos alone leaves the anchor
+		// where it was, which is what made a jump back select everything in between
 		if (!select.empty())
 			text_area_->SetSelection((long)offset, (long)(offset + select.size()));
-		text_area_->SetCurrentPos((long)offset);
+		else
+			text_area_->GotoPos((long)offset);
 		centreLine(lineAtOffset(editorText(), offset));
 		text_area_->SetFocus();
 	};
@@ -2529,7 +2583,12 @@ void TextEntryPanel::openAt(string_view lump, size_t offset, string_view select)
 	auto* panel = maineditor::currentArchivePanel();
 	if (!panel)
 		return;
-	panel->openEntryAsText(other);
+
+	// The panel the file's own type asks for: a sprite opens as a picture and a map as a
+	// map, and the tree moves to wherever it landed, so the jump shows in both halves of
+	// the window
+	panel->openEntry(other);
+	panel->focusOnEntry(other);
 
 	// Only point when the text came into this panel: an entry that has its own tab opens
 	// there, and moving the caret here would move it in the file that stayed behind

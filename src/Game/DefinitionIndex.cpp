@@ -114,13 +114,38 @@ bool is(const Word& word, const char* keyword)
 
 // -----------------------------------------------------------------------------
 // The name lumps: SNDINFO, CVARINFO, MAPINFO. Their names are written from more characters
-// than a script's, because a sound alias carries dots ('soldier.hitmonk1') and a directive
-// carries the dollar
+// than a script's: a sound alias carries dots ('soldier.hitmonk1'), a sound file carries
+// the path it was written as ('weapons/sshoto'), and a directive carries the dollar
 // -----------------------------------------------------------------------------
 bool recordNameChar(char c)
 {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
-	     || c == '.' || c == '$' || c == '-';
+	     || c == '.' || c == '$' || c == '-' || c == '/';
+}
+
+// The quoted runs of a line, each with where its text starts. SNDINFO writes its sound
+// files this way, and that is the name a script points at when it plays one
+vector<std::pair<string, size_t>> quotedOn(string_view line)
+{
+	vector<std::pair<string, size_t>> out;
+
+	for (size_t i = 0; i < line.size(); ++i)
+	{
+		if (line[i] != '"')
+			continue;
+
+		size_t j = i + 1;
+		while (j < line.size() && line[j] != '"')
+			j += (line[j] == '\\' && j + 1 < line.size()) ? 2 : 1;
+		// An unclosed quote is where the engine's scanner gives up too
+		if (j >= line.size())
+			break;
+		if (j > i + 1)
+			out.push_back({ string(line.substr(i + 1, j - i - 1)), i + 1 });
+		i = j;
+	}
+
+	return out;
 }
 
 // The bare name at [at], and where it begins. Empty when there isn't one, which is what a
@@ -404,6 +429,10 @@ void DefinitionIndex::scanRecords(const string& text, const string& path, const 
 		size_t      at   = 0;
 		auto        word = code == string_view::npos ? string() : nameAt(line, code, at);
 
+		// What the line's own head defines, so a file that repeats it isn't offered twice:
+		// 'weapons/sshoto "weapons/sshoto"' is one sound, not a jump to two places
+		string alias;
+
 		if (!word.empty())
 		{
 			// The one place all three kinds agree: a dollar is a directive, and MAPINFO and
@@ -416,10 +445,23 @@ void DefinitionIndex::scanRecords(const string& text, const string& path, const 
 					// several files under it. '$random {' alone only opens a list for the
 					// definition above, and $limit/$volume/$lock point at one they don't write
 					if (strutil::equalCI(word, "$alias") || strutil::equalCI(word, "$random"))
-						recordAfter(line, start, code + word.size(), "SNDINFO sound");
+					{
+						size_t   sub  = 0;
+						auto     rest = line.substr(code + word.size());
+						auto     name = nameAt(rest, pastSpaces(rest, 0), sub);
+						if (!name.empty())
+						{
+							alias = name;
+							out.push_back({ name, path, archive, "SNDINFO sound", start + code + word.size() + sub,
+							                kind });
+						}
+					}
 				}
 				else
+				{
+					alias = word;
 					out.push_back({ word, path, archive, what, start + code, kind });
+				}
 			}
 			else if (kind == LumpKind::cvarinfo)
 			{
@@ -449,6 +491,19 @@ void DefinitionIndex::scanRecords(const string& text, const string& path, const 
 			}
 			else if (strutil::equalCI(word, "lookup"))
 				recordAfter(line, start, code + word.size(), "MAPINFO lookup");
+		}
+
+		// A sound's files are what a script writes when it plays it: 'weapons/sshoto' inside
+		// A_StartSound("weapons/sshoto") is a name worth jumping to, and inside a '$random'
+		// block the quoted lines are the whole definition
+		if (kind == LumpKind::sndinfo && code != string_view::npos)
+		{
+			for (const auto& one : quotedOn(line.substr(code)))
+			{
+				if (strutil::equalCI(one.first, alias))
+					continue;
+				out.push_back({ one.first, path, archive, "SNDINFO sound file", start + code + one.second, kind });
+			}
 		}
 
 		start = nl + 1;
@@ -536,6 +591,166 @@ void DefinitionIndex::pushRecords(std::vector<Definition>& out, const string& na
 	for (auto kind : { LumpKind::sndinfo, LumpKind::cvarinfo, LumpKind::mapinfo, LumpKind::language })
 		if (kind != first)
 			emit(kind);
+}
+
+// -----------------------------------------------------------------------------
+// The archive's files, sorted by the name one of them answers. A sprite is keyed by its
+// four letters, because that is what anyone writes and every frame of it is a picture of
+// the same thing; the rest keep their own name.
+//
+// Both spellings the engine reads are taken: the flat one ('SNIPA1' as a lump, or
+// 'sprites/snipa1.png') and the folder one ('sprites/snip/a1.png'). A flat, a texture and
+// a patch are recognised by the folder they sit in, which is how a pk3 says what a file is
+// for; a WAD keeps that in lump ranges this walk doesn't see, so those answer only as
+// sprites and maps do.
+// -----------------------------------------------------------------------------
+void DefinitionIndex::setEntries(const vector<EntryRef>& entries, const string& archive_name)
+{
+	// A right-click hands the whole file list over again, and a big mod's list is long
+	// enough to notice. Same archive, same number of files: the same list, with a rename
+	// that keeps the count the one thing this misses
+	if (archive_name == graphics_archive_ && entries.size() == graphics_count_ && !graphics_.empty())
+		return;
+
+	graphics_archive_ = archive_name;
+	graphics_count_   = entries.size();
+	graphics_.clear();
+
+	auto isAlpha = [](char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); };
+	auto isDigit = [](char c) { return c >= '0' && c <= '9'; };
+
+	for (const auto& one : entries)
+	{
+		auto lower_path = strutil::lower(one.path);
+		while (!lower_path.empty() && lower_path.back() == '/')
+			lower_path.pop_back(); // A folder's own path ends with one, and its name is the last part
+
+		// The last part of the path, without its extension: what a file is called
+		auto slash = lower_path.find_last_of('/');
+		auto file  = slash == string::npos ? lower_path : string_view(lower_path).substr(slash + 1);
+		auto dot   = file.find_last_of('.');
+		auto stem  = dot == string_view::npos ? file : file.substr(0, dot);
+
+		string key, kind;
+
+		// A sprite frame: four letters, a frame letter, a rotation digit. In the folder
+		// spelling the letters are the directory and the file is just the frame
+		if (stem.size() == 6 && isAlpha(stem[0]) && isAlpha(stem[1]) && isAlpha(stem[2]) && isAlpha(stem[3])
+		    && isAlpha(stem[4]) && isDigit(stem[5]))
+		{
+			key  = string(stem.substr(0, 4));
+			kind = "sprite";
+		}
+		else if (stem.size() == 2 && isAlpha(stem[0]) && isDigit(stem[1]))
+		{
+			auto head = lower_path.find("sprites/");
+			if (head != string::npos)
+			{
+				auto rest = lower_path.substr(head + 8);
+				auto sep  = rest.find('/');
+				if (sep == 4)
+				{
+					key  = string(rest.substr(0, 4));
+					kind = "sprite";
+				}
+			}
+		}
+		else if (stem.size() >= 4 && stem.size() <= 8)
+		{
+			// A picture filed for one of the three uses the engine names by folder
+			const char* folders[] = { "flats/", "textures/", "patches/", "sneaky/" };
+			const char* kinds[]   = { "flat", "texture", "patch", "patch" };
+			for (int f = 0; f < 4; ++f)
+			{
+				if (lower_path.find(folders[f]) == string::npos)
+					continue;
+				key  = string(stem);
+				kind = kinds[f];
+				break;
+			}
+		}
+
+		// A folder the caller says holds map lumps answers as the map itself, whatever it is
+		// called; a name-shaped guess would also take a lump called MAPINFO
+		if (one.map && key.empty())
+		{
+			key  = strutil::lower(one.name);
+			kind = "map";
+		}
+
+		// A name that only looks like a map isn't one: 'MAP01' and 'MAPINFO' look alike
+		// written down, so the caller's word is what tells them apart
+		if (kind == "map" && !one.map)
+		{
+			key.clear();
+			kind.clear();
+		}
+
+		if (key.empty())
+			continue;
+
+		Graphic g;
+		g.path = one.path;
+		g.kind = kind;
+		g.stem = string(stem);
+		graphics_[key].push_back(std::move(g));
+	}
+
+	// The frame to open: rotation 0 is a frame whose angles are all one picture and 1 the
+	// first angle of one that isn't, and a picture filed under 'sprites' beats the same
+	// name anywhere else a mod happens to have put it
+	for (auto& group : graphics_)
+	{
+		auto rank = [&group](const Graphic& g)
+		{
+			auto exact = g.stem == group.first + "0" || g.stem == group.first + "1" ? 0 : 2;
+			return exact + (strutil::containsCI(g.path, "sprite") ? 0 : 1);
+		};
+		std::stable_sort(group.second.begin(), group.second.end(),
+		                 [&rank](const Graphic& a, const Graphic& b) { return rank(a) < rank(b); });
+	}
+}
+
+// -----------------------------------------------------------------------------
+// The files that answer [name]. A sprite's frames are one answer, so the count goes in the
+// bracket and the best frame is what opens
+// -----------------------------------------------------------------------------
+void DefinitionIndex::pushGraphics(std::vector<Definition>& out, const string& name) const
+{
+	auto found = graphics_.find(strutil::lower(name));
+	if (found == graphics_.end())
+		return;
+
+	// One answer per kind, in the order that reads best: the picture, then the surface one,
+	// then a texture built from patches, then a patch, then a map
+	const Graphic* pick[5] = { nullptr, nullptr, nullptr, nullptr, nullptr };
+	size_t         frames  = 0;
+	for (const auto& one : found->second)
+	{
+		auto slot = one.kind == "sprite"  ? 0
+		          : one.kind == "flat"    ? 1
+		          : one.kind == "texture" ? 2
+		          : one.kind == "patch"   ? 3
+		                                  : 4;
+		if (!pick[slot])
+			pick[slot] = &one;
+		if (slot == 0)
+			++frames;
+	}
+
+	for (int i = 0; i < 5; ++i)
+	{
+		auto g = pick[i];
+		if (!g)
+			continue;
+
+		// A sprite is one picture written as many files, so how many of them there are is
+		// the useful part of the answer rather than which frame opens
+		if (i == 0 && frames > 1)
+			out.push_back({ name, g->path, graphics_archive_, g->kind + ", " + std::to_string(frames) + " frames", 0 });
+		else
+			out.push_back({ name, g->path, graphics_archive_, g->kind, 0 });
+	}
 }
 
 const DefinitionIndex::Actor* DefinitionIndex::find(const string& name) const
@@ -626,6 +841,10 @@ vector<Definition> DefinitionIndex::resolve(string_view name, string_view lump, 
 	// 'if (sv_foo)' are both written in a script, and the answer is in another kind of lump
 	if (here == LumpKind::script)
 		pushRecords(out, string(name), here);
+
+	// And last, whatever the archive holds as a file: the four letters of a sprite, a flat,
+	// a texture, a patch, a map's own name
+	pushGraphics(out, string(name));
 
 	return out;
 }
