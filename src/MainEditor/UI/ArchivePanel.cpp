@@ -3539,10 +3539,122 @@ bool ArchivePanel::openEntryAsHex(ArchiveEntry* entry)
 }
 
 // -----------------------------------------------------------------------------
+// Where the reading is right now: the file on screen and, if it's the text editor, the
+// caret in it. That's what a jump leaves behind, and what the back button returns to
+// -----------------------------------------------------------------------------
+ArchivePanel::JumpStop ArchivePanel::currentStop() const
+{
+	JumpStop stop;
+	if (auto* one = cur_area_->entry())
+		stop.lump = one->path(true);
+	if (auto* text = dynamic_cast<TextEntryPanel*>(cur_area_))
+		stop.offset = text->caret();
+	return stop;
+}
+
+// -----------------------------------------------------------------------------
+// Puts the window on [lump]: the panel its own type asks for, and the tree moved to it.
+// In the file already on screen a text lump just moves the caret; [select] is the name to
+// highlight, empty for a place the trail remembered, where there is nothing to point at
+// -----------------------------------------------------------------------------
+void ArchivePanel::openAt(string_view lump, size_t offset, string_view select)
+{
+	auto* archive = archive_.lock().get();
+	if (!archive)
+		return;
+
+	auto* shown = cur_area_->entry();
+	if (shown && shown->path(true) == string(lump))
+	{
+		if (auto* text = dynamic_cast<TextEntryPanel*>(cur_area_))
+			text->showAt(offset, select);
+		return;
+	}
+
+	auto* other = archive->entryAtPath(lump);
+	if (!other)
+		return;
+
+	other->exProp("TextPosition") = (int)offset;
+	openEntry(other);
+	focusOnEntry(other);
+
+	// The caret only moves if the text came into this panel: an entry with a tab of its own
+	// opens there, and pointing here would move the caret in the file that stayed behind
+	if (auto* text = dynamic_cast<TextEntryPanel*>(cur_area_); text && cur_area_->entry() == other)
+		text->showAt(offset, select);
+}
+
+// -----------------------------------------------------------------------------
+// Moves one stop from [from] to [to] and shows it. A stop whose file is gone is dropped and
+// the next one tried, so the button keeps working after a rename rather than dying on a
+// place that isn't there anymore
+// -----------------------------------------------------------------------------
+void ArchivePanel::jumpToStop(vector<JumpStop>& from, vector<JumpStop>& to)
+{
+	auto* archive = archive_.lock().get();
+	if (!archive)
+		return;
+
+	while (!from.empty())
+	{
+		auto stop = from.back();
+		from.pop_back();
+
+		if (archive->entryAtPath(stop.lump))
+		{
+			to.push_back(currentStop());
+			openAt(stop.lump, stop.offset, {});
+			return;
+		}
+	}
+}
+
+void ArchivePanel::jumpBack()
+{
+	jumpToStop(jump_back_, jump_forward_);
+}
+
+void ArchivePanel::jumpForward()
+{
+	jumpToStop(jump_forward_, jump_back_);
+}
+
+// -----------------------------------------------------------------------------
+// The file a jump back / forward would return to, as the menu shows it
+// -----------------------------------------------------------------------------
+string ArchivePanel::jumpBackFile() const
+{
+	return jump_back_.empty() ? string() : jump_back_.back().lump;
+}
+
+string ArchivePanel::jumpForwardFile() const
+{
+	return jump_forward_.empty() ? string() : jump_forward_.back().lump;
+}
+
+// -----------------------------------------------------------------------------
+// Moves to a definition, and puts the place being left on the trail. The forward end goes
+// away the way a browser's does once you jump somewhere new
+// -----------------------------------------------------------------------------
+void ArchivePanel::goToDefinition(const Definition& def)
+{
+	if (auto* one = cur_area_->entry(); one && !one->path(true).empty())
+	{
+		jump_back_.push_back(currentStop());
+		// A hundred jumps is more than anyone reads back through; older ones fall off
+		if (jump_back_.size() > 100)
+			jump_back_.erase(jump_back_.begin());
+	}
+
+	jump_forward_.clear();
+	openAt(def.lump, def.offset, def.name);
+}
+
+// -----------------------------------------------------------------------------
 // If only one entry is selected, force its reload
 // -----------------------------------------------------------------------------
-bool ArchivePanel::reloadCurrentPanel()
-{
+bool ArchivePanel::reloadCurrentPanel(){
 	// Do nothing if there are multiple entries
 	if (cur_area_ == default_area_)
 		return false;

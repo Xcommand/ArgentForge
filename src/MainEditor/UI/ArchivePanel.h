@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Archive/ArchiveEntry.h"
+#include "Game/DefinitionIndex.h"
 #include "General/SAction.h"
 #include "General/UndoRedo.h"
 #include "MainEditor/ExternalEditManager.h"
@@ -134,12 +135,39 @@ public:
 	// SAction handler
 	bool handleAction(string_view id) override;
 
+	// Where the names of this archive's lumps and files are defined, and the trail of jumps
+	// made to them. It lives here rather than in the text panel because a jump can land on a
+	// sprite, and the back button is asked for from whatever is on screen afterwards
+	void goToDefinition(const Definition& def);
+	void jumpBack();
+	void jumpForward();
+
+	// What the right-click menu shows: whether there is somewhere to go, and which file
+	bool jumpBackPossible() const { return !jump_back_.empty(); }
+	bool jumpForwardPossible() const { return !jump_forward_.empty(); }
+	string jumpBackFile() const;
+	string jumpForwardFile() const;
+
 	// Static functions
 	static EntryPanel* createPanelForEntry(const ArchiveEntry* entry, wxWindow* parent);
 	static wxMenu*     createMaintenanceMenu();
 
 protected:
 	weak_ptr<Archive>       archive_;
+
+	// One place on the jump trail: the file, and the caret inside it
+	struct JumpStop
+	{
+		string lump;
+		size_t offset = 0;
+	};
+
+	// Where the reading was before the last jump, and where the back of that came from.
+	// A new jump clears the forward end, the way a browser does
+	JumpStop   currentStop() const;
+	void       openAt(string_view lump, size_t offset, string_view select);
+	void       jumpToStop(vector<JumpStop>& from, vector<JumpStop>& to);
+	vector<JumpStop> jump_back_, jump_forward_;
 	unique_ptr<UndoManager> undo_manager_;
 	bool                    ignore_focus_change_ = false;
 

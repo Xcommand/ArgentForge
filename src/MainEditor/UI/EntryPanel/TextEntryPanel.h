@@ -45,6 +45,9 @@ protected:
 	void toolbarButtonClick(const string& action_id) override;
 
 private:
+	// The jump trail lives with the archive panel, which is what shows the file the jump
+	// lands on; it needs the caret and a way to put the view somewhere
+	friend class ArchivePanel;
 	TextEditorCtrl*   text_area_            = nullptr;
 	FindReplacePanel* panel_fr_             = nullptr;
 	wxChoice*         choice_text_language_ = nullptr;
@@ -114,7 +117,11 @@ private:
 	// hunting for the file that writes it
 	void onEditorContextMenu(wxContextMenuEvent& e);
 	void refreshDefinitionIndex();
-	void goToDefinition(const Definition& def);
+
+	// Where the reading is, for the jump trail the archive panel keeps: the caret as a byte
+	// offset, and a place to put the view with a name to highlight
+	size_t caret() const;
+	void   showAt(size_t offset, string_view select);
 
 	// The identifier at a byte position in the text, and the text as the editor holds it
 	string wordAt(size_t position) const;
@@ -210,27 +217,13 @@ private:
 	// The language constructor, one per panel as well
 	LanguageConstructorDialog* language_constructor_ = nullptr;
 
-	// One place on that trail: the file, and the caret inside it
-	struct JumpStop
-	{
-		string lump;
-		size_t offset = 0;
-	};
-
-	// The jump history: where each jump started, so the mouse's back button returns him
-	void openAt(string_view lump, size_t offset, string_view select);
-	void jumpBack();
-	void jumpForward();
-	void jumpToStop(vector<JumpStop>& from, vector<JumpStop>& to);
+	// The mouse's side buttons, which ask the archive panel for the same jumps Alt+Left and
+	// Alt+Right make
 	void onEditorSideButton(wxMouseEvent& e);
-	JumpStop currentStop() const;
 
-	// Where the names in this archive's scripts are defined, rebuilt when a right-click asks
-	// and the text behind them has changed size
+	// Where the names in this archive's scripts and files are defined, rebuilt when a
+	// right-click asks and the text behind them has changed size
 	DefinitionIndex definitions_;
-
-	// The trail of jumps, forward cleared by a new jump the way a browser does
-	std::vector<JumpStop> jump_back_, jump_forward_;
 
 
 

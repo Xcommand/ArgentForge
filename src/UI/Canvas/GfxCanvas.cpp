@@ -37,6 +37,8 @@
 #include "General/UI.h"
 #include "Graphics/SImage/SImage.h"
 #include "Graphics/Translation.h"
+#include "MainEditor/Maineditor.h"
+#include "MainEditor/UI/ArchivePanel.h"
 #include "OpenGL/Drawing.h"
 #include "OpenGL/GLTexture.h"
 #include "UI/Controls/ZoomControl.h"
@@ -2148,6 +2150,16 @@ void GfxCanvas::onKeyDown(wxKeyEvent& e)
 		showBrushHint(mouse_prev_);
 		return;
 	}
+
+	// Alt+Left and Alt+Right walk the jump trail. They're taken before the arrows, which the
+	// canvas uses bare to pan the picture, so a jump back from a sprite isn't eaten as a move
+	for (auto& bind : KeyBind::bindsForKey(KeyBind::asKeyPress(e.GetKeyCode(), e.GetModifiers())))
+		if (bind == "ted_jump_back" || bind == "ted_jump_forward")
+		{
+			if (auto* panel = maineditor::currentArchivePanel())
+				bind == "ted_jump_back" ? panel->jumpBack() : panel->jumpForward();
+			return;
+		}
 
 	if (e.GetKeyCode() == WXK_UP)
 	{

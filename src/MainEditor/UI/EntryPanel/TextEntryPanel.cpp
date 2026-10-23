@@ -175,8 +175,14 @@ TextEntryPanel::TextEntryPanel(wxWindow* parent) : EntryPanel(parent, "text")
 	text_area_->UsePopUp(wxSTC_POPUP_NEVER);
 	text_area_->Bind(wxEVT_CONTEXT_MENU, &TextEntryPanel::onEditorContextMenu, this);
 
-	// The jump trail: Alt+Left and the mouse's back button return to where the last jump started
-	text_area_->setJumpHistoryFunctions([this]() { jumpBack(); }, [this]() { jumpForward(); });
+	// The jump trail: Alt+Left and the mouse's back button return to where the last jump
+	// started. The trail belongs to the archive panel, because a jump can land on a picture
+	auto jump = [](bool back)
+	{
+		if (auto* panel = maineditor::currentArchivePanel())
+			back ? panel->jumpBack() : panel->jumpForward();
+	};
+	text_area_->setJumpHistoryFunctions([jump]() { jump(true); }, [jump]() { jump(false); });
 	text_area_->Bind(wxEVT_AUX1_DOWN, &TextEntryPanel::onEditorSideButton, this);
 	text_area_->Bind(wxEVT_AUX2_DOWN, &TextEntryPanel::onEditorSideButton, this);
 
@@ -2446,15 +2452,16 @@ void TextEntryPanel::onEditorContextMenu(wxContextMenuEvent& e)
 	wxMenu menu;
 
 	// Where he came from is the other reason the right button was pressed, so it leads
-	bool trail = false;
-	if (!jump_back_.empty())
+	auto* jumps = maineditor::currentArchivePanel();
+	bool  trail = false;
+	if (jumps && jumps->jumpBackPossible())
 	{
-		menu.Append(ID_BACK, wxS("Back to ") + wxString::FromUTF8(baseName(jump_back_.back().lump)));
+		menu.Append(ID_BACK, wxS("Back to ") + wxString::FromUTF8(baseName(jumps->jumpBackFile())));
 		trail = true;
 	}
-	if (!jump_forward_.empty())
+	if (jumps && jumps->jumpForwardPossible())
 	{
-		menu.Append(ID_FORWARD, wxS("Forward to ") + wxString::FromUTF8(baseName(jump_forward_.back().lump)));
+		menu.Append(ID_FORWARD, wxS("Forward to ") + wxString::FromUTF8(baseName(jumps->jumpForwardFile())));
 		trail = true;
 	}
 	if (trail)
@@ -2508,10 +2515,9 @@ void TextEntryPanel::onEditorContextMenu(wxContextMenuEvent& e)
 	switch (picked)
 	{
 	case ID_BACK:
-		jumpBack();
-		break;
 	case ID_FORWARD:
-		jumpForward();
+		if (jumps)
+			picked == ID_BACK ? jumps->jumpBack() : jumps->jumpForward();
 		break;
 	case wxID_UNDO:
 		text_area_->Undo();
@@ -2536,143 +2542,51 @@ void TextEntryPanel::onEditorContextMenu(wxContextMenuEvent& e)
 		break;
 	default:
 		if (picked >= ID_GOTO && picked < ID_GOTO + (int)found.size())
-			goToDefinition(found[picked - ID_GOTO]);
+			if (jumps)
+				jumps->goToDefinition(found[picked - ID_GOTO]);
 		break;
 	}
 }
 
 // -----------------------------------------------------------------------------
-// Puts the editor on [offset] in [lump]. In this lump that's a caret move; in another
-// one the file is opened with the caret on the name, which is the whole point: a mod
-// with forty script files can't be read by hunting. [select] is the name to highlight,
-// empty for a stop the history remembered, where there is no name to point at
+// Where the reading is, and how to put the view somewhere: the archive panel keeps the
+// trail of jumps, and this is the part only the text editor can do
 // -----------------------------------------------------------------------------
-void TextEntryPanel::openAt(string_view lump, size_t offset, string_view select)
+size_t TextEntryPanel::caret() const
 {
-	auto  self    = entry_.lock();
-	auto* archive = self ? self->parent() : nullptr;
-	if (!archive)
-		return;
+	long pos = text_area_->GetCurrentPos();
+	return pos > 0 ? (size_t)pos : 0;
+}
+
+// -----------------------------------------------------------------------------
+// Puts the view on [offset] and highlights [select], which is empty for a place the trail
+// remembered, where there is no name to point at
+// -----------------------------------------------------------------------------
+void TextEntryPanel::showAt(size_t offset, string_view select)
+{
+	// SetSelection picks both ends of the range. SetCurrentPos alone leaves the anchor where
+	// it was, which is what made a jump back select everything in between
+	if (!select.empty())
+		text_area_->SetSelection((long)offset, (long)(offset + select.size()));
+	else
+		text_area_->GotoPos((long)offset);
 
 	// The view goes to the line rather than the byte, so the name is where he can read it
-	auto point = [&](bool loaded)
-	{
-		if (!loaded)
-			return;
-		// SetSelection picks both ends of the range. SetCurrentPos alone leaves the anchor
-		// where it was, which is what made a jump back select everything in between
-		if (!select.empty())
-			text_area_->SetSelection((long)offset, (long)(offset + select.size()));
-		else
-			text_area_->GotoPos((long)offset);
-		centreLine(lineAtOffset(editorText(), offset));
-		text_area_->SetFocus();
-	};
+	centreLine(lineAtOffset(editorText(), offset));
+	text_area_->SetFocus();
+}
 
-	if (self && self->path(true) == string(lump))
-	{
-		point(true);
-		return;
-	}
-
-	auto* other = archive->entryAtPath(lump);
-	if (!other)
-		return;
-
-	other->exProp("TextPosition") = (int)offset;
+// -----------------------------------------------------------------------------
+// The mouse's two side buttons, which ask for the same jumps Alt+Left and Alt+Right make
+// -----------------------------------------------------------------------------
+void TextEntryPanel::onEditorSideButton(wxMouseEvent& e)
+{
 	auto* panel = maineditor::currentArchivePanel();
 	if (!panel)
 		return;
 
-	// The panel the file's own type asks for: a sprite opens as a picture and a map as a
-	// map, and the tree moves to wherever it landed, so the jump shows in both halves of
-	// the window
-	panel->openEntry(other);
-	panel->focusOnEntry(other);
-
-	// Only point when the text came into this panel: an entry that has its own tab opens
-	// there, and moving the caret here would move it in the file that stayed behind
-	point(entry_.lock().get() == other);
-}
-
-// -----------------------------------------------------------------------------
-// Where the reading is right now, so a jump can be undone
-// -----------------------------------------------------------------------------
-TextEntryPanel::JumpStop TextEntryPanel::currentStop() const
-{
-	JumpStop stop;
-	if (auto self = entry_.lock())
-		stop.lump = self->path(true);
-
-	long pos = text_area_->GetCurrentPos();
-	stop.offset = pos > 0 ? (size_t)pos : 0;
-	return stop;
-}
-
-// -----------------------------------------------------------------------------
-// Moves one stop from [from] to [to] and shows it. A stop whose lump is gone gets
-// dropped and the next one tried, so the button keeps working after a rename instead
-// of sitting dead on a place that isn't there anymore
-// -----------------------------------------------------------------------------
-void TextEntryPanel::jumpToStop(vector<JumpStop>& from, vector<JumpStop>& to)
-{
-	auto  self    = entry_.lock();
-	auto* archive = self ? self->parent() : nullptr;
-	if (!archive)
-		return;
-
-	while (!from.empty())
-	{
-		auto stop = from.back();
-		from.pop_back();
-
-		if (archive->entryAtPath(stop.lump))
-		{
-			to.push_back(currentStop());
-			openAt(stop.lump, stop.offset, {});
-			return;
-		}
-	}
-}
-
-// -----------------------------------------------------------------------------
-// Back and forward along the trail of jumps
-// -----------------------------------------------------------------------------
-void TextEntryPanel::jumpBack()
-{
-	jumpToStop(jump_back_, jump_forward_);
-}
-
-void TextEntryPanel::jumpForward()
-{
-	jumpToStop(jump_forward_, jump_back_);
-}
-
-// -----------------------------------------------------------------------------
-// The mouse's two side buttons, which are the same jumps Alt+Left and Alt+Right make
-// -----------------------------------------------------------------------------
-void TextEntryPanel::onEditorSideButton(wxMouseEvent& e)
-{
 	if (e.GetButton() == wxMOUSE_BTN_AUX1)
-		jumpBack();
+		panel->jumpBack();
 	else if (e.GetButton() == wxMOUSE_BTN_AUX2)
-		jumpForward();
-}
-
-// -----------------------------------------------------------------------------
-// Moves along the definition trail: this place goes on it, the forward end is dropped
-// the way a browser drops what was ahead of you once you jump somewhere new
-// -----------------------------------------------------------------------------
-void TextEntryPanel::goToDefinition(const Definition& def)
-{
-	if (auto self = entry_.lock(); self && !self->path(true).empty())
-	{
-		jump_back_.push_back(currentStop());
-		// A hundred jumps is more than anyone reads back through; older ones fall off
-		if (jump_back_.size() > 100)
-			jump_back_.erase(jump_back_.begin());
-	}
-
-	jump_forward_.clear();
-	openAt(def.lump, def.offset, def.name);
+		panel->jumpForward();
 }
