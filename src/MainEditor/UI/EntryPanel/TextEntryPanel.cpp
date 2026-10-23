@@ -2304,12 +2304,18 @@ void TextEntryPanel::onEditorContextMenu(wxContextMenuEvent& e)
 	auto   pos  = (size_t)std::max(0, hit);
 	string word = wordAt(pos);
 
+	// Only a script lump has definitions to look for; anywhere else the menu stays the plain
+	// edit list he knows
+	ActorFormat fmt;
+	bool        script = actorFormat(text_area_->language(), fmt);
+
 	vector<Definition> found;
-	if (!word.empty())
+	if (script)
 	{
 		refreshDefinitionIndex();
-		if (auto self = entry_.lock())
-			found = definitions_.resolve(word, self->path(), pos);
+		if (!word.empty())
+			if (auto self = entry_.lock())
+				found = definitions_.resolve(word, self->path(), pos);
 	}
 
 	wxMenu menu;
@@ -2323,14 +2329,39 @@ void TextEntryPanel::onEditorContextMenu(wxContextMenuEvent& e)
 	menu.AppendSeparator();
 	menu.Append(wxID_SELECTALL, wxS("Select All"));
 
-	// Eight is more answers than a name ever has, and a menu that long stops being a menu
-	if (!found.empty())
+	// Over a script the menu always answers, even when the answer is "nothing here". Silence
+	// can't be told apart from the feature not running at all, and the number of lumps read
+	// says whether the walk found the archive's scripts
+	if (script)
 	{
 		menu.AppendSeparator();
-		for (size_t i = 0; i < found.size() && i < 8; ++i)
-			menu.Append(ID_GOTO + (int)i,
-			            wxString::Format(wxS("Go to %s (%s)"), wxString::FromUTF8(word),
-			                             wxString::FromUTF8(found[i].where)));
+
+		if (!found.empty())
+		{
+			// Eight is more answers than one name ever has, and a longer menu stops being a menu
+			for (size_t i = 0; i < found.size() && i < 8; ++i)
+			{
+				string file = found[i].lump;
+				auto   slash = file.find_last_of('/');
+				if (slash != string::npos)
+					file = file.substr(slash + 1);
+
+				menu.Append(ID_GOTO + (int)i,
+				            wxString::Format(wxS("Go to %s (%s, %s)"), wxString::FromUTF8(word),
+				                             wxString::FromUTF8(found[i].where), wxString::FromUTF8(file)));
+			}
+		}
+		else
+		{
+			auto* none = new wxMenuItem(&menu, wxID_NONE,
+				word.empty()
+					? wxString::Format(wxS("No name under the pointer (%d script lumps read)"),
+					                   (int)definitions_.lumpCount())
+					: wxString::Format(wxS("No definition for %s (%d script lumps read)"), wxString::FromUTF8(word),
+					                   (int)definitions_.lumpCount()));
+			none->Enable(false);
+			menu.Append(none);
+		}
 	}
 
 	int picked = text_area_->GetPopupMenuSelectionFromUser(menu, where);

@@ -47,6 +47,10 @@ public:
 
 	bool empty() const { return actors_.empty(); }
 
+	// How many script lumps the last read took in. When the answer to a name is "nothing", the
+	// window says this number, because "no lumps read" and "no such class" need different fixes
+	size_t lumpCount() const { return cache_.size(); }
+
 	// The places [name] can lead to, in the order the engine reads them. [lump] and [offset]
 	// say where the word was written, which decides whether a state label counts.
 	vector<Definition> resolve(string_view name, string_view lump, size_t offset) const;
