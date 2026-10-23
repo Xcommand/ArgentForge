@@ -2338,6 +2338,8 @@ void TextEntryPanel::refreshDefinitionIndex()
 		if (auto* folder = dir ? dir->dirEntry() : nullptr)
 			maps.push_back(folder->path(true));
 	}
+	std::sort(maps.begin(), maps.end());
+	maps.erase(std::unique(maps.begin(), maps.end()), maps.end());
 
 	vector<EntryRef> entries;
 	entries.reserve(files.size());
@@ -2349,7 +2351,7 @@ void TextEntryPanel::refreshDefinitionIndex()
 		auto path = one->path(true);
 		entries.push_back({ one->name(),
 		                    path,
-		                    std::find(maps.begin(), maps.end(), path) != maps.end(),
+		                    std::binary_search(maps.begin(), maps.end(), path),
 		                    (flat_type && one->type() == flat_type) || one->isInNamespace("flats") });
 	}
 
@@ -2359,10 +2361,14 @@ void TextEntryPanel::refreshDefinitionIndex()
 		if (!one || isFolderEntry(one))
 			continue;
 
-		const auto& data = one->data();
-		size_t      n    = data.size();
+		// The size comes from the archive's own listing, so a picture, a map or a sound is
+		// turned away before its bytes are read. Asking data() instead would bring a mod's
+		// whole texture cache into memory for one right-click
+		const size_t n = one->size();
 		if (n == 0 || n > (2u << 20))
 			continue;
+
+		const auto& data = one->data();
 		if (memchr(data.data(), 0, std::min<size_t>(n, 512)))
 			continue;
 
