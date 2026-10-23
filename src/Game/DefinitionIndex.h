@@ -6,14 +6,28 @@
 
 namespace slade
 {
-// One script lump the caller read out of an archive. The index takes texts rather than an
+// What a lump is to the engine. The kind decides what the first word of its line means,
+// and the engine reads a sound name out of SNDINFO and a class name out of a script, so a
+// word is asked about as the kind of file it was written in.
+enum class LumpKind
+{
+	script,   // ZScript or DECORATE: classes, and the labels of their states
+	sndinfo,  // sound aliases
+	cvarinfo, // console variables
+	mapinfo,  // level definitions
+	language, // LANGUAGE strings, written as blocks or as a spreadsheet
+	none,     // Nothing the engine reads names out of it, so there is nothing to look up
+};
+
+// One lump the caller read out of an archive. The index takes texts rather than an
 // archive, the same way the language reader does, so the walk and the type detection stay
 // with the panel that owns them.
 struct ScriptLump
 {
 	string path;   // Where it sits in the archive, which is where a jump has to open
 	string text;
-	bool   zscript = false; // Which of the engine's two reads it belongs to
+	bool   zscript = false; // Which of the engine's two reads it belongs to, for a script
+	LumpKind kind = LumpKind::script;
 };
 
 // One place a name written in a script is defined. The engine reads the ZSCRIPT lumps before
@@ -42,10 +56,12 @@ public:
 	void clear()
 	{
 		actors_.clear();
+		records_.clear();
+		kinds_.clear();
 		cache_.clear();
 	}
 
-	bool empty() const { return actors_.empty(); }
+	bool empty() const { return actors_.empty() && records_.empty(); }
 
 	// How many script lumps the last read took in. When the answer to a name is "nothing", the
 	// window says this number, because "no lumps read" and "no such class" need different fixes
@@ -58,14 +74,17 @@ public:
 	// What the last read saw, so the same numbers are testable from outside the window
 	struct ReadStats
 	{
-		size_t lumps = 0, classes = 0, bytes = 0;
+		size_t lumps = 0, classes = 0, bytes = 0, names = 0;
 	};
 	ReadStats stats() const
 	{
-		size_t bytes = 0;
+		size_t bytes = 0, names = 0;
 		for (const auto& one : cache_)
+		{
 			bytes += one.second.size;
-		return { cache_.size(), actors_.size(), bytes };
+			names += one.second.records.size();
+		}
+		return { cache_.size(), actors_.size(), bytes, names };
 	}
 
 	// The places [name] can lead to, in the order the engine reads them. [lump] and [offset]
@@ -74,6 +93,14 @@ public:
 
 	// The class whose block holds this place in that lump, or an empty name
 	string actorAt(string_view lump, size_t offset) const;
+
+	// Which kind of lump the caller last read [path] as, or script when it wasn't one it
+	// read at all. A panel asks, so a word written in SNDINFO is looked up as a sound
+	LumpKind kindOf(string_view path) const
+	{
+		auto found = kinds_.find(string(path));
+		return found == kinds_.end() ? LumpKind::script : found->second;
+	}
 
 private:
 	struct Label
@@ -93,9 +120,24 @@ private:
 		std::vector<Label> labels;
 	};
 
+	// One name a non-script lump defines: a sound, a cvar, a level, a LANGUAGE key. Unlike
+	// a class these have no inheritance and no replacement, and a later lump of the same
+	// kind overwrites an earlier one, so the last read is the one the game ends up with
+	struct Record
+	{
+		string   name, lump, archive, where;
+		size_t   offset = 0;
+		LumpKind kind   = LumpKind::script;
+	};
+
 	// One script lump read: its classes, their parents, and the labels of their states
 	static void scanScript(const string& text, const string& path, const string& archive, bool zscript,
 	                       std::vector<Actor>& out);
+
+	// One lump of another kind read: the names its lines define. LANGUAGE goes through the
+	// reader the language table uses, because that one already knows both shapes
+	static void scanRecords(const string& text, const string& path, const string& archive, LumpKind kind,
+	                        std::vector<Record>& out);
 
 	// The actor named [name], or null. The engine keeps one class per name, so the first
 	// read is the one that stays
@@ -104,14 +146,27 @@ private:
 	// The labels visible from [actor], its own first and then the parents it inherits from
 	void visibleLabels(const Actor& actor, const string& name, std::vector<Definition>& out) const;
 
+	// The names matching [name]: with [first] set, that kind ahead of the others. Within a
+	// kind the last read comes first, since that is the definition the engine kept
+	void pushRecords(std::vector<Definition>& out, const string& name, LumpKind first) const;
+
 	// What one lump read as, kept so a rebuild touches only the files that changed size
 	struct Cached
 	{
 		size_t             size = 0;
 		std::vector<Actor> actors;
+		std::vector<Record> records;
 	};
 
 	std::vector<Actor> actors_;
 	std::map<string, Cached> cache_;
+
+	// Every name the non-script lumps define, under its lowercased spelling, in the order
+	// the lumps were read
+	std::map<string, std::vector<Record>> records_;
+
+	// Which kind each read lump was, so a lookup can rank the answer by the file the word
+	// was written in
+	std::map<string, LumpKind> kinds_;
 };
 } // namespace slade

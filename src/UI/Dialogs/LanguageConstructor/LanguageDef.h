@@ -17,6 +17,11 @@ public:
 	size_t begin = 0; // Where it was read from, in the text the source holds
 	size_t end   = 0;
 
+	// Where the name itself starts. For 'NAME = "text";' that's [begin]; for a row of a
+	// spreadsheet it's the middle of the line, since the identifier is one column among
+	// several. Zero when the reader didn't record it, which means [begin]
+	size_t label_begin = 0;
+
 	// A '$ifgame(duke32)' in front of the name: the engine reads the definition only
 	// while that game is the one being played
 	bool   ifgame = false;

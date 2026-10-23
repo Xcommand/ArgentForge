@@ -715,6 +715,9 @@ bool LanguageSource::loadCsv(string_view text)
 		entry.label  = string(label);
 		entry.begin  = fields.front().begin;
 		entry.end    = fields.back().end;
+		// The name is a column of its own, so the place to put a caret isn't where the line
+		// starts
+		entry.label_begin = fields[label_col].begin;
 		entry.raw    = string(text.substr(entry.begin, entry.end - entry.begin));
 		entry.parsed = true;
 
@@ -799,6 +802,7 @@ bool LanguageSource::addCsvLine(string_view label, string_view language, string_
 
 	string                       line;
 	std::vector<LanguageEntry::Cell> cells;
+	size_t label_at = at; // Where the new row writes its name
 	for (size_t c = 0; c < csv_cols_.size(); ++c)
 	{
 		if (c)
@@ -825,6 +829,8 @@ bool LanguageSource::addCsvLine(string_view label, string_view language, string_
 		cell.tags  = column.tags;
 		cell.begin = at + eol.size() + line.size();
 		cell.end   = cell.begin + value.size();
+		if (column.label)
+			label_at = cell.begin;
 		if (column.label || column.tags.empty())
 		{
 			// Not a language's cell: it holds no text a column would show
@@ -844,6 +850,7 @@ bool LanguageSource::addCsvLine(string_view label, string_view language, string_
 	add.label  = string(label);
 	add.parsed = true;
 	add.begin  = at;
+	add.label_begin = label_at;
 	add.end    = at;
 	add.raw    = eol + line;
 	add.cells  = std::move(cells);
@@ -1130,6 +1137,10 @@ void LanguageSource::shiftEntries(size_t at, size_t by)
 			e.end += by;
 			e.value_begin += by;
 			e.value_end += by;
+			// A spreadsheet row keeps its name in the middle of the line, so it moves as well.
+			// Zero means the statement's own start, which [begin] already carries
+			if (e.label_begin && e.label_begin >= e.begin - by)
+				e.label_begin += by;
 		}
 	}
 	for (auto& s : spots_)

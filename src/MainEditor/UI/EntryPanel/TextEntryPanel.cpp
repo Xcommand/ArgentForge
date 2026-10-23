@@ -2218,8 +2218,11 @@ string TextEntryPanel::editorText() const
 }
 
 // -----------------------------------------------------------------------------
-// The identifier at a byte position. Scintilla's own word rules are the ones that fit:
-// letters, digits and '_', which is what a DECORATE or ZScript name is written from
+// The identifier at a byte position, grown over the dots a dotted name is written with.
+// Scintilla's word rules stop at a dot, and the names that carry one are exactly the ones
+// worth jumping to: a sound alias ('soldier.hitmonk1'), an actor's state ('Bear.Attack'),
+// a LANGUAGE key. Two segments of one name are worse than no answer at all, so the whole
+// name is asked for first and the pieces only if nothing owns it
 // -----------------------------------------------------------------------------
 string TextEntryPanel::wordAt(size_t position) const
 {
@@ -2228,14 +2231,60 @@ string TextEntryPanel::wordAt(size_t position) const
 	if (end <= start)
 		return {};
 
-	return text_area_->GetTextRange(start, end).utf8_string();
+	auto text = editorText();
+	while (start > 0 && text[start - 1] == '.' && (start < 2 || text[start - 2] != '.'))
+		start = text_area_->WordStartPosition((long)start - 1, true);
+	while (end < (long)text.size() && text[end] == '.' && (end + 2 >= (long)text.size() || text[end + 1] != '.'))
+		end = text_area_->WordEndPosition((long)end + 1, true);
+
+	if (end <= start)
+		return {};
+	return string(text.substr(start, end - start));
 }
 
 // -----------------------------------------------------------------------------
-// Every script lump of this archive. ZScript and DECORATE hide under many spellings
-// (.zs, .zsc, .zc, even .txt), so the archive is walked by content the way the menu
-// constructor walks it: a null byte in the first lines means a compiled or binary lump,
-// and nothing over two megabytes is a script anyone wrote by hand
+// What the engine would read this lump as, which is what decides what a word in it names.
+// ZScript and DECORATE hide under many spellings (.zs, .zsc, .zc, even .txt); the other four
+// the engine takes by the head of the lump's name, so 'SNDINFO2' is a sound file too
+// (Wads.FindLump matches a prefix, not a whole name). [zscript] answers only for a script,
+// and says which of the engine's two reads it belongs to
+// -----------------------------------------------------------------------------
+static LumpKind lumpKind(ArchiveEntry* one, bool& zscript)
+{
+	zscript   = one->type() == EntryType::fromId("zscript");
+	bool decorate = one->type() == EntryType::fromId("decorate");
+	if (!zscript && !decorate)
+	{
+		auto name = strutil::lower(one->name());
+		zscript = name == "zscript" || strutil::endsWith(name, ".zs") || strutil::endsWith(name, ".zsc")
+		       || strutil::endsWith(name, ".zc");
+		decorate = name == "decorate" || strutil::endsWith(name, ".dec");
+	}
+	if (zscript || decorate)
+		return LumpKind::script;
+
+	auto base = one->nameNoExt();
+	if (strutil::startsWithCI(base, "sndinfo"))
+		return LumpKind::sndinfo;
+	if (strutil::startsWithCI(base, "cvarinfo"))
+		return LumpKind::cvarinfo;
+	if (strutil::startsWithCI(base, "mapinfo"))
+		return LumpKind::mapinfo;
+	if (strutil::startsWithCI(base, "language"))
+		return LumpKind::language;
+
+	// A mod's classes also sit in plain .txt files. Taking them costs a scan that finds
+	// nothing in the ones that aren't scripts, which is cheaper than missing a file
+	if (strutil::endsWith(strutil::lower(one->name()), ".txt"))
+		return LumpKind::script;
+
+	return LumpKind::none;
+}
+
+// -----------------------------------------------------------------------------
+// Every lump of this archive the engine reads names out of. The archive is walked by content
+// the way the menu constructor walks it: a null byte in the first lines means a compiled or
+// binary lump, and nothing over two megabytes is a file anyone wrote by hand
 // -----------------------------------------------------------------------------
 void TextEntryPanel::refreshDefinitionIndex()
 {
@@ -2246,14 +2295,6 @@ void TextEntryPanel::refreshDefinitionIndex()
 		definitions_.clear();
 		return;
 	}
-
-	auto* etype_zscript  = EntryType::fromId("zscript");
-	auto* etype_decorate = EntryType::fromId("decorate");
-
-	auto endsWith = [](const string& text, const char* tail) {
-		auto len = strlen(tail);
-		return text.size() >= len && text.compare(text.size() - len, len, tail) == 0;
-	};
 
 	vector<ArchiveEntry*> files;
 	archive->putEntryTreeAsList(files);
@@ -2271,20 +2312,10 @@ void TextEntryPanel::refreshDefinitionIndex()
 		if (memchr(data.data(), 0, std::min<size_t>(n, 512)))
 			continue;
 
-		bool zs = one->type() == etype_zscript, dc = one->type() == etype_decorate;
-		if (!zs && !dc)
-		{
-			auto name = strutil::lower(one->name());
-			zs        = name == "zscript" || endsWith(name, ".zs") || endsWith(name, ".zsc") || endsWith(name, ".zc");
-			dc        = name == "decorate" || endsWith(name, ".dec");
-		}
-		if (!zs && !dc)
-		{
-			// A mod's classes also sit in plain .txt files. Taking them costs a scan that finds
-			// nothing in the ones that aren't scripts, which is cheaper than missing a file
-			if (!endsWith(strutil::lower(one->name()), ".txt"))
-				continue;
-		}
+		bool     zs   = false;
+		auto     kind = lumpKind(one, zs);
+		if (kind == LumpKind::none)
+			continue;
 
 		string text;
 		if (one == self.get())
@@ -2293,15 +2324,15 @@ void TextEntryPanel::refreshDefinitionIndex()
 			text.assign((const char*)data.data(), n);
 
 		// path() alone is the folder; the name is what tells two files in one directory apart
-		lumps.push_back({ one->path(true), std::move(text), zs });
+		lumps.push_back({ one->path(true), std::move(text), zs, kind });
 	}
 
 	definitions_.build(lumps, archive->filename());
 }
 
 // -----------------------------------------------------------------------------
-// The right-click menu. The edit items are the ones Scintilla used to draw itself, in the
-// same order, so the only difference to notice is the new part underneath them
+// The right-click menu. Navigation leads, because where a name is defined is the reason the
+// button was pressed; the edit items are what the keyboard is for and stay underneath
 // -----------------------------------------------------------------------------
 void TextEntryPanel::onEditorContextMenu(wxContextMenuEvent& e)
 {
@@ -2330,18 +2361,36 @@ void TextEntryPanel::onEditorContextMenu(wxContextMenuEvent& e)
 	auto   pos  = (size_t)std::max(0, hit);
 	string word = wordAt(pos);
 
-	// Only a script lump has definitions to look for; anywhere else the menu stays the plain
-	// edit list he knows
-	ActorFormat fmt;
-	bool        script = actorFormat(text_area_->language(), fmt);
+	// Only a lump the engine reads names out of has somewhere to go; anywhere else the menu
+	// stays the plain edit list he knows. Walking the archive costs a read of its scripts, so
+	// it happens for these files and not for a picture
+	bool indexable = false;
+	if (auto self = entry_.lock())
+	{
+		bool zs = false;
+		indexable = lumpKind(self.get(), zs) != LumpKind::none;
+	}
 
 	vector<Definition> found;
-	if (script)
+	if (indexable)
 	{
 		refreshDefinitionIndex();
 		if (!word.empty())
 			if (auto self = entry_.lock())
+			{
 				found = definitions_.resolve(word, self->path(true), pos);
+
+				// A name the file wrote with a dot beside it can still be one name: an option
+				// line reads 'sv_foo = 1', and a comment writes 'actor.state'. Ask for the
+				// piece that is a name rather than answer nothing
+				if (found.empty())
+					if (auto dot = word.find_last_of('.'); dot != string::npos)
+					{
+						found = definitions_.resolve(word.substr(0, dot), self->path(true), pos);
+						if (found.empty())
+							found = definitions_.resolve(word.substr(dot + 1), self->path(true), pos);
+					}
+			}
 	}
 
 	wxMenu menu;
@@ -2361,10 +2410,10 @@ void TextEntryPanel::onEditorContextMenu(wxContextMenuEvent& e)
 	if (trail)
 		menu.AppendSeparator();
 
-	// Over a script the menu always answers, even when the answer is "nothing here". Silence
-	// can't be told apart from the feature not running at all, and the number of lumps read
-	// says whether the walk found the archive's scripts
-	if (script)
+	// Over a lump with names in it the menu always answers, even when the answer is "nothing
+	// here". Silence can't be told apart from the feature not running at all, and the numbers
+	// say whether the walk found the archive's files or the reader found nothing in them
+	if (indexable)
 	{
 		if (!found.empty())
 		{
@@ -2381,9 +2430,10 @@ void TextEntryPanel::onEditorContextMenu(wxContextMenuEvent& e)
 			auto stats = definitions_.stats();
 			auto* none = new wxMenuItem(&menu, wxID_NONE,
 				word.empty()
-					? wxString::Format(wxS("No name under the pointer (%d classes read)"), (int)stats.classes)
-					: wxString::Format(wxS("No definition for %s (%d classes read)"), wxString::FromUTF8(word),
-					                   (int)stats.classes));
+					? wxString::Format(wxS("No name under the pointer (%d classes, %d names read)"), (int)stats.classes,
+					                   (int)stats.names)
+					: wxString::Format(wxS("No definition for %s (%d classes, %d names read)"), wxString::FromUTF8(word),
+					                   (int)stats.classes, (int)stats.names));
 			none->Enable(false);
 			menu.Append(none);
 		}
@@ -2391,8 +2441,8 @@ void TextEntryPanel::onEditorContextMenu(wxContextMenuEvent& e)
 		menu.AppendSeparator();
 	}
 
-	// Where a name is defined is the reason the right button was pressed; the edit items are
-	// what the keyboard is for, and stay underneath
+	// The list Scintilla used to draw itself, in the same order, so the only difference to
+	// notice is the part on top of it
 	menu.Append(wxID_UNDO, wxS("Undo"));
 	menu.Append(wxID_REDO, wxS("Redo"));
 	menu.AppendSeparator();
