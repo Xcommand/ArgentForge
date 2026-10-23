@@ -22,11 +22,18 @@ view just moves to the line and the name is selected.
   found in the class that writes it.
 * Functions the mod writes, `function` and DECORATE's `action`, from wherever they are called. A
   routine the parent writes is found in the file that writes the parent.
+* Decals and the rest of GLDEFS: `decal`, `decalmask`, `texture`, `material`, `fading`, written
+  bare or in quotes, in a `GLDEFS` or a `DECALDEF` file.
+* ZScript's own global definitions: `particledef`, `particlegroup`, `texturedparticle`.
 * Sounds: the alias a `SNDINFO` line writes, the file that line quotes, and the audio file itself.
 * Cvars from `CVARINFO`, levels from `MAPINFO` (both `map MAP01` and its `lookup` name), and
   `LANGUAGE` keys, whether the file writes them as `NAME = "text";` or as a spreadsheet.
-* Sprites, flats, textures and patches by the file they are drawn from, and a map by its own
-  folder. A map opened this way answers the back key only after you click a text again.
+* Sprites, flats, textures and patches answer by the file they are drawn from, however long the mod
+wrote its name: the eight-letter limit belongs to a WAD, not to a pk3. A map answers by its own
+folder. A map opened this way answers the back key only after you click a text again.
+
+A named random pool (`random[VR_WeaponRNG]`) is not a definition: the engine makes one up the first
+time a mod writes its name (`m_random.cpp`), so no file declares it and there is nowhere to go.
 
 Where a name has more than one definition, the menu lists them in the order the engine reads them,
 so the first answer is the one the game uses. Classes are read first-write-wins; sounds, cvars,
