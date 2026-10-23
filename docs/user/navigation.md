@@ -20,8 +20,9 @@ view just moves to the line and the name is selected.
   `replaces X` points at.
 * State labels, the bare word in a frame line or a `goto`. A label the actor only inherits is
   found in the class that writes it.
-* Functions the mod writes, `function` and DECORATE's `action`, from wherever they are called. A
-  routine the parent writes is found in the file that writes the parent.
+* Functions the mod writes: a class's own `function` or DECORATE's `action`, and one written at
+  file scope or inside a `namespace`. From wherever they are called. A routine the parent writes
+  is found in the file that writes the parent, and comes before a global of the same name.
 * Decals and the rest of GLDEFS: `decal`, `decalmask`, `texture`, `material`, `fading`, written
   bare or in quotes, in a `GLDEFS` or a `DECALDEF` file.
 * ZScript's own global definitions: `particledef`, `particlegroup`, `texturedparticle`.
