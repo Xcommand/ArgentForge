@@ -15,6 +15,7 @@ enum class LumpKind
 	sndinfo,  // sound aliases
 	cvarinfo, // console variables
 	mapinfo,  // level definitions
+	gldefs,   // decals and GL definitions: GLDEFS and DECALDEF lumps
 	language, // LANGUAGE strings, written as blocks or as a spreadsheet
 	none,     // Nothing the engine reads names out of it, so there is nothing to look up
 };

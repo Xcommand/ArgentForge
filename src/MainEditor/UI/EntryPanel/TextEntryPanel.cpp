@@ -2290,6 +2290,8 @@ static LumpKind lumpKind(ArchiveEntry* one, bool& zscript)
 		return LumpKind::cvarinfo;
 	if (strutil::startsWithCI(base, "mapinfo"))
 		return LumpKind::mapinfo;
+	if (strutil::startsWithCI(base, "gldefs") || strutil::startsWithCI(base, "decaldef"))
+		return LumpKind::gldefs;
 	if (strutil::startsWithCI(base, "language"))
 		return LumpKind::language;
 
@@ -2432,6 +2434,11 @@ void TextEntryPanel::onEditorContextMenu(wxContextMenuEvent& e)
 			if (auto self = entry_.lock())
 			{
 				found = definitions_.resolve(word, self->path(true), pos);
+
+				// A language string is written with a dollar in front of its key ('$OB_MPROCKET'
+				// as an actor's Obituary), and the LANGUAGE file names it without one
+				if (found.empty() && word[0] == '$')
+					found = definitions_.resolve(word.substr(1), self->path(true), pos);
 
 				// A name the file wrote with a dot or a slash beside it still names one thing:
 				// an option line reads 'sv_foo = 1', a sound is 'weapons/sshoto' and its file

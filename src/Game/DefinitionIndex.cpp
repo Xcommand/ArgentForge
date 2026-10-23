@@ -260,11 +260,26 @@ void DefinitionIndex::scanScript(const string& text, const string& path, const s
 	{
 		// 'ACTOR' is DECORATE's word and 'class' ZScript's; a mod can write either in either
 		// file, so both are taken wherever they come from and the lump only says which flavour
-		// the menu names
-		if (!is(ws[k], "actor") && !is(ws[k], "class") && !is(ws[k], "struct"))
+		// the menu names. The rest are ZScript's global definitions: they name a type the same
+		// way and are pointed at from a property or a call, so they jump the same way
+		static const char* heads[]
+			= { "actor", "class", "struct", "particledef", "particlegroup", "texturedparticle" };
+		const char*        head = nullptr;
+		for (auto* one : heads)
+			if (is(ws[k], one))
+				head = one;
+		if (!head)
 			continue;
+		bool type_like = strutil::equalCI(head, "actor") || strutil::equalCI(head, "class")
+		              || strutil::equalCI(head, "struct");
 
-		if (ws[k + 1].quoted || !nameStart(ws[k + 1].text.empty() ? ' ' : ws[k + 1].text[0]))
+		// A particle definition can be named with a string ('particledef "smoke"'), a class
+		// can't, so the name test has to allow the quoted spelling
+		if (ws[k + 1].text.empty())
+			continue;
+		if (type_like && ws[k + 1].quoted)
+			continue;
+		if (!type_like && !ws[k + 1].quoted && !nameStart(ws[k + 1].text[0]))
 			continue;
 
 		Actor actor;
@@ -272,7 +287,17 @@ void DefinitionIndex::scanScript(const string& text, const string& path, const s
 		actor.name_offset = ws[k + 1].begin;
 		actor.lump       = path;
 		actor.archive    = archive;
-		actor.flavour    = zscript ? "ZScript" : "Decorate";
+		actor.flavour    = type_like ? (zscript ? "ZScript" : "Decorate") : string("ZScript ") + head;
+
+		// A particle definition with no body at all forwards one written elsewhere. A ';' isn't
+		// a word here, so the test is that no brace stands right behind the name; without it
+		// the scan would reach on to the next class and take its body for this one's
+		if (!type_like && (k + 2 >= ws.size() || ws[k + 2].text != "{"))
+		{
+			k = k + 1;
+			out.push_back(std::move(actor));
+			continue;
+		}
 
 		size_t m = k + 2;
 		if (m < ws.size() && ws[m].text == ":")
@@ -283,9 +308,10 @@ void DefinitionIndex::scanScript(const string& text, const string& path, const s
 		}
 
 		// The header runs to the brace that opens the body. 'replaces' and a DoomEd number
-		// both live on it
+		// both live on it. A particle definition with no body ends at its ';' and must not
+		// reach on to the next class's brace
 		size_t open = m;
-		while (open < ws.size() && ws[open].text != "{")
+		while (open < ws.size() && ws[open].text != "{" && (type_like || ws[open].text != ";"))
 		{
 			if (is(ws[open], "replaces") && open + 1 < ws.size() && !ws[open + 1].quoted)
 				actor.replaces = string(ws[open + 1].text);
@@ -422,16 +448,38 @@ void DefinitionIndex::scanRecords(const string& text, const string& path, const 
 		return;
 	}
 
-	const char* what
-		= kind == LumpKind::sndinfo ? "SNDINFO sound" : kind == LumpKind::cvarinfo ? "CVARINFO cvar" : "MAPINFO level";
+	const char* what = kind == LumpKind::sndinfo   ? "SNDINFO sound"
+	                 : kind == LumpKind::cvarinfo  ? "CVARINFO cvar"
+	                 : kind == LumpKind::mapinfo   ? "MAPINFO level"
+	                 : kind == LumpKind::gldefs    ? "definition"
+	                                               : "MAPINFO level";
 
 	// The name after a keyword on the same line, as the file's own coordinates: [line] is
 	// the view it was read from, [absolute] is where line[0] sits in the lump, and [at] is
-	// where to look for the name inside it
+	// where to look for the name inside it. A quoted name is read too, because GLDEFS writes
+	// 'decal "RocketScorch"' and SNDINFO writes its random lists that way
 	auto recordAfter = [&](string_view line, size_t absolute, size_t at, const char* suffix)
 	{
-		size_t sub = 0;
-		auto   name = nameAt(line, pastSpaces(line, at), sub);
+		size_t sub   = 0;
+		size_t shift = std::min(at, line.size());
+		auto   rest  = line.substr(shift);
+		absolute += shift; // the view starts here, so its own indices count from it
+		at = pastSpaces(rest, 0);
+
+		string name;
+		if (at < rest.size() && rest[at] == '"')
+		{
+			size_t end = at + 1;
+			while (end < rest.size() && rest[end] != '"')
+				end += (rest[end] == '\\' && end + 1 < rest.size()) ? 2 : 1;
+			if (end >= rest.size())
+				return;
+			name = string(rest.substr(at + 1, end - at - 1));
+			sub  = at + 1; // the name begins past its quote
+		}
+		else
+			name = nameAt(rest, at, sub);
+
 		if (name.empty())
 			return;
 		out.push_back({ name, path, archive, suffix, absolute + sub, kind });
@@ -512,6 +560,21 @@ void DefinitionIndex::scanRecords(const string& text, const string& path, const 
 			}
 			else if (strutil::equalCI(word, "lookup"))
 				recordAfter(line, start, code + word.size(), "MAPINFO lookup");
+			else if (kind == LumpKind::gldefs)
+			{
+				// GLDEFS and DECALDEF write one definition per head word, and the name stands
+				// right after it, bare or quoted. The rest of their grammar (surface, world
+				// panning, offset table) is properties of a name defined elsewhere
+				static const char* heads[]
+					= { "decal", "decalmask", "pulverize", "texture", "material", "glprojector", "fading",
+					    "particleeffect" };
+				for (auto* head : heads)
+					if (strutil::equalCI(word, head))
+					{
+						recordAfter(line, start, code + word.size(), head);
+						break;
+					}
+			}
 		}
 
 		// A sound's files are what a script writes when it plays it: 'weapons/sshoto' inside
@@ -609,7 +672,8 @@ void DefinitionIndex::pushRecords(std::vector<Definition>& out, const string& na
 	};
 
 	emit(first);
-	for (auto kind : { LumpKind::sndinfo, LumpKind::cvarinfo, LumpKind::mapinfo, LumpKind::language })
+	for (auto kind : { LumpKind::sndinfo, LumpKind::cvarinfo, LumpKind::mapinfo, LumpKind::gldefs,
+	                   LumpKind::language })
 		if (kind != first)
 			emit(kind);
 }
@@ -654,6 +718,11 @@ void DefinitionIndex::setEntries(const vector<EntryRef>& entries, const string& 
 
 		string key, kind;
 
+		// A brightmap is named after the picture it brightens, so it never stands for that
+		// picture. The preview refuses them the same way
+		if (strutil::containsCI(lower_path, "brightmap"))
+			continue;
+
 		// A sprite frame: four letters, a frame letter, a rotation digit. In the folder
 		// spelling the letters are the directory and the file is just the frame
 		if (stem.size() == 6 && isAlpha(stem[0]) && isAlpha(stem[1]) && isAlpha(stem[2]) && isAlpha(stem[3])
@@ -690,19 +759,22 @@ void DefinitionIndex::setEntries(const vector<EntryRef>& entries, const string& 
 			key  = string(stem);
 			kind = "flat";
 		}
-		else if (stem.size() >= 4 && stem.size() <= 8)
+		else if (lower_path.find("flats/") != string::npos)
 		{
-			// A picture filed for one of the three uses the engine names by folder
-			const char* folders[] = { "flats/", "textures/", "patches/", "sneaky/" };
-			const char* kinds[]   = { "flat", "texture", "patch", "patch" };
-			for (int f = 0; f < 4; ++f)
-			{
-				if (lower_path.find(folders[f]) == string::npos)
-					continue;
-				key  = string(stem);
-				kind = kinds[f];
-				break;
-			}
+			key  = string(stem);
+			kind = "flat";
+		}
+		else if (lower_path.find("textures/") != string::npos || lower_path.find("hires/") != string::npos)
+		{
+			// A pk3 texture keeps its name as written, however long: the 8-letter limit is a
+			// WAD's, and a mod's own names ('SVRTAG_ROCKETLAUNCHER') go past it
+			key  = string(stem);
+			kind = "texture";
+		}
+		else if (lower_path.find("patches/") != string::npos || lower_path.find("sneaky/") != string::npos)
+		{
+			key  = string(stem);
+			kind = "patch";
 		}
 
 		// A folder the caller says holds map lumps answers as the map itself, whatever it is
@@ -729,6 +801,11 @@ void DefinitionIndex::setEntries(const vector<EntryRef>& entries, const string& 
 		g.kind = kind;
 		g.stem = string(stem);
 		graphics_[key].push_back(std::move(g));
+
+		// A sprite answers by the whole frame name as well as by its four letters, because a
+		// mod writes 'MISLA0' into a texture lookup and expects to land on that picture
+		if (kind == "sprite" && key != string(stem))
+			graphics_[strutil::lower(stem)].push_back({ one.path, kind, string(stem) });
 	}
 
 	// The frame to open: rotation 0 is a frame whose angles are all one picture and 1 the
