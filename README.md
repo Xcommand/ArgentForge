@@ -74,6 +74,14 @@ https://github.com/user-attachments/assets/1d0dad59-58c8-456d-9585-999272cd2705
   on hover. Both read the same lists as the constructor, so the two can't drift apart.
 * A script lump with no extension and no type is worked out from its text, and the language dropdown
   switches to match.
+* Right-click a name and the menu says where it is defined, in this archive: `Go to VR_Rocket
+  (ZScript, Projectiles.zs)`. Classes and their parents, what `replaces` points at, state labels
+  including the ones an actor only inherits, the functions a mod writes, sound aliases and the files
+  behind them, cvars, levels, `LANGUAGE` keys, and the picture a sprite name stands for. The answers
+  come in the order the engine reads them, so the first one is the one the game uses.
+* A jump remembers where you were: `Alt+Left` and `Alt+Right`, or the mouse's side buttons, walk back
+  and forward over the files you came through, and a jump into a picture moves the entry tree with
+  it so you can see where you are.
 
 **Menus, drawn as the game draws them**
 
