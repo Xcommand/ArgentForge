@@ -655,6 +655,14 @@ void DefinitionIndex::setEntries(const vector<EntryRef>& entries, const string& 
 				}
 			}
 		}
+		else if (strutil::endsWith(lower_path, ".ogg") || strutil::endsWith(lower_path, ".mp3")
+		         || strutil::endsWith(lower_path, ".wav"))
+		{
+			// A sound file answers by the name it was written with: 'weapons/sshoto' in a
+			// script is the same text SNDINFO quotes, and the file is 'sshoto.ogg'
+			key  = string(stem);
+			kind = "sound";
+		}
 		else if (stem.size() >= 4 && stem.size() <= 8)
 		{
 			// A picture filed for one of the three uses the engine names by folder
@@ -722,23 +730,25 @@ void DefinitionIndex::pushGraphics(std::vector<Definition>& out, const string& n
 		return;
 
 	// One answer per kind, in the order that reads best: the picture, then the surface one,
-	// then a texture built from patches, then a patch, then a map
-	const Graphic* pick[5] = { nullptr, nullptr, nullptr, nullptr, nullptr };
+	// then a texture built from patches, then a patch, then a map, then a sound file
+	const char* kinds[6] = { "sprite", "flat", "texture", "patch", "map", "sound" };
+	const Graphic* pick[6] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
 	size_t         frames  = 0;
 	for (const auto& one : found->second)
 	{
-		auto slot = one.kind == "sprite"  ? 0
-		          : one.kind == "flat"    ? 1
-		          : one.kind == "texture" ? 2
-		          : one.kind == "patch"   ? 3
-		                                  : 4;
+		int slot = -1;
+		for (int i = 0; i < 6; ++i)
+			if (one.kind == kinds[i])
+				slot = i;
+		if (slot < 0)
+			continue;
 		if (!pick[slot])
 			pick[slot] = &one;
 		if (slot == 0)
 			++frames;
 	}
 
-	for (int i = 0; i < 5; ++i)
+	for (int i = 0; i < 6; ++i)
 	{
 		auto g = pick[i];
 		if (!g)

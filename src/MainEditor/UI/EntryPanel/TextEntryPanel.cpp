@@ -2259,9 +2259,10 @@ string TextEntryPanel::wordAt(size_t position) const
 	if (end <= start)
 		return {};
 
-	while (start > 0 && text[start - 1] == '.' && (start < 2 || text[start - 2] != '.'))
+	auto isSep = [](char c) { return c == '.' || c == '/'; };
+	while (start > 0 && isSep(text[start - 1]) && (start < 2 || !isSep(text[start - 2])))
 		start = text_area_->WordStartPosition((long)start - 1, true);
-	while (end < (long)text.size() && text[end] == '.' && (end + 2 >= (long)text.size() || text[end + 1] != '.'))
+	while (end < (long)text.size() && isSep(text[end]) && (end + 2 >= (long)text.size() || !isSep(text[end + 1])))
 		end = text_area_->WordEndPosition((long)end + 1, true);
 
 	if (end <= start)
@@ -2436,16 +2437,19 @@ void TextEntryPanel::onEditorContextMenu(wxContextMenuEvent& e)
 			{
 				found = definitions_.resolve(word, self->path(true), pos);
 
-				// A name the file wrote with a dot beside it can still be one name: an option
-				// line reads 'sv_foo = 1', and a comment writes 'actor.state'. Ask for the
-				// piece that is a name rather than answer nothing
+				// A name the file wrote with a dot or a slash beside it still names one thing:
+				// an option line reads 'sv_foo = 1', a sound is 'weapons/sshoto' and its file
+				// is 'sshoto.ogg'. Ask for the pieces rather than answer nothing
 				if (found.empty())
-					if (auto dot = word.find_last_of('.'); dot != string::npos)
-					{
-						found = definitions_.resolve(word.substr(0, dot), self->path(true), pos);
-						if (found.empty())
-							found = definitions_.resolve(word.substr(dot + 1), self->path(true), pos);
-					}
+					for (auto sep : { '.', '/' })
+						if (auto cut = word.find_last_of(sep); cut != string::npos)
+						{
+							found = definitions_.resolve(word.substr(0, cut), self->path(true), pos);
+							if (found.empty())
+								found = definitions_.resolve(word.substr(cut + 1), self->path(true), pos);
+							if (!found.empty())
+								break;
+						}
 			}
 	}
 
