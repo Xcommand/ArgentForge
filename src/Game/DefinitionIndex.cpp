@@ -252,7 +252,7 @@ namespace slade
 // their states blocks
 // -----------------------------------------------------------------------------
 void DefinitionIndex::scanScript(const string& text, const string& path, const string& archive, bool zscript,
-                                 std::vector<Actor>& out)
+                                 std::vector<Actor>& out, std::vector<Record>& recs)
 {
 	auto ws = scriptWords(text);
 
@@ -408,6 +408,31 @@ void DefinitionIndex::scanScript(const string& text, const string& path, const s
 
 	k = limit;
 	out.push_back(std::move(actor));
+	}
+
+	// -----------------------------------------------------------------------------
+	// A function written outside any class: at file scope, or inside a namespace. The
+	// engine reads these as plain global routines, so a call names them with no actor in
+	// front. The class bodies are known by now, which is what says 'outside'
+	// -----------------------------------------------------------------------------
+	for (size_t t = 0; t + 1 < ws.size(); ++t)
+	{
+		if (!is(ws[t], "function") && !is(ws[t], "action") && !is(ws[t], "native"))
+			continue;
+		if (std::any_of(out.begin(), out.end(),
+		        [&](const Actor& a) { return ws[t].begin >= a.begin && ws[t].begin <= a.end; }))
+			continue;
+
+		for (size_t u = t + 1; u + 1 < ws.size() && u < t + 8; ++u)
+		{
+			if (ws[u].text == ";" || ws[u].text == "{")
+				break;
+			if (ws[u].text != "(" || ws[u - 1].quoted || !nameStart(ws[u - 1].text[0]))
+				continue;
+			recs.push_back({ string(ws[u - 1].text), path, archive, "function", ws[u - 1].begin,
+			                 LumpKind::script });
+			break;
+		}
 	}
 }
 
@@ -622,7 +647,7 @@ void DefinitionIndex::build(const vector<ScriptLump>& lumps, const string& archi
 			Cached read;
 			read.size = lump.text.size();
 			if (lump.kind == LumpKind::script)
-				scanScript(lump.text, lump.path, archive_name, lump.zscript, read.actors);
+				scanScript(lump.text, lump.path, archive_name, lump.zscript, read.actors, read.records);
 			else
 				scanRecords(lump.text, lump.path, archive_name, lump.kind, read.records);
 			found = cache_.emplace(key, std::move(read)).first;
@@ -633,8 +658,10 @@ void DefinitionIndex::build(const vector<ScriptLump>& lumps, const string& archi
 			auto& actors = lump.zscript ? zscript : decorate;
 			actors.insert(actors.end(), found->second.actors.begin(), found->second.actors.end());
 		}
-		else
-			records.insert(records.end(), found->second.records.begin(), found->second.records.end());
+
+		// A script also carries the functions written outside every class, which are records
+		// like any other name
+		records.insert(records.end(), found->second.records.begin(), found->second.records.end());
 	}
 
 	// A lump that isn't in the list any more is gone from the archive

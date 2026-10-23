@@ -163,9 +163,11 @@ private:
 		LumpKind kind   = LumpKind::script;
 	};
 
-	// One script lump read: its classes, their parents, and the labels of their states
+	// One script lump read: its classes, their parents, and the labels of their states. A
+	// function written outside every class has no actor to belong to, so it comes back as a
+	// record of its own
 	static void scanScript(const string& text, const string& path, const string& archive, bool zscript,
-	                       std::vector<Actor>& out);
+	                       std::vector<Actor>& out, std::vector<Record>& recs);
 
 	// One lump of another kind read: the names its lines define. LANGUAGE goes through the
 	// reader the language table uses, because that one already knows both shapes
