@@ -54,6 +54,8 @@
 #include "UI/Dialogs/Preferences/PreferencesDialog.h"
 #include "Utility/StringUtils.h"
 
+#include <cstring>
+
 using namespace slade;
 
 
@@ -2225,9 +2227,10 @@ string TextEntryPanel::wordAt(size_t position) const
 }
 
 // -----------------------------------------------------------------------------
-// Every script lump of this archive, as the engine reads them: the ZSCRIPT ones first and
-// the DECORATE ones after. The lump on screen comes from the editor rather than the archive,
-// so a class written a second ago is offered before it is ever saved
+// Every script lump of this archive. ZScript and DECORATE hide under many spellings
+// (.zs, .zsc, .zc, even .txt), so the archive is walked by content the way the menu
+// constructor walks it: a null byte in the first lines means a compiled or binary lump,
+// and nothing over two megabytes is a script anyone wrote by hand
 // -----------------------------------------------------------------------------
 void TextEntryPanel::refreshDefinitionIndex()
 {
@@ -2256,26 +2259,34 @@ void TextEntryPanel::refreshDefinitionIndex()
 		if (!one || isFolderEntry(one))
 			continue;
 
+		const auto& data = one->data();
+		size_t      n    = data.size();
+		if (n == 0 || n > (2u << 20))
+			continue;
+		if (memchr(data.data(), 0, std::min<size_t>(n, 512)))
+			continue;
+
 		bool zs = one->type() == etype_zscript, dc = one->type() == etype_decorate;
 		if (!zs && !dc)
 		{
-			// A mod's scripts are also just files with an extension, and the lumps called
-			// ZSCRIPT or DECORATE are the engine's own names for the whole set
 			auto name = strutil::lower(one->name());
-			zs        = name == "zscript" || endsWith(name, ".zs");
+			zs        = name == "zscript" || endsWith(name, ".zs") || endsWith(name, ".zsc") || endsWith(name, ".zc");
 			dc        = name == "decorate" || endsWith(name, ".dec");
 		}
 		if (!zs && !dc)
-			continue;
+		{
+			// A mod's classes also sit in plain .txt files. Taking them costs a scan that finds
+			// nothing in the ones that aren't scripts, which is cheaper than missing a file
+			if (!endsWith(strutil::lower(one->name()), ".txt"))
+				continue;
+		}
 
 		string text;
 		if (one == self.get())
 			text = editorText();
 		else
-		{
-			const auto& data = one->data();
-			text.assign((const char*)data.data(), data.size());
-		}
+			text.assign((const char*)data.data(), n);
+
 		lumps.push_back({ one->path(), std::move(text), zs });
 	}
 
