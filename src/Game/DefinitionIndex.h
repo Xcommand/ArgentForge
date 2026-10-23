@@ -129,6 +129,16 @@ private:
 		size_t offset = 0;
 	};
 
+	// A function the actor writes. The engine reads DECORATE's `function`/`action special`
+	// and ZScript's `function` with any of virtual/override/static/natives before it, which
+	// is all this looks for; what sits behind the name is the return type, and the name is
+	// the word before the '('
+	struct Function
+	{
+		string name;
+		size_t offset = 0;
+	};
+
 	struct Actor
 	{
 		string name, parent, replaces, lump, archive, flavour;
@@ -138,6 +148,7 @@ private:
 		// The byte ranges of its states blocks, which is where a bare word names a label
 		std::vector<std::pair<size_t, size_t>> states;
 		std::vector<Label> labels;
+		std::vector<Function> functions;
 	};
 
 	// One name a non-script lump defines: a sound, a cvar, a level, a LANGUAGE key. Unlike
@@ -163,8 +174,11 @@ private:
 	// read is the one that stays
 	const Actor* find(const string& name) const;
 
-	// The labels visible from [actor], its own first and then the parents it inherits from
-	void visibleLabels(const Actor& actor, const string& name, std::vector<Definition>& out) const;
+	// The names [actor] can reach: its own first, then the ones each parent in turn writes,
+	// which is the order the engine finds them in. [labels] asks for the labels of a states
+	// block and [functions] for the routines either of them wrote
+	void visibleMembers(const Actor& actor, const string& name, std::vector<Definition>& out, bool labels,
+	                    bool functions) const;
 
 	// The names matching [name]: with [first] set, that kind ahead of the others. Within a
 	// kind the last read comes first, since that is the definition the engine kept

@@ -359,8 +359,29 @@ void DefinitionIndex::scanScript(const string& text, const string& path, const s
 			}
 		}
 
-		k = limit;
-		out.push_back(std::move(actor));
+	// -----------------------------------------------------------------------------
+	// A function the actor writes. DECORATE spells it 'action int Foo()' and ZScript
+	// allows virtual/override/static in front; the name is the word before the '(', and a
+	// call never has one of those words in front of it
+	// -----------------------------------------------------------------------------
+	for (int t = (int)open + 1; t + 2 <= limit; ++t)
+	{
+		if (!is(ws[t], "function") && !is(ws[t], "action"))
+			continue;
+
+		for (int u = t + 1; u + 1 <= limit && u < t + 8; ++u)
+		{
+			if (ws[u].text == ";" || ws[u].text == "{")
+				break;
+			if (ws[u].text != "(" || ws[u - 1].quoted || !nameStart(ws[u - 1].text[0]))
+				continue;
+			actor.functions.push_back({ string(ws[u - 1].text), ws[u - 1].begin });
+			break;
+		}
+	}
+
+	k = limit;
+	out.push_back(std::move(actor));
 	}
 }
 
@@ -786,10 +807,11 @@ string DefinitionIndex::actorAt(string_view lump, size_t offset) const
 }
 
 // -----------------------------------------------------------------------------
-// The labels a state can jump to from inside [actor]: its own first, then the ones it
-// inherits, which is the order the engine finds them in
+// The names [actor] can reach: its own first, then the ones each parent in turn writes,
+// which is the order the engine finds them in
 // -----------------------------------------------------------------------------
-void DefinitionIndex::visibleLabels(const Actor& actor, const string& name, std::vector<Definition>& out) const
+void DefinitionIndex::visibleMembers(const Actor& actor, const string& name, std::vector<Definition>& out,
+                                     bool labels, bool functions) const
 {
 	std::vector<string> seen;
 	const Actor*        current = &actor;
@@ -803,10 +825,19 @@ void DefinitionIndex::visibleLabels(const Actor& actor, const string& name, std:
 			break;
 		seen.push_back(current->name);
 
-		for (const auto& label : current->labels)
-			if (strutil::equalCI(label.name, name))
-				out.push_back({ label.name, current->lump, current->archive, "state of " + current->name,
-					            label.offset });
+		if (labels)
+			for (const auto& label : current->labels)
+				if (strutil::equalCI(label.name, name))
+					out.push_back({ label.name, current->lump, current->archive, "state of " + current->name,
+						            label.offset });
+
+		// A function the parent writes is as reachable as one the actor writes itself, which
+		// is half the reason he asks for a name he can't find in this file
+		if (functions)
+			for (const auto& fn : current->functions)
+				if (strutil::equalCI(fn.name, name))
+					out.push_back({ fn.name, current->lump, current->archive, "function of " + current->name,
+						            fn.offset });
 
 		current = current->parent.empty() ? nullptr : find(current->parent);
 	}
@@ -826,7 +857,8 @@ vector<Definition> DefinitionIndex::resolve(string_view name, string_view lump, 
 		pushRecords(out, string(name), here);
 
 	// Inside a states block a bare word is the label of a state first of all: that is what
-	// 'Goto Ready' and a frame line mean, and the label may be one the actor only inherits
+	// 'Goto Ready' and a frame line mean, and the label may be one the actor only inherits.
+	// A function name reaches him from anywhere in the class, states block or not
 	const Actor* enclosing = nullptr;
 	for (const auto& actor : actors_)
 	{
@@ -835,13 +867,22 @@ vector<Definition> DefinitionIndex::resolve(string_view name, string_view lump, 
 		if (!enclosing || actor.begin > enclosing->begin)
 			enclosing = &actor;
 	}
+	bool in_states = false;
 	if (enclosing)
 		for (const auto& range : enclosing->states)
 			if (offset >= range.first && offset <= range.second)
 			{
-				visibleLabels(*enclosing, string(name), out);
+				in_states = true;
 				break;
 			}
+
+	if (enclosing)
+		visibleMembers(*enclosing, string(name), out, in_states, true);
+	else
+		for (const auto& actor : actors_)
+			for (const auto& fn : actor.functions)
+				if (strutil::equalCI(fn.name, name))
+					out.push_back({ fn.name, actor.lump, actor.archive, "function of " + actor.name, fn.offset });
 
 	for (const auto& actor : actors_)
 		if (strutil::equalCI(actor.name, name))
