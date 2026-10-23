@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EntryPanel.h"
+#include "Game/DefinitionIndex.h"
 
 namespace slade
 {
@@ -108,6 +109,17 @@ private:
 	// Which constructor buttons the lump on screen earns
 	void updateConstructorTools(ArchiveEntry* entry = nullptr);
 
+	// The right-click menu: the edit items Scintilla would have shown, plus wherever the name
+	// under the pointer is defined. That's what makes a mod's own class jumpable without
+	// hunting for the file that writes it
+	void onEditorContextMenu(wxContextMenuEvent& e);
+	void refreshDefinitionIndex();
+	void goToDefinition(const Definition& def);
+
+	// The identifier at a byte position in the text, and the text as the editor holds it
+	string wordAt(size_t position) const;
+	string editorText() const;
+
 	// Points the menu constructor at whatever lump just came into the panel
 	void updateMenuConstructor();
 
@@ -197,6 +209,10 @@ private:
 
 	// The language constructor, one per panel as well
 	LanguageConstructorDialog* language_constructor_ = nullptr;
+
+	// Where the names in this archive's scripts are defined, rebuilt when a right-click asks
+	// and the text behind them has changed size
+	DefinitionIndex definitions_;
 
 	// Which file each of the table's ids is - its place in the archive, so a write can't
 	// land on a re-used name - the bytes it was read with, and an id. An id rather than a

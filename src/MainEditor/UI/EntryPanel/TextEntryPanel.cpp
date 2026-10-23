@@ -38,6 +38,7 @@
 #include "MainEditor/UI/ArchivePanel.h"
 #include "Archive/Archive.h"
 #include "Archive/ArchiveDir.h"
+#include "Archive/EntryType/EntryType.h"
 #include "MainEditor/UI/MainWindow.h"
 #include "MainEditor/UI/StartPage.h"
 #include "TextEditor/TextLanguage.h"
@@ -166,6 +167,11 @@ TextEntryPanel::TextEntryPanel(wxWindow* parent) : EntryPanel(parent, "text")
 	choice_text_language_->Bind(wxEVT_CHOICE, &TextEntryPanel::onChoiceLanguageChanged, this);
 	text_area_->Bind(wxEVT_TEXT_CHANGED, &TextEntryPanel::onTextModified, this);
 	text_area_->Bind(wxEVT_STC_UPDATEUI, &TextEntryPanel::onUpdateUI, this);
+
+	// The right-click menu. Scintilla would show its own, which has no room for "where is this
+	// defined", so the panel builds the same list itself and adds the definitions underneath
+	text_area_->UsePopUp(wxSTC_POPUP_NEVER);
+	text_area_->Bind(wxEVT_CONTEXT_MENU, &TextEntryPanel::onEditorContextMenu, this);
 
 
 	// --- Custom menu ---
@@ -2191,4 +2197,198 @@ void TextEntryPanel::onUpdateUI(wxStyledTextEvent& e)
 	}
 
 	e.Skip();
+}
+
+// -----------------------------------------------------------------------------
+// The text as the editor holds it: what he sees, which isn't necessarily what the archive
+// was last written with
+// -----------------------------------------------------------------------------
+string TextEntryPanel::editorText() const
+{
+	MemChunk mc;
+	text_area_->getRawText(mc);
+	return string((const char*)mc.data(), mc.size());
+}
+
+// -----------------------------------------------------------------------------
+// The identifier at a byte position. Scintilla's own word rules are the ones that fit:
+// letters, digits and '_', which is what a DECORATE or ZScript name is written from
+// -----------------------------------------------------------------------------
+string TextEntryPanel::wordAt(size_t position) const
+{
+	auto start = text_area_->WordStartPosition((long)position, true);
+	auto end   = text_area_->WordEndPosition((long)position, true);
+	if (end <= start)
+		return {};
+
+	return text_area_->GetTextRange(start, end).utf8_string();
+}
+
+// -----------------------------------------------------------------------------
+// Every script lump of this archive, as the engine reads them: the ZSCRIPT ones first and
+// the DECORATE ones after. The lump on screen comes from the editor rather than the archive,
+// so a class written a second ago is offered before it is ever saved
+// -----------------------------------------------------------------------------
+void TextEntryPanel::refreshDefinitionIndex()
+{
+	auto  self    = entry_.lock();
+	auto* archive = self ? self->parent() : nullptr;
+	if (!archive)
+	{
+		definitions_.clear();
+		return;
+	}
+
+	auto* etype_zscript  = EntryType::fromId("zscript");
+	auto* etype_decorate = EntryType::fromId("decorate");
+
+	auto endsWith = [](const string& text, const char* tail) {
+		auto len = strlen(tail);
+		return text.size() >= len && text.compare(text.size() - len, len, tail) == 0;
+	};
+
+	vector<ArchiveEntry*> files;
+	archive->putEntryTreeAsList(files);
+
+	vector<ScriptLump> lumps;
+	for (auto* one : files)
+	{
+		if (!one || isFolderEntry(one))
+			continue;
+
+		bool zs = one->type() == etype_zscript, dc = one->type() == etype_decorate;
+		if (!zs && !dc)
+		{
+			// A mod's scripts are also just files with an extension, and the lumps called
+			// ZSCRIPT or DECORATE are the engine's own names for the whole set
+			auto name = strutil::lower(one->name());
+			zs        = name == "zscript" || endsWith(name, ".zs");
+			dc        = name == "decorate" || endsWith(name, ".dec");
+		}
+		if (!zs && !dc)
+			continue;
+
+		string text;
+		if (one == self.get())
+			text = editorText();
+		else
+		{
+			const auto& data = one->data();
+			text.assign((const char*)data.data(), data.size());
+		}
+		lumps.push_back({ one->path(), std::move(text), zs });
+	}
+
+	definitions_.build(lumps, archive->filename());
+}
+
+// -----------------------------------------------------------------------------
+// The right-click menu. The edit items are the ones Scintilla used to draw itself, in the
+// same order, so the only difference to notice is the new part underneath them
+// -----------------------------------------------------------------------------
+void TextEntryPanel::onEditorContextMenu(wxContextMenuEvent& e)
+{
+	enum
+	{
+		ID_GOTO = wxID_HIGHEST + 400,
+	};
+
+	// The event's point is on screen; the editor wants its own, and the word it offers is the
+	// one under the pointer rather than wherever the caret happens to be. A click in the
+	// margin, where there is no character, falls back to the caret
+	auto where = text_area_->ScreenToClient(e.GetPosition());
+	auto hit   = text_area_->PositionFromPoint(where);
+	if (hit < 0)
+		hit = (int)text_area_->GetCurrentPos();
+
+	auto   pos  = (size_t)std::max(0, hit);
+	string word = wordAt(pos);
+
+	vector<Definition> found;
+	if (!word.empty())
+	{
+		refreshDefinitionIndex();
+		if (auto self = entry_.lock())
+			found = definitions_.resolve(word, self->path(), pos);
+	}
+
+	wxMenu menu;
+	menu.Append(wxID_UNDO, wxS("Undo"));
+	menu.Append(wxID_REDO, wxS("Redo"));
+	menu.AppendSeparator();
+	menu.Append(wxID_CUT, wxS("Cut"));
+	menu.Append(wxID_COPY, wxS("Copy"));
+	menu.Append(wxID_PASTE, wxS("Paste"));
+	menu.Append(wxID_DELETE, wxS("Delete"));
+	menu.AppendSeparator();
+	menu.Append(wxID_SELECTALL, wxS("Select All"));
+
+	// Eight is more answers than a name ever has, and a menu that long stops being a menu
+	if (!found.empty())
+	{
+		menu.AppendSeparator();
+		for (size_t i = 0; i < found.size() && i < 8; ++i)
+			menu.Append(ID_GOTO + (int)i,
+			            wxString::Format(wxS("Go to %s (%s)"), wxString::FromUTF8(word),
+			                             wxString::FromUTF8(found[i].where)));
+	}
+
+	int picked = text_area_->GetPopupMenuSelectionFromUser(menu, where);
+	switch (picked)
+	{
+	case wxID_UNDO:
+		text_area_->Undo();
+		break;
+	case wxID_REDO:
+		text_area_->Redo();
+		break;
+	case wxID_CUT:
+		text_area_->Cut();
+		break;
+	case wxID_COPY:
+		text_area_->Copy();
+		break;
+	case wxID_PASTE:
+		text_area_->Paste();
+		break;
+	case wxID_DELETE:
+		text_area_->Clear();
+		break;
+	case wxID_SELECTALL:
+		text_area_->SelectAll();
+		break;
+	default:
+		if (picked >= ID_GOTO && picked < ID_GOTO + (int)found.size())
+			goToDefinition(found[picked - ID_GOTO]);
+		break;
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Moves the editor to a definition. In this lump that's a caret move; in another one the
+// file is opened with the caret on the name, which is the whole point: a mod with forty
+// script files can't be read by hunting
+// -----------------------------------------------------------------------------
+void TextEntryPanel::goToDefinition(const Definition& def)
+{
+	auto  self    = entry_.lock();
+	auto* archive = self ? self->parent() : nullptr;
+	if (!archive)
+		return;
+
+	if (self && self->path() == def.lump)
+	{
+		text_area_->SetSelection((long)def.offset, (long)(def.offset + def.name.size()));
+		text_area_->SetCurrentPos((long)def.offset);
+		centreLine(lineAtOffset(editorText(), def.offset));
+		text_area_->SetFocus();
+		return;
+	}
+
+	if (auto* other = archive->entryAtPath(def.lump))
+	{
+		other->exProp("TextPosition") = (int)def.offset;
+		if (auto* panel = maineditor::currentArchivePanel())
+			panel->openEntryAsText(other);
+	}
 }
