@@ -80,6 +80,10 @@ They get their own pages later; these are the ones you'll bump into in the first
 
 * Rest the mouse on a sprite frame in a script and the picture it names opens above the line. Hold
   SHIFT and the whole state block runs at Doom speed.
+* Right-click a name in a script and the menu says where it is defined in this archive: the class,
+  the state label, the function, the sound, the cvar, the level, the translation key, or the picture
+  a sprite name stands for. `Alt+Left` and `Alt+Right`, or the mouse's side buttons, take you back
+  along the jumps you made. [Reading a mod's code](navigation.md) is the whole page on it.
 * Open a DECORATE or ZScript lump and the toolbar has a **Constructor** button. It opens a floating
   window that edits the actor's flags, properties and states for you, follows the text cursor, and
   writes the code while you click. Most of DECORATE never has to be typed.

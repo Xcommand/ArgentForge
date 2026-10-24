@@ -81,7 +81,26 @@ https://github.com/user-attachments/assets/1d0dad59-58c8-456d-9585-999272cd2705
   come in the order the engine reads them, so the first one is the one the game uses.
 * A jump remembers where you were: `Alt+Left` and `Alt+Right`, or the mouse's side buttons, walk back
   and forward over the files you came through, and a jump into a picture moves the entry tree with
-  it so you can see where you are.
+  it so you can see where you are. The trail holds a hundred jumps, a place whose file was deleted
+  since is skipped rather than blocking the button, and both keys are ordinary keybinds under
+  `Settings > Input`, so they can be moved.
+* It reads the definition files as well as the scripts: `SNDINFO` aliases and the sound files behind
+  them, `CVARINFO`, `MAPINFO` (a level's `map` name and its `lookup` name), `GLDEFS` and `DECALDEF`
+  (decals, GL textures, materials, fading tables) and `LANGUAGE` keys in either spelling, the
+  `NAME = "text";` blocks or the port's `language.csv`. A `$KEY` is found by its key, without the
+  dollar a caller writes in front of it.
+* The order of the answers is the engine's, and the two kinds of name disagree on purpose: ZScript is
+  read before DECORATE and the first class of a name wins, while a later `SNDINFO`, `CVARINFO`,
+  `MAPINFO` or `LANGUAGE` file overwrites an earlier one, so that is the one offered first.
+* Names are read as written: `weapons/sshoto` and `soldier.hitmonk1` are one name each, not two, and
+  a quoted run is taken whole, which is how a script's `A_StartSound("leech/idle", 1)` reaches the
+  line that defines it. A pk3 name can be as long as the mod wants; the eight-letter limit is a
+  WAD's.
+* A right-click over a file with names in it always answers, even when the answer is none: the grey
+  line says how many classes, names and files were read, which is the difference between 'this mod
+  has no such thing' and 'the archive was never looked at'. On a big mod that is 987 classes, 2010
+  names and 11448 files, and the walk reads the archive's own listing for sizes rather than loading
+  a single picture.
 
 **Menus, drawn as the game draws them**
 
