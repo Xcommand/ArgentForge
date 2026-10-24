@@ -129,6 +129,8 @@ and a line you didn't touch comes back byte for byte the way the mod wrote it.
 * An empty MENUDEF is a starting point rather than a dead end. The window asks where your first menu
   should hang, under the game's Options list or on the main menu, and writes both blocks it takes to
   be seen in game: the page, and the line that points at it.
+* If you want your Menu Preview to be exactly 1to1 to ingame menu, you must set ZDoom PK3 Path in
+  "Editing > Base Resource Archive"
 
 <img width="525" height="397" alt="Where the first menu of a mod hangs" src="https://github.com/Xcommand/ArgentForge/releases/download/v1.1.0/start-a-menu.png" /> <img width="476" height="576" alt="The archive's own cvar names offered under a field" src="https://github.com/Xcommand/ArgentForge/releases/download/v1.1.0/name-offers.png" />
 
