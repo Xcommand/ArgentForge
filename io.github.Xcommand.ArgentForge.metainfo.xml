@@ -29,6 +29,23 @@
 		</p>
 	</description>
 	<releases>
+		<release date="2026-10-24" version="1.3.0">
+			<description>
+				<ul>
+					<li>Right-click a name in a script and the menu says where it is defined in
+					this archive: a class, a state label, a function a mod writes, a sound, a cvar, a
+					level, a language key, or the picture a sprite name stands for.</li>
+					<li>The answers come in the order the engine reads them, so the first one is the
+					one the game uses.</li>
+					<li>A jump remembers where you were. Alt+Left and Alt+Right, or the mouse's side
+					buttons, walk back and forward through the files you came from, from a picture as
+					well as from a text.</li>
+					<li>A jump into a file opens it in the editor its own type asks for, and moves the
+					entry tree with it.</li>
+					<li>A new page in the guide: reading a mod's code.</li>
+				</ul>
+			</description>
+		</release>
 		<release date="2026-10-18" version="1.2.1">
 			<description>
 				<ul>

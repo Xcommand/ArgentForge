@@ -102,6 +102,8 @@ https://github.com/user-attachments/assets/1d0dad59-58c8-456d-9585-999272cd2705
   names and 11448 files, and the walk reads the archive's own listing for sizes rather than loading
   a single picture.
 
+<img width="552" height="290" alt="One name written in three files, offered in the order the engine reads them, with the jump back on top" src="https://github.com/Xcommand/ArgentForge/releases/download/v1.3.0/goto-many-and-back.png" /> <img width="381" height="401" alt="A sprite frame in a state line, its picture above it and the jump to it in the menu" src="https://github.com/Xcommand/ArgentForge/releases/download/v1.3.0/goto-sprite.png" />
+
 **Menus, drawn as the game draws them**
 
 The **Menu Constructor**: a floating window over the MENUDEF text you already have open. Its blocks

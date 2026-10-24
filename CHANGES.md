@@ -3,6 +3,39 @@ Changes in this fork
 
 What we added on top of upstream SLADE, feature by feature. Kept short on purpose.
 
+New in 1.3.0
+------------
+
+Right-click a name in a script and the menu says where it is defined in this archive. The point is
+to read a mod without hunting: forty script files, one class you actually want.
+
+* What it answers: classes and their parents, what `replaces` points at, state labels including the
+  ones an actor only inherits, the functions a mod writes (a class's own, a parent's, and one at
+  file scope or in a `namespace`), `SNDINFO` aliases and the sound files behind them, `CVARINFO`
+  cvars, `MAPINFO` levels by their `map` name and their `lookup` name, `GLDEFS` and `DECALDEF`
+  definitions, `LANGUAGE` keys in either spelling, and the picture a sprite name stands for.
+* The answers come in the order the engine reads them, and the two kinds of name disagree on
+  purpose: ZScript is read before DECORATE and the first class of a name wins, while a later
+  `SNDINFO` or `LANGUAGE` file overwrites an earlier one, so that is the one offered first.
+* A sprite answers by its four letters and by a whole frame name, in both spellings a mod uses
+  (`SNIPA1.png` and `sprites/snip/a1.png`), and the frame that opens is the one the game would
+  draw. A brightmap never answers for the picture it brightens.
+* A jump remembers where you were: `Alt+Left` and `Alt+Right`, or the mouse's side buttons, walk
+  back and forward over the files you came through, from a picture as well as from a text. Both
+  are ordinary keybinds, so they can be moved.
+* A jump opens the file in the editor its own type asks for and moves the entry tree to it, so you
+  can see where you are.
+* Names are read as written: `weapons/sshoto` and `soldier.hitmonk1` are one name each, and a
+  quoted run is taken whole, which is how `A_StartSound("leech/idle", 1)` reaches the line that
+  defines it. A pk3 name can be as long as the mod wants; the eight-letter limit is a WAD's.
+* Over a file with names in it the menu always answers, even when the answer is none: the grey line
+  says how many classes, names and files were read, which is the difference between 'this mod has
+  no such thing' and 'the archive was never looked at'. On a large mod that is 987 classes, 2010
+  names and 11448 files, and the walk asks the archive's own listing for sizes rather than loading
+  a picture to find out it isn't text.
+* A named random pool (`random[VR_WeaponRNG]`) has no definition to go to: the engine makes one up
+  the first time a mod writes its name. The guide says so rather than leaving you hunting.
+* New page in the guide: [Reading a mod's code](docs/user/navigation.md).
 New in 1.2.1
 ------------
 
